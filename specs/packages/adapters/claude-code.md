@@ -125,7 +125,7 @@ While the mapped SDK abort controller is aborted and no terminal `done` has been
 
 ### claude-code-4
 
-When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] and its capability levels to Claude Code controls under [[engine-52](../engine.md#engine-52)] per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall produce exactly this matrix, with an explicit mode taking precedence over every capability level:
+When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../engine.md#engine-21)] and its capability levels to Claude Code controls under [[engine-52](../engine.md#engine-52)] per [DR-005](../../decisions/005-per-adapter-permission-configuration.md), it shall produce this base matrix, augmented only by unresolved live asks through [[claude-code-78](#claude-code-78)], with an explicit mode taking precedence over every capability level:
 
 | Policy input | `permissionMode` | `allowDangerouslySkipPermissions` | `canUseTool` |
 | --- | --- | --- | --- |
@@ -164,7 +164,7 @@ When `canUseTool` classifies a tool name, it shall map its leading identifier to
 
 ### claude-code-21
 
-When `canUseTool` decides a classified or unclassified call, it shall resolve according to this headless decision matrix:
+When `canUseTool` decides a classified or unclassified call, it shall resolve according to this headless decision matrix where no live handler is supplied, with live handlers using [[claude-code-78](#claude-code-78)]:
 
 | Classification and level | Result |
 | --- | --- |
@@ -456,6 +456,14 @@ Where Claude Code includes reasoning tokens in its inclusive output total withou
 
 When the adapter selects terminal whole-run cost, it shall prefer a finite numeric `total_cost_usd`, then `totalCostUsd`, expose the selected value with [[engine-61](../engine.md#engine-61)] provenance independently under [[engine-62](../engine.md#engine-62)] when it is non-negative even if tokens are absent, and otherwise omit whole-run cost.
 
+### claude-code-78
+
+Where a call supplies a live host approval handler [[approvals-1](../approvals.md#approvals-1)], the adapter shall compose `canUseTool` with the existing permission mapping, retaining explicit allows and denies while forwarding unresolved native asks with the native `toolUseID`, active provider session, input, decision reason, and native review metadata [[approvals-2](../approvals.md#approvals-2)], streaming approval events during the native wait [[approvals-4](../approvals.md#approvals-4)] and applying bounded cancellation [[approvals-3](../approvals.md#approvals-3)] without granting SDK persistent permissions.
+
+### claude-code-79
+
+When Claude requests `AskUserQuestion` through the permission callback, the adapter shall deny the unsupported structured interaction [[approvals-6](../approvals.md#approvals-6)] without consulting the boolean tool approval handler or synthesizing answers.
+
 ## Internal Behavior
 
 ### Resume-Repair Signature
@@ -719,6 +727,10 @@ Given caller stdio and HTTP servers and native user-message tool results, when a
 ### claude-code-76
 
 Given the installed native Claude SDK and CLI, packaged managed browser runtime, and a loopback model API fixture with isolated configuration and fake credentials, when a `Cligent` browser run navigates to a loopback page and captures a screenshot, acceptance verification shall assert native server admission and scoped tool approval [[claude-code-74](#claude-code-74)], successful tool-result correlation and a PNG media event [[claude-code-3](#claude-code-3)], the same screenshot in a subsequent native model request, and the final explanation in the ordinary terminal result [[claude-code-10](#claude-code-10)].
+
+### claude-code-80
+
+When a real adapter runs against an SDK peer that blocks a native tool on `canUseTool`, integration checks shall verify streamed host requests, exact identity, one-time allowance only after resolution, denial, timeout, cancellation, failed handlers, teardown and unchanged explicit/native grants [[claude-code-78](#claude-code-78)], with structured questions declined without a host call [[claude-code-79](#claude-code-79)].
 
 ## References
 

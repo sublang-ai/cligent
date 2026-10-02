@@ -10,7 +10,7 @@ import type {
 } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { basename } from 'node:path';
-import { promisify } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
 
 import { prepareAttachments, readAttachment } from '../attachments.js';
 import { mediaFromUri } from '../media.js';
@@ -21,6 +21,7 @@ import {
   type McpServers,
 } from '../mcp.js';
 import { createEvent, generateSessionId } from '../events.js';
+import { ApprovalController } from '../internal/approvals.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -159,7 +160,84 @@ interface PermissionOperationBudget {
   remainingMs: number;
 }
 
+interface PendingPermissionIdentity {
+  permission: string;
+  toolUseId: string;
+  input: Record<string, unknown>;
+  patterns: string[];
+}
+
+/** Observe external resolution without consuming the invocation's SSE stream. */
+function watchPendingPermission(
+  lookup: (signal: AbortSignal) => Promise<boolean>,
+  invalidate: () => void,
+): {
+  stop(): void;
+  invalidated: boolean;
+  failure?: PermissionOperationFailure;
+} {
+  const controller = new AbortController();
+  const state: {
+    stop(): void;
+    invalidated: boolean;
+    failure?: PermissionOperationFailure;
+  } = {
+    stop: () => controller.abort(),
+    invalidated: false,
+  };
+  const wait = <T>(
+    operation: () => Promise<T>,
+    timeoutMs: number,
+  ): Promise<PermissionOperationWaitResult<T>> =>
+    new Promise((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (result: PermissionOperationWaitResult<T>) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        controller.signal.removeEventListener('abort', abort);
+        resolve(result);
+      };
+      const abort = () => finish({ kind: 'abort' });
+      controller.signal.addEventListener('abort', abort, { once: true });
+      if (controller.signal.aborted) {
+        abort();
+        return;
+      }
+      timer = setTimeout(() => finish({ kind: 'timeout' }), timeoutMs);
+      timer.unref?.();
+      void Promise.resolve()
+        .then(operation)
+        .then(
+          (value) => finish({ kind: 'resolved', value }),
+          (error: unknown) => finish({ kind: 'error', error }),
+        );
+    });
+  void (async () => {
+    while (!controller.signal.aborted) {
+      const interval = await wait(() => new Promise<never>(() => {}), 1_000);
+      if (interval.kind === 'abort') return;
+      const result = await wait(
+        () => lookup(controller.signal),
+        PERMISSION_REPLY_TIMEOUT_MS,
+      );
+      if (result.kind === 'abort') return;
+      if (result.kind === 'resolved' && result.value) continue;
+      state.invalidated = true;
+      if (result.kind === 'error' || result.kind === 'timeout')
+        state.failure = result;
+      controller.abort();
+      invalidate();
+      return;
+    }
+  })();
+  return state;
+}
+
 interface OpenCodeClient {
+  /** Human decisions require an authoritative registry, absent in old v1. */
+  canApprovePermissions?: boolean;
   addMcpServers?: (options: {
     servers: McpServers;
     cwd?: string;
@@ -183,6 +261,7 @@ interface OpenCodeClient {
     requestId: string;
     cwd?: string;
     signal?: AbortSignal;
+    expected?: PendingPermissionIdentity;
   }) => Promise<boolean>;
   replyPermission?: (options: {
     sessionId: string;
@@ -2083,6 +2162,8 @@ export function wrapOpencodeClient(
       await abortSessionViaSdk(sessionId, cwd);
     },
 
+    canApprovePermissions: permissionList !== undefined,
+
     async isPermissionPending(options): Promise<boolean> {
       const operation =
         'OpenCode permission lookup failed ' +
@@ -2092,7 +2173,7 @@ export function wrapOpencodeClient(
         // The retired v1 response client exposes only a live, non-replaying
         // permission stream. Current v2 clients expose the authoritative
         // pending registry used to reject a stale transport replay.
-        if (apiVersion === 'v1') return true;
+        if (apiVersion === 'v1' && !options.expected) return true;
         throw new Error(
           `${operation}: SDK client.permission.list() not available`,
         );
@@ -2119,12 +2200,30 @@ export function wrapOpencodeClient(
 
       return pending.some((entry) => {
         const request = asRecord(entry);
-        return (
+        const identityMatches =
           (asString(request.id) ?? asString(request.requestID)) ===
             options.requestId &&
           (asString(request.sessionID) ?? asString(request.sessionId)) ===
-            options.sessionId
-        );
+            options.sessionId;
+        if (!identityMatches || !options.expected) return identityMatches;
+        // A native request id can be reused while the host is deciding. A
+        // decision for the old command must never authorize its replacement.
+        const identity: PendingPermissionIdentity = {
+          permission:
+            asString(request.permission) ??
+            asString(request.type) ??
+            asString(request.toolName) ??
+            asString(request.name) ??
+            'unknown_tool',
+          toolUseId:
+            asString(asRecord(request.tool).callID) ??
+            asString(request.callID) ??
+            asString(request.toolUseId) ??
+            options.requestId,
+          input: parseToolInput(request.input ?? request.metadata ?? {}),
+          patterns: parsePermissionPatterns(request.patterns, request.pattern),
+        };
+        return isDeepStrictEqual(identity, options.expected);
       });
     },
 
@@ -2585,6 +2684,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     }> = [];
 
     const eventStreamController = new AbortController();
+    const approvalEvents: AgentEvent[] = [];
+    const approvals = new ApprovalController({
+      agent: AGENT,
+      handler: options?.approvalHandler,
+      signal: eventStreamController.signal,
+      emit: (event) => approvalEvents.push(event),
+    });
     let resolveCallerAbort!: () => void;
     const callerAbortPromise = new Promise<void>((resolve) => {
       resolveCallerAbort = resolve;
@@ -4015,6 +4121,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           (result) => {
             serverClosed = true;
             serverLifecycleResult = result;
+            approvals.close();
             finishStreamWait?.(toServerWaitResult(result));
             return result;
           },
@@ -5425,7 +5532,24 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           const admittedMcpTool =
             hasAdmittedMcpServers &&
             client?.isAdmittedMcpTool?.(toolName) === true;
-          if (options?.permissions?.mode !== 'auto' && !admittedMcpTool) {
+          const capability = (
+            {
+              edit: 'fileWrite',
+              bash: 'shellExecute',
+              webfetch: 'networkAccess',
+            } as const
+          )[toolName as 'edit' | 'bash' | 'webfetch'];
+          const hostApproval =
+            options?.permissions?.mode !== 'auto' &&
+            !admittedMcpTool &&
+            !!options?.approvalHandler &&
+            client?.canApprovePermissions === true &&
+            (!capability || options.permissions?.[capability] !== 'deny') &&
+            !!requestId;
+          const automaticApproval =
+            (options?.permissions?.mode === 'auto' || admittedMcpTool) &&
+            (!capability || options?.permissions?.[capability] !== 'deny');
+          if (!automaticApproval && !hostApproval) {
             yield createEvent(
               'permission_request',
               AGENT,
@@ -5546,10 +5670,101 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
           requestKey ??= permissionRequestKey(permissionSessionId, requestId);
 
-          const decision =
-            options?.permissions?.mode === 'auto' || admittedMcpTool
-              ? 'once'
-              : 'reject';
+          let decision: 'once' | 'reject' = automaticApproval
+            ? 'once'
+            : 'reject';
+          if (hostApproval) {
+            const nativeApproval = new AbortController();
+            const identity = {
+              permission: toolName,
+              toolUseId,
+              input,
+              patterns,
+            };
+            const lookup = (signal: AbortSignal) =>
+              client!.isPermissionPending!({
+                sessionId: permissionSessionId,
+                requestId,
+                expected: identity,
+                ...(options?.cwd ? { cwd: options.cwd } : {}),
+                signal,
+              });
+            const answer = approvals.request(
+              {
+                sessionId: permissionSessionId,
+                toolUseId,
+                toolName,
+                input,
+                details: { permission: toolName, patterns, requestId },
+                ...(reason ? { reason } : {}),
+                choices: ['allow_once', 'deny'],
+              },
+              nativeApproval.signal,
+            );
+            const watch = watchPendingPermission(lookup, () =>
+              nativeApproval.abort(),
+            );
+            let hostDecision: 'allow_once' | 'deny';
+            try {
+              yield* approvalEvents.splice(0);
+              hostDecision = await answer;
+              yield* approvalEvents.splice(0);
+            } finally {
+              watch.stop();
+              nativeApproval.abort();
+            }
+            if (abortRequested || options?.abortSignal?.aborted) {
+              throw new OpenCodePromptDispatchAbortError(sessionId);
+            }
+            if (watch.failure) {
+              yield* terminatePermissionFailure(
+                requestKey,
+                Promise.resolve(),
+                watch.failure,
+                permissionSessionId,
+                requestId,
+                toolName,
+              );
+              break;
+            }
+            if (watch.invalidated) {
+              releasePermissionRequest(requestKey);
+              continue;
+            }
+            decision = hostDecision === 'allow_once' ? 'once' : 'reject';
+            const recheckStartedAt = performance.now();
+            const recheckPromise = client!.isPermissionPending!({
+              sessionId: permissionSessionId,
+              requestId,
+              expected: { permission: toolName, toolUseId, input, patterns },
+              ...(options?.cwd ? { cwd: options.cwd } : {}),
+              signal: eventStreamController.signal,
+            });
+            const recheck = await waitForPermissionOperation(
+              recheckPromise,
+              permissionBudget,
+              recheckStartedAt,
+            );
+            if (recheck.kind === 'abort') {
+              recheckPromise.catch(() => {});
+              throw new OpenCodePromptDispatchAbortError(sessionId);
+            }
+            if (recheck.kind === 'error' || recheck.kind === 'timeout') {
+              yield* terminatePermissionFailure(
+                requestKey,
+                recheckPromise,
+                recheck,
+                permissionSessionId,
+                requestId,
+                toolName,
+              );
+              break;
+            }
+            if (!recheck.value) {
+              releasePermissionRequest(requestKey);
+              continue;
+            }
+          }
           const replyStartedAt = performance.now();
           const replyPromise = client?.replyPermission
             ? client.replyPermission({
@@ -5572,7 +5787,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           if (
             replyRace.kind === 'resolved' &&
             replyRace.value &&
-            decision === 'once'
+            decision === 'once' &&
+            !hostApproval
           ) {
             yield createEvent(
               'opencode:permission_decision',
@@ -5971,6 +6187,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
       }
     } finally {
+      approvals.close();
       abortPermissionWait = undefined;
       permissionRequests.clear();
       reportPermissionState();

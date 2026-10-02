@@ -7,18 +7,16 @@ import { createEvent } from './events.js';
 export const ABORT_DONE_GRACE_MS = 500;
 
 type PendingOrSettledNext =
-  | Promise<IteratorResult<AgentEvent, void>>
-  | IteratorResult<AgentEvent, void>;
+  Promise<IteratorResult<AgentEvent, void>> | IteratorResult<AgentEvent, void>;
 
 export interface AbortDrainNextResult {
   result: IteratorResult<AgentEvent, void>;
   abortDone?: AgentEvent;
+  approvalResponses?: AgentEvent[];
   aborted: boolean;
 }
 
-type SynthDoneExtra = Partial<
-  Pick<DonePayload, 'resumeToken' | 'result'>
-> & {
+type SynthDoneExtra = Partial<Pick<DonePayload, 'resumeToken' | 'result'>> & {
   toolUses?: number;
 };
 
@@ -72,26 +70,25 @@ export async function nextWithAbortDrain(
   const nextResult = gen.next();
   const result = await raceAbort(nextResult, signal);
   const aborted =
-    signal?.aborted === true &&
-    (result.done || result.value.type !== 'done');
+    signal?.aborted === true && (result.done || result.value.type !== 'done');
 
   if (!aborted) {
     return { result, aborted: false };
   }
 
-  return {
-    result,
-    aborted: true,
-    abortDone: await readAdapterDoneAfterAbort(
-      gen,
-      result.done ? nextResult : result,
-    ),
-  };
+  const approvalResponses: AgentEvent[] = [];
+  const abortDone = await readAdapterDoneAfterAbort(
+    gen,
+    result.done ? nextResult : result,
+    approvalResponses,
+  );
+  return { result, aborted: true, abortDone, approvalResponses };
 }
 
-async function readAdapterDoneAfterAbort(
+export async function readAdapterDoneAfterAbort(
   gen: AsyncGenerator<AgentEvent, void, void>,
   first: PendingOrSettledNext,
+  approvalResponses: AgentEvent[] = [],
   timeoutMs = ABORT_DONE_GRACE_MS,
 ): Promise<AgentEvent | undefined> {
   const deadline = Date.now() + timeoutMs;
@@ -107,6 +104,9 @@ async function readAdapterDoneAfterAbort(
     }
     if (result.done) {
       return undefined;
+    }
+    if (result.value.type === 'approval_response') {
+      approvalResponses.push(result.value);
     }
     if (result.value.type === 'done') {
       return result.value;

@@ -27,6 +27,8 @@ export type AgentEventType =
   | 'thinking'
   | 'error'
   | 'permission_request'
+  | 'approval_request'
+  | 'approval_response'
   | 'done';
 
 export type AgentType =
@@ -114,6 +116,39 @@ export interface PermissionRequestPayload {
   toolUseId: string;
   input: Record<string, unknown>;
   reason?: string;
+}
+
+/** One native tool decision; never a persistent permission grant. */
+export type ApprovalDecision = 'allow_once' | 'deny';
+
+export interface ApprovalRequest {
+  readonly id: string;
+  readonly kind: 'tool';
+  readonly agent: AgentType;
+  readonly sessionId: string;
+  readonly toolUseId: string;
+  readonly toolName: string;
+  readonly input: Readonly<Record<string, unknown>>;
+  readonly reason?: string;
+  /** Native action scope and display metadata; descriptive, never extra decisions. */
+  readonly details?: Readonly<Record<string, unknown>>;
+  readonly choices: readonly ApprovalDecision[];
+  /** Epoch milliseconds. */
+  readonly createdAt: number;
+  /** Epoch milliseconds; unresolved requests fail closed at this deadline. */
+  readonly expiresAt: number;
+}
+
+export type ApprovalHandler = (
+  request: ApprovalRequest,
+  context: { readonly signal: AbortSignal },
+) => Promise<ApprovalDecision>;
+
+/** A host decision, not evidence that the native tool executed. */
+export interface ApprovalResponsePayload {
+  readonly requestId: string;
+  readonly decision: ApprovalDecision;
+  readonly source: 'host' | 'timeout' | 'cancelled' | 'error';
 }
 
 export interface ToolUsePayload {
@@ -248,6 +283,11 @@ export type AgentEvent =
       type: 'permission_request';
       payload: PermissionRequestPayload;
     })
+  | (BaseEvent & { type: 'approval_request'; payload: ApprovalRequest })
+  | (BaseEvent & {
+      type: 'approval_response';
+      payload: ApprovalResponsePayload;
+    })
   | (BaseEvent & { type: 'done'; payload: DonePayload })
   | (BaseEvent & { type: `${string}:${string}`; payload: unknown });
 
@@ -317,6 +357,8 @@ export interface AgentOptions<
   SM extends string = never,
   SE extends string = DefaultSubagentEffort<E, SM>,
 > {
+  /** Handle unresolved native tool asks for this invocation only. */
+  approvalHandler?: ApprovalHandler;
   /** Local files for this call only; support depends on the adapter. */
   attachments?: readonly Attachment[];
   /** Caller-selected native tools; per-call maps replace instance defaults. */
@@ -381,6 +423,8 @@ export interface RunOptions<
   SM extends string = never,
   SE extends string = DefaultSubagentEffort<E, SM>,
 > extends Omit<CligentOptions<E, FM, SM, SE>, 'role'> {
+  /** Handle unresolved native tool asks for this invocation only. */
+  approvalHandler?: ApprovalHandler;
   /** Local files for this turn; never reused automatically on resume. */
   attachments?: readonly Attachment[];
   abortSignal?: AbortSignal;

@@ -2,6 +2,8 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { describeCapabilities, CapabilityError } from '../capabilities.js';
+import { ApprovalController } from '../internal/approvals.js';
+import { ApprovalEventStream } from '../internal/approval-stream.js';
 
 import { createEvent, generateSessionId } from '../events.js';
 import { prepareAttachments, readAttachment } from '../attachments.js';
@@ -90,6 +92,21 @@ type ClaudePermissionResult =
 type ClaudeCanUseTool = (
   toolName: string,
   input: Record<string, unknown>,
+  context?: {
+    signal: AbortSignal;
+    toolUseID: string;
+    decisionReason?: string;
+    blockedPath?: string;
+    title?: string;
+    displayName?: string;
+    description?: string;
+    mcpServer?: { name: string; source: unknown };
+    agentID?: string;
+    requestId?: string;
+    matchedAskRule?: unknown;
+    defaultToNo?: boolean;
+    suppressAlwaysAllowRule?: boolean;
+  },
 ) => Promise<ClaudePermissionResult>;
 
 // The SDK's `systemPrompt` option shape, mirrored locally for the same reason
@@ -1471,6 +1488,105 @@ export class ClaudeCodeAdapter implements AgentAdapter<
       queryOptions.sessionId = sessionId;
     }
 
+    let providerReady = false;
+    let resolveProviderReady!: (ready: boolean) => void;
+    const providerInitialization = new Promise<boolean>((resolve) => {
+      resolveProviderReady = resolve;
+    });
+    const awaitProviderInitialization = async (
+      nativeSignal?: AbortSignal,
+    ): Promise<boolean> => {
+      if (providerReady) return true;
+      const signals = [nativeSignal, options?.abortSignal].filter(
+        (signal): signal is AbortSignal => signal !== undefined,
+      );
+      if (signals.some((signal) => signal.aborted)) return false;
+      let cancel!: () => void;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cancelled = new Promise<boolean>((resolve) => {
+        cancel = () => resolve(false);
+        for (const signal of signals)
+          signal.addEventListener('abort', cancel, { once: true });
+        timer = setTimeout(cancel, 600_000);
+        timer.unref?.();
+      });
+      try {
+        return await Promise.race([providerInitialization, cancelled]);
+      } finally {
+        clearTimeout(timer);
+        for (const signal of signals)
+          signal.removeEventListener('abort', cancel);
+      }
+    };
+    const approvalEvents = new ApprovalEventStream();
+    const approvals = new ApprovalController({
+      agent: AGENT,
+      handler: options?.approvalHandler,
+      signal: options?.abortSignal,
+      emit: approvalEvents.emit,
+    });
+    if (options?.approvalHandler) {
+      queryOptions.abortController ??= new AbortController();
+      const basePermission = queryOptions.canUseTool;
+      const policy = normalizePermissionPolicy(options.permissions);
+      queryOptions.canUseTool = async (toolName, input, context) => {
+        // This structured interaction requires answers, not a permission bit.
+        if (toolName === 'AskUserQuestion') {
+          return {
+            behavior: 'deny',
+            message:
+              'Structured user questions are not supported by the tool approval handler.',
+          };
+        }
+        const capability = identifyCapability(toolName);
+        if (basePermission && capability && policy[capability] !== 'ask') {
+          return basePermission(toolName, input, context);
+        }
+        if (
+          !context?.toolUseID ||
+          !(await awaitProviderInitialization(context.signal))
+        ) {
+          return {
+            behavior: 'deny',
+            message: 'The native session was unavailable for host approval.',
+          };
+        }
+        // Explicit grants and native policy resolve before canUseTool. Any
+        // remaining callback is an ask, including unknown future tool names.
+        const { signal: nativeSignal, toolUseID, ...details } = context;
+        const decision = await approvals.request(
+          {
+            sessionId,
+            toolUseId: toolUseID,
+            toolName,
+            input,
+            details,
+            ...(context.decisionReason || context.blockedPath
+              ? {
+                  reason: [
+                    context.decisionReason,
+                    context.blockedPath
+                      ? `Blocked path: ${context.blockedPath}`
+                      : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join('\n'),
+                }
+              : {}),
+            choices: ['allow_once', 'deny'],
+          },
+          nativeSignal,
+        );
+        return decision === 'allow_once'
+          ? { behavior: 'allow', updatedInput: input }
+          : {
+              behavior: 'deny',
+              message:
+                'The host declined this tool request or its approval expired.',
+            };
+      };
+    }
+
     const startTime = Date.now();
     let doneYielded = false;
     let initYielded = false;
@@ -1489,10 +1605,18 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     const toolNames = new Map<string, string>();
 
     try {
-      for await (const message of sdk.query({
-        prompt: sdkPrompt,
-        options: queryOptions,
-      })) {
+      for await (const item of approvalEvents.merge(
+        sdk.query({ prompt: sdkPrompt, options: queryOptions }),
+        () => approvals.close(),
+        () => {
+          if (!doneYielded) queryOptions.abortController?.abort();
+        },
+      )) {
+        if ('event' in item) {
+          yield item.event;
+          continue;
+        }
+        const message = item.message;
         const messageType = isObjectWithType(message)
           ? message.type
           : undefined;
@@ -1520,6 +1644,8 @@ export class ClaudeCodeAdapter implements AgentAdapter<
           if ((subtype !== undefined && subtype !== 'init') || initYielded) {
             continue;
           }
+          providerReady = true;
+          resolveProviderReady(true);
           const fastMode = readFastModeObservation(system);
           const reportedModel = asString(system.model);
           yield createEvent(
@@ -1761,6 +1887,8 @@ export class ClaudeCodeAdapter implements AgentAdapter<
           if (isInternalNoOpResult) {
             continue;
           }
+          approvals.close();
+          yield* approvalEvents.drain();
 
           const durationMs =
             typeof result.durationMs === 'number'
@@ -1786,6 +1914,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<
             );
           }
 
+          doneYielded = true;
           yield createEvent(
             'done',
             AGENT,
@@ -1804,7 +1933,6 @@ export class ClaudeCodeAdapter implements AgentAdapter<
             },
             sessionId,
           );
-          doneYielded = true;
           return;
         }
 
@@ -1869,6 +1997,8 @@ export class ClaudeCodeAdapter implements AgentAdapter<
         );
       }
     } catch (error) {
+      approvals.close();
+      yield* approvalEvents.drain();
       if (queryOptions.abortController?.signal.aborted) {
         yield createEvent(
           'done',
@@ -1920,6 +2050,8 @@ export class ClaudeCodeAdapter implements AgentAdapter<
         sessionId,
       );
     } finally {
+      resolveProviderReady(false);
+      approvals.close();
       cleanupAbort();
     }
   }

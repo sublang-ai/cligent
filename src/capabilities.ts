@@ -6,6 +6,7 @@ import { normalizeMcpServers, type McpOptions } from './mcp.js';
 import type { AgentOptions, RunOptions } from './types.js';
 
 export type CapabilityRestriction =
+  | 'unsupported-transport'
   | 'unsupported-host'
   | 'unsupported-server-mode'
   | 'tool-restriction'
@@ -24,6 +25,8 @@ export type CapabilityState =
 export interface AgentCapabilities {
   /** Absent means unknown; an empty known MIME set means unsupported. */
   readonly attachments?: AttachmentSupport;
+  /** Native host-decision transport; absent means unknown. */
+  readonly approvals?: CapabilityState;
   /** Admission support only, independent of installation, model and account. */
   readonly browser: CapabilityState;
   /** Absent means unknown; an empty known source set means unsupported. */
@@ -37,13 +40,19 @@ export type CapabilityOptions<
   FM extends boolean = boolean,
   SM extends string = string,
   SE extends string = string,
-> = Omit<RunOptions<E, FM, SM, SE>, 'attachments' | 'resume'>;
+> = Omit<
+  RunOptions<E, FM, SM, SE>,
+  'attachments' | 'resume' | 'approvalHandler'
+>;
 export type AdapterCapabilityOptions<
   E extends string = string,
   FM extends boolean = boolean,
   SM extends string = string,
   SE extends string = string,
-> = Omit<AgentOptions<E, FM, SM, SE>, 'attachments' | 'resume'>;
+> = Omit<
+  AgentOptions<E, FM, SM, SE>,
+  'attachments' | 'resume' | 'approvalHandler'
+>;
 export interface BrowserSetupProgress {
   readonly stage: 'checking' | 'installing' | 'launching';
 }
@@ -124,6 +133,15 @@ export async function describeCapabilities(
   return Object.freeze({
     attachments: getAttachmentSupport(agent),
     browser: Object.freeze(browser),
+    approvals: Object.freeze(
+      agent === 'codex' || agent === 'gemini'
+        ? {
+            status: 'unsupported' as const,
+            code: 'unsupported-transport' as const,
+            message: `${agent === 'codex' ? 'Codex exec SDK' : 'Gemini NDJSON'} cannot return live host permission decisions.`,
+          }
+        : { status: 'supported' as const },
+    ),
     media: Object.freeze({
       sources: Object.freeze(
         agent === 'gemini' ? [] : (['base64', 'uri'] as const),

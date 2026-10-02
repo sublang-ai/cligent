@@ -11,6 +11,7 @@ import { generateSessionId } from './events.js';
 import {
   safeReturn,
   nextWithAbortDrain,
+  readAdapterDoneAfterAbort,
   makeSynthDone,
   makeSynthError,
   recordObservedToolUse,
@@ -88,11 +89,13 @@ export async function* runAgent(
     while (true) {
       let result: IteratorResult<AgentEvent, void>;
       let abortDone: AgentEvent | undefined;
+      let approvalResponses: AgentEvent[] = [];
       let aborted = false;
       try {
         const next = await nextWithAbortDrain(gen, signal);
         result = next.result;
         abortDone = next.abortDone;
+        approvalResponses = next.approvalResponses ?? [];
         aborted = next.aborted;
       } catch (err) {
         // Adapter threw
@@ -109,6 +112,7 @@ export async function* runAgent(
 
       // Check abort after awaiting
       if (aborted) {
+        for (const event of approvalResponses) yield event;
         if (!doneYielded) {
           if (abortDone) {
             lastSessionId = abortDone.sessionId;
@@ -205,8 +209,12 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
     return;
   }
 
+  const groupAbort = new AbortController();
   const states: (AdapterState | null)[] = tasks.map((task) => ({
-    gen: task.adapter.run(task.prompt, task.options),
+    gen: task.adapter.run(task.prompt, {
+      ...task.options,
+      abortSignal: groupAbort.signal,
+    }),
     agent: task.adapter.agent,
     startTime: Date.now(),
     sessionId: generateSessionId(),
@@ -242,15 +250,30 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
   const abortCleanups: (() => void)[] = [];
 
   for (const signal of signals) {
-    const onAbort = () => resolveAbort?.();
+    const onAbort = () => {
+      groupAbort.abort();
+      resolveAbort?.();
+    };
     signal.addEventListener('abort', onAbort, { once: true });
     abortCleanups.push(() => signal.removeEventListener('abort', onAbort));
   }
 
-  function yieldInterruptedAndCleanup(): AgentEvent[] {
-    const events: AgentEvent[] = [];
-    for (const state of states) {
-      if (state && !state.doneYielded) {
+  async function interruptedAndCleanup(): Promise<AgentEvent[]> {
+    const perTask = await Promise.all(
+      states.map(async (state, index) => {
+        if (!state || state.doneYielded) return [];
+        const events: AgentEvent[] = [];
+        const pendingRead = pending.get(index);
+        if (pendingRead) {
+          await readAdapterDoneAfterAbort(
+            state.gen,
+            pendingRead.then((next) => {
+              if (next.isError) throw next.error;
+              return next.result!;
+            }),
+            events,
+          );
+        }
         events.push(
           makeSynthDone(
             state.agent,
@@ -262,9 +285,10 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
         );
         state.doneYielded = true;
         safeReturn(state.gen);
-      }
-    }
-    return events;
+        return events;
+      }),
+    );
+    return perTask.flat();
   }
 
   // Start initial promises
@@ -274,10 +298,13 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
 
   try {
     while (pending.size > 0) {
-      const raceResult = await Promise.race([...pending.values(), abortPromise]);
+      const raceResult = await Promise.race([
+        ...pending.values(),
+        abortPromise,
+      ]);
 
       if (raceResult === abortSentinel) {
-        for (const evt of yieldInterruptedAndCleanup()) yield evt;
+        for (const evt of await interruptedAndCleanup()) yield evt;
         return;
       }
 
@@ -357,6 +384,7 @@ export async function* runParallel<const T extends readonly ParallelTask[]>(
       scheduleNext(index);
     }
   } finally {
+    groupAbort.abort();
     for (const cleanup of abortCleanups) cleanup();
     for (const state of states) {
       if (state) safeReturn(state.gen);

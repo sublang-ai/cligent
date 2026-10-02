@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Per-call `approvalHandler` pauses unresolved native tool asks in Claude,
+  Kimi, and OpenCode for a host's one-time allowance or denial. Typed request
+  and response events preserve the exact action, bounded deadline, cancellation,
+  and native outcome distinction; unsupported transports retain their existing
+  behavior — DR-034.
+- Approval capability discovery and attributed tmux Captain/player callbacks let
+  embedding hosts provide their own approval UI without storing grants or
+  exposing hidden control calls. Native hard denies and scoped MCP authorization
+  remain unchanged.
+
+### Fixed
+
+- Parallel cancellation now closes every pending native approval and preserves
+  approval response events during the bounded abort drain.
+
 ## [0.32.0] - 2026-10-01
 
 ### Added

@@ -83,6 +83,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify portable live approval lifecycle
+        run: npm run test:approvals
       - name: Prepare managed browser prerequisites
         if: runner.os == 'Linux'
         shell: bash

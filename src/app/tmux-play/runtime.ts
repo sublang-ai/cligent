@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { randomUUID } from 'node:crypto';
 import type { Attachment } from '../../attachments.js';
 import { normalizeMcpServers, type McpServers } from '../../mcp.js';
 import type { Cligent } from '../../cligent.js';
 import type {
+  ApprovalHandler,
   CligentEvent,
   DonePayload,
   Effort,
@@ -52,6 +54,7 @@ import {
   type RecordVisibility,
   type RunStatus,
   type RunTmuxPlayOptions,
+  type TmuxPlayApprovalHandler,
 } from './contract.js';
 import {
   ObserverDispatchError,
@@ -81,6 +84,7 @@ interface ActiveTurn {
 }
 
 interface RunCligentCallOptions {
+  readonly approvalHandler?: ApprovalHandler;
   readonly cligent: Cligent<string, boolean, string, string>;
   readonly prompt: string;
   readonly attachments?: readonly Attachment[];
@@ -129,6 +133,7 @@ interface EffectiveAgentCallSettings extends ConfiguredAgentCallSettings {
 
 export class TmuxPlayRuntime {
   private readonly captain: Captain;
+  private readonly approvalHandler: TmuxPlayApprovalHandler | undefined;
   private readonly captainCligent: Cligent;
   private readonly captainSettings: ConfiguredAgentCallSettings;
   private readonly playerHandles: readonly PlayerHandle[];
@@ -154,6 +159,7 @@ export class TmuxPlayRuntime {
     captainCligent: Cligent,
   ) {
     this.captain = options.captain;
+    this.approvalHandler = options.approvalHandler;
     this.captainCligent = captainCligent;
     this.captainSettings = {
       model: options.captainConfig.model,
@@ -501,6 +507,7 @@ export class TmuxPlayRuntime {
 
       const call = await runCligentCall({
         cligent: player.cligent,
+        approvalHandler: this.approvalForInvocation(turn, playerId),
         prompt,
         attachments,
         model: settings.model,
@@ -577,6 +584,10 @@ export class TmuxPlayRuntime {
 
       const call = await runCligentCall({
         cligent: this.captainCligent,
+        approvalHandler:
+          visibility === 'visible' && options?.allowedTools?.length !== 0
+            ? this.approvalForInvocation(turn, 'captain')
+            : undefined,
         prompt,
         attachments,
         model: settings.model,
@@ -619,6 +630,17 @@ export class TmuxPlayRuntime {
     } finally {
       release();
     }
+  }
+
+  private approvalForInvocation(
+    turn: BossTurn,
+    actorId: string,
+  ): ApprovalHandler | undefined {
+    const handler = this.approvalHandler;
+    if (!handler) return undefined;
+    const invocationId = randomUUID();
+    return (request, context) =>
+      handler({ request, turnId: turn.id, actorId, invocationId }, context);
   }
 
   private emit(record: Parameters<RecordDispatcher['emit']>[0]): Promise<void> {
@@ -960,6 +982,9 @@ async function runCligentCall(
     composePrompt(options.instruction, options.prompt),
     {
       abortSignal: options.signal,
+      ...(options.approvalHandler
+        ? { approvalHandler: options.approvalHandler }
+        : {}),
       model: options.model,
       effort: options.effort,
       fastMode: options.fastMode,

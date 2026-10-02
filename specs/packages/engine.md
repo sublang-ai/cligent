@@ -21,7 +21,7 @@ Per [DR-003](../decisions/003-role-scoped-session-management.md), the `Cligent` 
 | --- | --- |
 | `AgentAdapter` | required adapter |
 | `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `subagentModel`, `subagentEffort`, `mcpServers`, `browser`, `allowedTools`, and `disallowedTools` |
-| `abortSignal`, `resume`, and `attachments` | excluded from instance defaults and available only in `RunOptions` |
+| `abortSignal`, `resume`, `attachments`, and the live `approvalHandler` | excluded from instance defaults and available only per invocation in `RunOptions` [[approvals-1](approvals.md#approvals-1)] |
 
 ### engine-2
 
@@ -38,7 +38,7 @@ When `Cligent.run()` resolves instance defaults and per-call overrides, it shall
 | `mcpServers` | replace the instance map with a provided per-call map, including an empty one |
 | `allowedTools` or `disallowedTools` | replace the instance array with a provided per-call array, including an empty one |
 | `fastMode`, `subagentModel`, `subagentEffort`, or another scalar shared by both option types | use the per-call value when provided, including `false`, otherwise the instance default |
-| `abortSignal`, `resume`, or `attachments` | accept only the per-call value because these fields do not exist in instance defaults |
+| `abortSignal`, `resume`, `attachments`, or `approvalHandler` | accept only the per-call value because these fields do not exist in instance defaults, including the live handler [[approvals-1](approvals.md#approvals-1)] |
 
 ### engine-4
 
@@ -117,7 +117,8 @@ When an abort interrupts a pending adapter read, `run()` shall drain for at most
 
 | Drain result | Outcome |
 | --- | --- |
-| non-terminal event | suppress it and continue draining within the same deadline |
+| `approval_response` | preserve the host-decision audit event [[approvals-4](approvals.md#approvals-4)] before terminal selection |
+| other non-terminal event | suppress it and continue draining within the same deadline |
 | adapter-emitted `done` | yield and process that event normally, including [[engine-5](#engine-5)] resume-token capture, before generator cleanup |
 | no `done` before the deadline | synthesize `done` with `status: 'interrupted'`, preserving a non-empty inbound `resume` token when present and never fabricating one from a non-terminal event `sessionId` |
 
@@ -710,6 +711,15 @@ When a built-in adapter emits `init`, it shall set `InitPayload.reportedModel` t
 
 The `Cligent` instance shall expose context discovery and explicit browser setup through `getCapabilities` and `prepareBrowser`, with an optional `AgentAdapter.getCapabilities` hook and the outcomes defined by [[capabilities-1](capabilities.md#capabilities-1)], option handling defined by [[capabilities-2](capabilities.md#capabilities-2)], and setup sequencing defined by [[capabilities-4](capabilities.md#capabilities-4)] and [[capabilities-5](capabilities.md#capabilities-5)].
 
+### engine-128
+
+When an active raw `runParallel()` pool shuts down through cancellation or consumer teardown, it shall abort every owned invocation so pending host approvals settle fail closed [[approvals-3](approvals.md#approvals-3)] and select its cleanup outcome:
+
+| Cause | Outcome |
+| --- | --- |
+| task cancellation while the consumer remains active | retain whole-pool interruption, collecting approval response audit events [[approvals-4](approvals.md#approvals-4)] within concurrent 500-millisecond drains before interrupted terminals |
+| consumer teardown | close pending callbacks and clean up owned generators without requiring further consumption |
+
 ## Verification
 
 ### engine-123
@@ -959,3 +969,7 @@ Where each built-in adapter's runtime names a model, names none, or names a Clig
 ### engine-127
 
 When a consumer uses instance discovery and setup with built-in and custom adapters, integration checks shall verify the optional adapter hook and both public methods [[engine-126](#engine-126)].
+
+### engine-129
+
+When two real adapters in a raw parallel pool wait on native permission callbacks and one task is cancelled, integration checks shall verify both callbacks abort, both tools remain denied, both response audits precede interrupted completion, and cleanup is bounded [[engine-128](#engine-128)].

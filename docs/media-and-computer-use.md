@@ -291,6 +291,26 @@ Claude's isolation remains deliberate: it keeps unrelated auto-fetched account
 connectors out of each run. The former missing piece was explicit tool admission,
 which `mcpServers` and the managed browser now provide.
 
+## Approval and application access
+
+A host can answer unresolved native tool permissions through a per-call
+[`approvalHandler`](guide.md#live-host-tool-approvals). Claude, Kimi, and the
+current OpenCode transport support it; Codex exec and Gemini NDJSON currently
+report unsupported transport without blocking ordinary calls. The handler does
+not turn an existing native automatic grant into a new human prompt. Explicit
+MCP admission, including `browser: true`, retains its scoped tool authorization,
+subject to the selected native policy.
+
+Codex Desktop's “allow access to Spex” computer-use prompt is consent managed by
+that host application for its app-control integration. It is separate from a
+coding agent's tool permission, macOS Accessibility/Screen Recording settings,
+and Codex's automatic approval review. Cligent does not inherit that consent or
+provide arbitrary native-app control. A host adding such a tool must enforce
+its own application-access grants and operating-system prerequisites; it can
+use live approval callbacks only where the selected native transport actually
+asks for a tool decision. The managed headless browser operates its own browser
+instance and does not request access to the user's native desktop applications.
+
 ## Investigation evidence
 
 The implementation was checked against the repository's targeted transports:

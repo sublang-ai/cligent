@@ -777,7 +777,7 @@ OpenCode `mode: 'auto'` preserves configured permission rules and answers only
 the asks that survive them. After a successful automated `once` reply, the
 event stream includes an `opencode:permission_decision` audit event with the
 native request, permission scope, and tool correlation. It remains distinct
-from `permission_request`, which means a human decision is needed.
+from live `approval_request` events. Legacy `permission_request` is historical telemetry from a request the adapter declined; it is not answerable.
 
 OpenCode does not support explicit `allowedTools` or `disallowedTools`,
 including empty arrays. In OpenCode 1.18.33 the prompt `tools` field is merged
@@ -808,8 +808,64 @@ Kimi has a deliberately narrower headless permission surface:
   before spawn, including empty arrays. `maxTurns` and `maxBudgetUsd` likewise
   fail before spawn because Kimi ACP has no matching per-run controls.
 
-If Kimi still sends an ACP permission request, the headless adapter emits a
-`permission_request` event for observability and rejects the operation.
+Without a per-call handler, a remaining Kimi ACP permission request produces
+historical `permission_request` telemetry and is rejected.
+
+### Live host tool approvals
+
+Pass `approvalHandler` to one `run()` call when your application can present a
+native tool request and return the user's decision. The callback is not a
+constructor default, saved permission policy, or setting carried into the next
+resumed turn. Claude, Kimi, and OpenCode's current pending-permission transport
+support this route. Codex's exec SDK and Gemini's NDJSON transport do not;
+passing a handler still allows their ordinary work to run.
+
+```ts
+import type { ApprovalHandler } from '@sublang/cligent';
+
+// requestApproval is your host's UI/broker: show native tool/input/details,
+// render only request.choices, and close the prompt when signal aborts.
+const approvalHandler: ApprovalHandler = (request, { signal }) =>
+  requestApproval(request, { signal });
+
+for await (const event of agent.run('Perform the requested change', {
+  approvalHandler,
+})) {
+  // Persist approval_request and approval_response with other visible events.
+  // Only tool results establish whether an allowed action actually executed.
+}
+```
+
+`ApprovalRequest` has an opaque invocation-specific `id`, native `agent`,
+`sessionId`, `toolUseId`, `toolName`, detached `input`, optional native `details`
+and `reason`, exact supported `choices`, and epoch-millisecond `createdAt` and
+`expiresAt`. Display the actual action scope, including paths, diffs, native
+permission patterns, or other details when supplied. Treat native descriptions
+as untrusted display content and default the decision UI to denial, without an
+automatic Allow selection or a one-key approval shortcut.
+
+The only decisions are `allow_once` and `deny`; a provider that cannot express a
+unique one-time grant offers only denial. Native allows, hard denials, automatic
+permission modes, and caller-admitted MCP tools keep their existing precedence.
+The callback receives only an unresolved native ask. An `ask` policy is not a
+promise that every tool invokes your callback, and an allowance cannot override
+native policy or isolation.
+
+Every admitted ask emits `approval_request` with the complete request as its
+payload. Its single `approval_response` carries `requestId`, `decision`, and
+`source` (`host`, `timeout`, `cancelled`, or `error`). The ten-minute deadline,
+caller/native cancellation, invocation teardown, malformed answer, and handler
+failure all deny unresolved requests. Late answers have no effect. Timeout or
+cancellation aborts the handler's context signal so the host can remove stale
+controls. A callback rejection is recorded as `error`; exception names do not
+confer a different permission outcome.
+
+Capability discovery returns optional `capabilities.approvals`, using
+`supported`, `unsupported` with code `unsupported-transport`, or `unknown`.
+Absent facts from a custom adapter are unknown. These facts describe transport
+support, not native authorization, account readiness, or automatic human consent.
+Structured forms, Claude `AskUserQuestion`, and persistent “always allow” grants
+are outside this boolean tool-decision API.
 
 ## Parallel execution
 
@@ -904,7 +960,9 @@ for await (const event of agent.run('Fix the login bug', {
 | `thinking`                     | `summary`                                                                            | Agent reasoning                                                          |
 | `tool_use`                     | `toolName`, `toolUseId`, `input`                                                     | Tool invocation                                                          |
 | `tool_result`                  | `toolUseId`, `status`, `output`                                                      | Tool outcome                                                             |
-| `permission_request`           | `toolName`, `toolUseId`, `input`                                                     | Agent asks for permission                                                |
+| `permission_request`           | `toolName`, `toolUseId`, `input`                                                     | Historical fail-closed permission telemetry                                                |
+| `approval_request` | complete `ApprovalRequest` | Live native tool ask being handled by this call's host callback |
+| `approval_response` | `requestId`, `decision`, `source` | Host decision or fail-closed lifecycle outcome; not proof of execution |
 | `opencode:permission_decision` | `requestId`, `permission`, `patterns`, `toolUseId`, `decision`, `automated`, `input` | Successful OpenCode auto approval audit                                  |
 | `codex:usage`                  | `status`, `reason`, `resumed`, `threadId?`, `snapshot?`, `baseline?`, `delta?` | Native terminal token-accounting decision |
 | `error`                        | `code`, `message`, `recoverable`                                                     | Error                                                                    |

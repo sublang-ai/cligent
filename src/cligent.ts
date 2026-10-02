@@ -293,6 +293,7 @@ export class Cligent<
       allowedTools: merged.allowedTools,
       disallowedTools: merged.disallowedTools,
       attachments: overrides?.attachments,
+      approvalHandler: overrides?.approvalHandler,
       mcpServers: merged.mcpServers,
       browser: merged.browser,
       abortSignal: merged.abortSignal,
@@ -329,11 +330,13 @@ export class Cligent<
         while (true) {
           let result: IteratorResult<AgentEvent, void>;
           let abortDone: AgentEvent | undefined;
+          let approvalResponses: AgentEvent[] = [];
           let aborted = false;
           try {
             const next = await nextWithAbortDrain(gen, signal);
             result = next.result;
             abortDone = next.abortDone;
+            approvalResponses = next.approvalResponses ?? [];
             aborted = next.aborted;
           } catch (err) {
             // Adapter threw (engine-8)
@@ -358,6 +361,8 @@ export class Cligent<
 
           // Active abort after bounded drain (engine-34, engine-35)
           if (aborted) {
+            for (const event of approvalResponses)
+              yield injectRole(event, role);
             if (!doneYielded) {
               if (abortDone) {
                 lastSessionId = abortDone.sessionId;

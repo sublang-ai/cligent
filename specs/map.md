@@ -59,11 +59,13 @@ meta.md       The spec of specs
 | [DR-031](decisions/031-media-input-and-computer-use.md) | 031-media-input-and-computer-use.md | Per-call local media attachments and native prompt-driven computer use |
 | [DR-032](decisions/032-browser-tools-and-media-output.md) | 032-browser-tools-and-media-output.md | Caller-selected MCP tools, managed browser setup, and normalized media output |
 | [DR-033](decisions/033-host-capabilities-and-browser-readiness.md) | 033-host-capabilities-and-browser-readiness.md | Contextual host capability facts, browser launch proof, and Electron child invocation |
+| [DR-034](decisions/034-live-host-tool-approvals.md) | 034-live-host-tool-approvals.md | Per-invocation native tool approval handlers, bounded lifecycle and honest transport capabilities |
 
 ## Packages
 
 | File | Summary |
 | --- | --- |
+| [approvals.md](packages/approvals.md) | Live tool approval requests, host decisions and bounded lifecycle |
 | [capabilities.md](packages/capabilities.md) | Contextual capability discovery and browser preparation |
 | [claude-code.md](packages/adapters/claude-code.md) | Claude Code SDK adapter |
 | [attachments.md](packages/attachments.md) | Local-file attachment inputs, validation, and transport discovery |
