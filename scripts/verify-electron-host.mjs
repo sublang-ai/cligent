@@ -79,7 +79,12 @@ if (!process.argv.includes('--cligent-electron-host')) {
     if (staged)
       await Promise.all(
         [staged, `${staged}.asar`, `${staged}.asar.unpacked`].map((path) =>
-          rm(path, { recursive: true, force: true }),
+          rm(path, {
+            recursive: true,
+            force: true,
+            maxRetries: 20,
+            retryDelay: 100,
+          }),
         ),
       );
   }
@@ -414,7 +419,13 @@ if (!process.argv.includes('--cligent-electron-host')) {
         controller.abort();
         provider.closeAllConnections();
         await new Promise((resolve) => provider.close(resolve));
-        await rm(directory, { recursive: true, force: true });
+        // Native background tasks may release home/cache handles just after done.
+        await rm(directory, {
+          recursive: true,
+          force: true,
+          maxRetries: 20,
+          retryDelay: 100,
+        });
       }
       app.exit(0);
     } catch (error) {
