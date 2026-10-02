@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-01
+
 ### Added
 
 - Per-call `approvalHandler` pauses unresolved native tool asks in Claude,
@@ -763,7 +765,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/sublang-ai/cligent/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/sublang-ai/cligent/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/sublang-ai/cligent/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/sublang-ai/cligent/compare/v0.29.0...v0.30.0
