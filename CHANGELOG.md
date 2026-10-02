@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fresh Claude sessions use `Cligent <session UUID>` as their native history
+  title, replacing automatic prose title generation that can use an ancillary
+  model. Resumed sessions keep their persisted title and identity.
+
 ## [0.33.1] - 2026-10-02
 
 ### Fixed

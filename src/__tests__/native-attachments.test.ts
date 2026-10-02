@@ -67,6 +67,7 @@ const lines = createInterface({ input: process.stdin });
 lines.on('line', (line) => {
   const message = JSON.parse(line);
   if (message.type === 'control_request') {
+    appendFileSync(recording, JSON.stringify(message) + '\\n');
     send({ type: 'control_response', response: {
       subtype: 'success', request_id: message.request_id, response: {}
     } });
@@ -146,6 +147,57 @@ process.stdin.on('end', () => {
 }
 
 describe('native attachment SDK transports', () => {
+  it('names fresh Claude sessions through installed SDK initialization and preserves resumed titles (claude-code-82)', async () => {
+    const { root } = await fixtureFiles();
+    const { adapter, recording } = await claudeFixture(root);
+    const client = new Cligent(adapter, { cwd: root });
+    for (const [prompt, options] of [
+      ['Private task text must not become a native title.', {}],
+      ['Continue the persisted session.', {}],
+      ['Start another session.', { resume: false }],
+    ] as const) {
+      const events = await collect(client.run(prompt, options));
+      expect(events.at(-1)).toMatchObject({
+        type: 'done',
+        payload: { status: 'success', resumeToken: SESSION_ID },
+      });
+    }
+    const lines = await recordedLines(recording);
+    const launches = lines.filter((line) => Array.isArray(line.args));
+    const initializations = lines.filter(
+      (line) =>
+        line.type === 'control_request' &&
+        (line.request as Record<string, unknown>)?.subtype === 'initialize',
+    );
+    expect(launches).toHaveLength(3);
+    expect(initializations).toHaveLength(3);
+    const freshIds: string[] = [];
+    for (const index of [0, 2]) {
+      const args = launches[index].args as string[];
+      const id = args
+        .find((arg) => arg.startsWith('--session-id='))
+        ?.slice('--session-id='.length);
+      expect(id).toMatch(/^[0-9a-f-]{36}$/);
+      freshIds.push(id!);
+      expect(initializations[index].request).toMatchObject({
+        title: `Cligent ${id}`,
+      });
+      expect(args.some((arg) => arg.startsWith('--resume='))).toBe(false);
+    }
+    expect(freshIds[0]).not.toBe(freshIds[1]);
+    expect(launches[1].args).toEqual(
+      expect.arrayContaining([`--resume=${SESSION_ID}`]),
+    );
+    expect(
+      (launches[1].args as string[]).some((arg) =>
+        arg.startsWith('--session-id='),
+      ),
+    ).toBe(false);
+    expect(
+      (initializations[1].request as Record<string, unknown>).title,
+    ).toBeUndefined();
+  });
+
   it('sends Claude images and PDF bytes through the installed SDK and resumes without resending attachments (claude-code-72)', async () => {
     const { root, png, pdf } = await fixtureFiles();
     const { adapter, recording, calls } = await claudeFixture(root);

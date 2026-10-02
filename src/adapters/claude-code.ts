@@ -201,6 +201,7 @@ interface ClaudeQueryOptions {
   systemPrompt?: ClaudeSystemPrompt;
   agents?: Record<string, ClaudeAgentDefinition>;
   sessionId?: string;
+  title?: string;
 }
 
 interface ClaudeAgentSdk {
@@ -1486,6 +1487,9 @@ export class ClaudeCodeAdapter implements AgentAdapter<
       // fresh runs a stable id once Claude persists the conversation, but an
       // init-only abort is not resumable yet.
       queryOptions.sessionId = sessionId;
+      // claude-code-81: an explicit non-sensitive title avoids asking the
+      // native CLI to infer a label on a model other than the selected one.
+      queryOptions.title = `Cligent ${sessionId}`;
     }
 
     let providerReady = false;
