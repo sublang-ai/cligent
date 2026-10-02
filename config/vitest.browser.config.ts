@@ -11,6 +11,7 @@ export default defineConfig({
       'src/browser.acceptance.test.ts',
       'src/__tests__/claude-browser.acceptance.test.ts',
       'src/adapters/codex-mcp.acceptance.test.ts',
+      'src/adapters/gemini-attachments.acceptance.test.ts',
     ],
     fileParallelism: false,
   },

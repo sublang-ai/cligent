@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { describeCapabilities, CapabilityError } from '../capabilities.js';
+
 import { execFile, spawn } from 'node:child_process';
 import type {
   ChildProcessWithoutNullStreams,
@@ -12,10 +14,14 @@ import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
-import { prepareAttachments } from '../attachments.js';
+import {
+  assertGeminiAttachmentContext,
+  prepareGeminiAttachments,
+} from './gemini-attachments.js';
 import {
   normalizeMcpServers,
   prepareMcpServers,
+  withMcpResources,
   type McpServers,
 } from '../mcp.js';
 import { assertSupportedEffort } from '../effort.js';
@@ -1533,6 +1539,34 @@ function buildInitPayload(
   };
 }
 
+async function assertGeminiBrowserContext(
+  options?: AgentOptions<GeminiEffort>,
+): Promise<void> {
+  const context = {
+    cwd: resolve(options?.cwd ?? process.cwd()),
+    env: process.env,
+  };
+  const realHome = geminiRealHome(context);
+  if (
+    (await comparablePath(context.cwd)) === (await comparablePath(realHome))
+  ) {
+    throw new CapabilityError(
+      'workspace-is-home',
+      'Gemini per-run MCP servers require a working directory different from its user home',
+    );
+  }
+  const userSettings = await readGeminiSettingsFile(
+    join(realHome, '.gemini', 'settings.json'),
+    'user settings',
+  );
+  if (await geminiSandboxRequested(context, userSettings)) {
+    throw new CapabilityError(
+      'native-sandbox',
+      'Gemini per-run MCP servers cannot be delivered while its native sandbox is enabled',
+    );
+  }
+}
+
 export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
   readonly agent = AGENT;
 
@@ -1562,6 +1596,32 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       deps.createTelemetryCapture ?? defaultCreateTelemetryCapture;
   }
 
+  async getCapabilities(options?: Parameters<GeminiAdapter['run']>[1]) {
+    const capabilities = await describeCapabilities(
+      AGENT,
+      async () => {
+        mapAgentOptionsToGeminiCommand('', options);
+        await assertGeminiBrowserContext(options);
+      },
+      options,
+    );
+    try {
+      assertGeminiAttachmentContext(await realpath(tmpdir()));
+      return capabilities;
+    } catch (error) {
+      return Object.freeze({
+        ...capabilities,
+        attachments: Object.freeze({
+          mimeTypes: Object.freeze([] as string[]),
+          notes:
+            error instanceof Error
+              ? error.message
+              : 'Gemini attachment staging is unavailable',
+        }),
+      });
+    }
+  }
+
   async isAvailable(): Promise<boolean> {
     return this.probeAvailability();
   }
@@ -1570,6 +1630,24 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     prompt: string,
     options?: AgentOptions<GeminiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    const attachmentScope = { cleanup: async () => {} };
+    try {
+      for await (const event of withMcpResources(options, (scoped) =>
+        this.runWithMcpResources(prompt, scoped, attachmentScope),
+      )) {
+        if (event.type === 'done') await attachmentScope.cleanup();
+        yield event;
+      }
+    } finally {
+      await attachmentScope.cleanup();
+    }
+  }
+
+  private async *runWithMcpResources(
+    prompt: string,
+    options: AgentOptions<GeminiEffort> | undefined,
+    attachmentScope: { cleanup(): Promise<void> },
+  ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
     assertBuiltInSubagentEffortOption(
@@ -1577,9 +1655,6 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       options?.subagentModel,
       options?.subagentEffort,
     );
-    if (options?.attachments !== undefined) {
-      await prepareAttachments(AGENT, options.attachments, options.cwd);
-    }
     // engine-25: `isAvailable()` is not on this path. Cligent.run() reaches
     // the adapter directly, so without this a below-floor CLI is spawned and
     // fails mid-turn — the failure mode this work exists to remove.
@@ -1640,6 +1715,21 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     }
 
     try {
+      const attachmentStage = await prepareGeminiAttachments(
+        prompt,
+        options?.attachments,
+        options?.cwd,
+        options?.abortSignal,
+      );
+      attachmentScope.cleanup = attachmentStage.cleanup;
+      mapped.args.splice(
+        -1,
+        1,
+        ...(attachmentStage.directory
+          ? [`--include-directories=${attachmentStage.directory}`]
+          : []),
+        `--prompt=${attachmentStage.prompt}`,
+      );
       const requestedMcp = normalizeMcpServers(options?.mcpServers);
       const context = {
         cwd: resolve(mapped.spawnOptions.cwd?.toString() ?? process.cwd()),
@@ -1649,24 +1739,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         options?.browser === true ||
         Object.keys(requestedMcp ?? {}).length > 0
       ) {
-        const realHome = geminiRealHome(context);
-        if (
-          (await comparablePath(context.cwd)) ===
-          (await comparablePath(realHome))
-        ) {
-          throw new Error(
-            'Gemini per-run MCP servers require a working directory different from its user home',
-          );
-        }
-        const userSettings = await readGeminiSettingsFile(
-          join(realHome, '.gemini', 'settings.json'),
-          'user settings',
-        );
-        if (await geminiSandboxRequested(context, userSettings)) {
-          throw new Error(
-            'Gemini per-run MCP servers cannot be delivered while its native sandbox is enabled',
-          );
-        }
+        await assertGeminiBrowserContext(options);
       }
       const mcpServers = await prepareMcpServers(options);
       if (abortRequested || options?.abortSignal?.aborted) {

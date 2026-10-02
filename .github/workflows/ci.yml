@@ -71,7 +71,10 @@ jobs:
 
   browser:
     needs: ci
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -80,9 +83,32 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Prepare managed browser prerequisites
+        if: runner.os == 'Linux'
         run: node node_modules/playwright/cli.js install-deps chromium
       - name: Verify real browser and agent screenshot loop
+        # This lightweight native suite also verifies Gemini attachment bytes
+        # through a scripted local provider, without paid-model global setup.
+        run: npm install -g @google/gemini-cli@0.61.0
+      - name: Verify native media and browser loops
         run: npm run test:browser
+      - run: npm run build
+      - name: Install separate Electron host proof runtime
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/cligent electron" --no-save --package-lock=false electron@44.0.0 @electron/asar@4.3.1
+          node "$RUNNER_TEMP/cligent electron/node_modules/electron/install.js"
+      - name: Verify Electron main and ASAR native browser loops
+        shell: bash
+        env:
+          CLIGENT_ELECTRON_PACKAGE: ${{ runner.temp }}/cligent electron/node_modules/electron
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a node scripts/verify-electron-host.mjs
+            xvfb-run -a node scripts/verify-electron-host.mjs --packaged
+          else
+            node scripts/verify-electron-host.mjs
+            node scripts/verify-electron-host.mjs --packaged
+          fi
 
   acceptance:
     if: github.event_name == 'push'

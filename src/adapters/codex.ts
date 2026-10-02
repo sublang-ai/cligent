@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { describeCapabilities, CapabilityError } from '../capabilities.js';
+import { nodeChildEnvironment, quoteShellArgument } from '../node-child.js';
+
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,7 +12,11 @@ import { TextDecoder } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
 import { prepareAttachments } from '../attachments.js';
 import { mediaFromMcpContent } from '../media.js';
-import { normalizeMcpServers, prepareMcpServers } from '../mcp.js';
+import {
+  normalizeMcpServers,
+  prepareMcpServers,
+  withMcpResources,
+} from '../mcp.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -74,6 +81,7 @@ interface CodexConstructorOptions {
     [key: string]: CodexConfigValue;
   };
   env?: Record<string, string>;
+  configOverrides?: string[];
 }
 
 interface CodexItem {
@@ -384,6 +392,12 @@ export function mapPermissionsToCodexOptions(
     return {};
   }
 
+  if (process.platform === 'win32') {
+    throw new CapabilityError(
+      'unsupported-permissions',
+      'Native Windows Codex explicit permission isolation is unsupported; omit the policy or use a supported host',
+    );
+  }
   const defaultPermissions = codexDefaultPermissions(policy);
   const writablePaths = mapWritablePathsPermission(
     policy,
@@ -695,7 +709,8 @@ function assertCodexToolRestrictionsSupported(
     return;
   }
 
-  throw new Error(
+  throw new CapabilityError(
+    'tool-restriction',
     'CodexAdapter cannot enforce explicit allowedTools or disallowedTools ' +
       'with the supported Codex SDK; omit both tool-list options or select ' +
       'an adapter with a provider-enforced tool restriction surface.',
@@ -1267,8 +1282,14 @@ export async function createCodexConfigOverrideWrapper(
   const codexBinPath = resolveCodexBinPath();
   const dir = await mkdtemp(join(tmpdir(), 'cligent-codex-config-'));
   const scriptPath = join(dir, 'codex-wrapper.mjs');
-  const wrapperPath =
-    process.platform === 'win32' ? join(dir, 'codex-wrapper.cmd') : scriptPath;
+  if (process.platform === 'win32') {
+    await rm(dir, { recursive: true, force: true });
+    throw new CapabilityError(
+      'unsupported-permissions',
+      'Native Windows Codex executable wrappers are unsupported',
+    );
+  }
+  const wrapperPath = join(dir, 'codex-wrapper.sh');
 
   await writeFile(
     scriptPath,
@@ -1276,15 +1297,15 @@ export async function createCodexConfigOverrideWrapper(
     'utf8',
   );
 
-  if (process.platform === 'win32') {
-    await writeFile(
-      wrapperPath,
-      `@echo off\r\n"${process.execPath}" "${scriptPath}" %*\r\n`,
-      'utf8',
-    );
-  } else {
-    await chmod(scriptPath, 0o700);
-  }
+  const environment = Object.entries(nodeChildEnvironment())
+    .map(([key, value]) => `${key}=${quoteShellArgument(value)} `)
+    .join('');
+  await writeFile(
+    wrapperPath,
+    `#!/bin/sh\n${environment}exec ${quoteShellArgument(process.execPath)} ${quoteShellArgument(scriptPath)} "$@"\n`,
+    'utf8',
+  );
+  await chmod(wrapperPath, 0o700);
 
   return {
     path: wrapperPath,
@@ -1464,6 +1485,17 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
    * the launcher spawns is installed. An importable SDK whose optional
    * platform package npm dropped is not available, since its first run
    * fails on "Missing optional dependency". */
+  getCapabilities(options?: Parameters<CodexAdapter['run']>[1]) {
+    return describeCapabilities(
+      AGENT,
+      async () => {
+        const mapped = mapAgentOptionsToCodexOptions(options);
+        mapped.cleanupAbort();
+      },
+      options,
+    );
+  }
+
   async isAvailable(): Promise<boolean> {
     try {
       await this.loadSdk();
@@ -1477,6 +1509,15 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     prompt: string,
     options?: AgentOptions<CodexEffort, boolean>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    yield* withMcpResources(options, (scoped) =>
+      this.runWithMcpResources(prompt, scoped),
+    );
+  }
+
+  private async *runWithMcpResources(
+    prompt: string,
+    options?: AgentOptions<CodexEffort, boolean>,
+  ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
     assertBuiltInSubagentEffortOption(
@@ -1485,6 +1526,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       options?.subagentEffort,
     );
     assertCodexToolRestrictionsSupported(options);
+    mapPermissionsToCodexOptions(options?.permissions);
     const resumeSessionId = asString(options?.resume);
     const attachmentPreparationStart = Date.now();
     let sdkPrompt: Parameters<NonNullable<CodexThread['runStreamed']>>[0] =
@@ -1562,7 +1604,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     let codexConfigWrapper: CodexConfigOverrideWrapper | undefined;
     try {
       codexConfigWrapper = await createCodexConfigOverrideWrapper(
-        codexCliConfigOverrides ?? [],
+        [],
         codexCliExecArgs ?? [],
       );
     } catch (err) {
@@ -1571,12 +1613,29 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       cleanupAbort();
       throw err;
     }
-    const effectiveCodexOptions = codexConfigWrapper
-      ? {
-          ...codexOptions,
-          codexPathOverride: codexConfigWrapper.path,
-        }
-      : codexOptions;
+    // The SDK's spawn path remains virtual when its JS is inside an ASAR.
+    // Use the same SDK-owned native binary the readiness probe resolved in
+    // the host's unpacked tree; ordinary Node callers retain SDK selection.
+    const packagedExecutable =
+      process.versions.electron && executable.path.includes('.asar.unpacked')
+        ? executable.path
+        : undefined;
+    const effectiveCodexOptions =
+      codexConfigWrapper ||
+      codexCliConfigOverrides?.length ||
+      packagedExecutable
+        ? {
+            ...codexOptions,
+            ...(codexCliConfigOverrides?.length
+              ? { configOverrides: [...codexCliConfigOverrides] }
+              : {}),
+            ...(codexConfigWrapper
+              ? { codexPathOverride: codexConfigWrapper.path }
+              : packagedExecutable
+                ? { codexPathOverride: packagedExecutable }
+                : {}),
+          }
+        : codexOptions;
     let cleanedUp = false;
     const cleanupCodexRun = async (): Promise<void> => {
       if (cleanedUp) return;

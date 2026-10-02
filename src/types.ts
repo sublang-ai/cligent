@@ -56,9 +56,7 @@ export type FastModeDisabledReason =
 
 export type FastModeResponseSpeed = 'standard' | 'fast';
 
-export interface FastModeObservation<
-  RS extends FastModeResponseSpeed = never,
-> {
+export interface FastModeObservation<RS extends FastModeResponseSpeed = never> {
   state?: FastModeState;
   disabledReason?: FastModeDisabledReason;
   responseSpeed?: RS;
@@ -167,9 +165,7 @@ export interface TokenUsage {
 }
 
 export type UsageCostSource =
-  | 'agent-estimate'
-  | 'provider-reported'
-  | 'account-estimate';
+  'agent-estimate' | 'provider-reported' | 'account-estimate';
 
 /** Cost reported by an upstream runtime. Cligent never computes this value. */
 export interface UsageCost {
@@ -302,6 +298,17 @@ export interface AgentAdapter<
   ): AsyncGenerator<AgentEvent, void, void>;
 
   isAvailable(): Promise<boolean>;
+
+  getCapabilities?(
+    options?: import('./capabilities.js').AdapterCapabilityOptions<
+      E,
+      FM,
+      SM,
+      SE
+    >,
+  ):
+    | import('./capabilities.js').AgentCapabilities
+    | Promise<import('./capabilities.js').AgentCapabilities>;
 }
 
 export interface AgentOptions<

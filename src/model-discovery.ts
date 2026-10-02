@@ -9,6 +9,7 @@ import {
   type AgentRuntimeName,
 } from './runtime-targets.js';
 import { assertRuntimeSupported } from './runtime-version.js';
+import { nodeChildEnvironment } from './node-child.js';
 
 export interface DiscoveredModel {
   readonly id: string;
@@ -624,7 +625,7 @@ class DiscoveryProcess {
         ...process.env,
         ...options.env,
         // Electron's process.execPath needs Node mode for the SDK's JS entry.
-        ...(command.nodeEntry ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+        ...(command.nodeEntry ? nodeChildEnvironment() : {}),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',

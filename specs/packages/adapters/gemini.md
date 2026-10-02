@@ -245,7 +245,20 @@ When `run()` maps permission controls, the adapter shall emit neither deprecated
 
 ### gemini-46
 
-When a run supplies the per-call attachment option [[attachments-1](../attachments.md#attachments-1)], the adapter shall reject a non-empty list before runtime invocation with guidance to use native `@file` prompt references, while absence or an empty list preserves the exact prompt forwarded by [[gemini-3](#gemini-3)], whose native headless processing accepts image, video, audio, PDF, and text references [[19]][[20]].
+When a run supplies the per-call attachment option [[attachments-1](../attachments.md#attachments-1)], the adapter shall prepare the selected files [[attachments-2](../attachments.md#attachments-2)] and deliver an owned snapshot through native `@file` processing [[19]][[20]] according to this matrix:
+
+| Input or phase | Outcome |
+| --- | --- |
+| absent or empty list | preserve the exact prompt forwarded by [[gemini-3](#gemini-3)] |
+| accepted list | snapshot each file in an isolated temporary directory, using an ordered numeric prefix, content digest, and canonical extension for its selected MIME type; append only generated file references to the prompt |
+| native invocation | add only the snapshot directory through `--include-directories`, retaining the requested cwd and the original files unchanged |
+| filename or explicit MIME differing from its extension | transmit the selected snapshot bytes with the selected MIME type; never interpolate the original filename into a generated reference |
+| file exceeding 20 MiB | reject before a provider prompt, including growth discovered while reading |
+| native Windows or a temporary-directory path containing control characters, backslashes, or glob and argument-list metacharacters | reject with a precise contextual diagnostic before provider work; capability discovery reports an empty attachment MIME set with that diagnostic |
+| supported POSIX temporary path containing spaces | escape each space in native `@file` syntax without shell interpretation |
+| terminal, failure, cancellation, or abandoned stream | release the snapshot, before yielding a terminal event when one is emitted |
+
+Transport acceptance remains independent of model eligibility and the validity of a file's encoded media.
 
 ### gemini-7
 
@@ -507,7 +520,11 @@ When a real fixture subprocess reads its per-run Gemini settings and policy file
 
 ### gemini-47
 
-When the adapter runs with attachment options, its process integration shall verify that a non-empty list rejects before spawn with `@file` guidance and that omitted and empty lists pass media and document references unchanged in the final prompt argument [[gemini-46](#gemini-46)].
+When integration tests run with supplied attachment values, they shall verify snapshot identity and order, explicit MIME canonicalization, unchanged cwd and originals, omitted and empty-list prompt preservation, size and contextual rejection before spawn, cancellation, and snapshot cleanup before terminal delivery [[gemini-46](#gemini-46)].
+
+### gemini-50
+
+Where the pinned native CLI is installed, when an isolated loopback provider records the real adapter invocation, the acceptance test shall verify exact bytes, MIME types, and ordering for every advertised media format, source filenames containing spaces and glob characters, an extension overridden by MIME, a space-bearing temporary directory, unchanged cwd, and snapshot cleanup [[gemini-46](#gemini-46)].
 
 ### gemini-201
 

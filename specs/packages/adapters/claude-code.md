@@ -503,6 +503,7 @@ When the adapter locates the native binary the Claude Agent SDK spawns, it shall
 | any other platform | `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` |
 
 - The binary is the package's `claude` file, `claude.exe` on Windows.
+- Archived Electron layouts select the physical unpacked binary through [[mcp-12](../mcp.md#mcp-12)] and pass it as the SDK's `pathToClaudeCodeExecutable` option so native spawning does not receive an ASAR path.
 - The SDK's location is the ESM loader's file resolution of the SDK where available, else the SDK manifest on the adapter's module search paths, canonicalized through symbolic links to the SDK's physical tree.
 - Where no candidate's binary exists, the SDK publishes no native binary for the host only when its manifest, the nearest `package.json` at or above the SDK's location, is the SDK's and declares at least one optional dependency, none of them a candidate package; a manifest that is unreadable, is not the SDK's, or declares no optional dependency — the field absent, empty, or not a map — is no such evidence.
 

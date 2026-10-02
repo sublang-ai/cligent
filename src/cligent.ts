@@ -21,6 +21,12 @@ import {
   recordObservedToolUse,
 } from './protocol.js';
 import { generateSessionId } from './events.js';
+import type {
+  AgentCapabilities,
+  CapabilityOptions,
+  BrowserSetupOptions,
+  BrowserSetupResult,
+} from './capabilities.js';
 
 type AnyCligent = Cligent<string, boolean, string, string>;
 type CligentParameters<C extends AnyCligent> =
@@ -105,9 +111,7 @@ function mergeOptions<
     maxBudgetUsd: overrides.maxBudgetUsd ?? defaults.maxBudgetUsd,
     effort: overrides.effort ?? defaults.effort,
     fastMode:
-      overrides.fastMode !== undefined
-        ? overrides.fastMode
-        : defaults.fastMode,
+      overrides.fastMode !== undefined ? overrides.fastMode : defaults.fastMode,
     subagentModel:
       overrides.subagentModel !== undefined
         ? overrides.subagentModel
@@ -163,6 +167,104 @@ export class Cligent<
 
   get resumeToken(): string | undefined {
     return this._resumeToken;
+  }
+
+  async getCapabilities(
+    options?: CapabilityOptions<E, FM, SM, SE>,
+  ): Promise<AgentCapabilities> {
+    const { merged } = mergeOptions(this.defaults, options);
+    return this.adapter.getCapabilities
+      ? this.adapter.getCapabilities(merged)
+      : { browser: { status: 'unknown' } };
+  }
+
+  async prepareBrowser(
+    options?: BrowserSetupOptions<E, FM, SM, SE>,
+  ): Promise<BrowserSetupResult> {
+    if (
+      options?.onProgress !== undefined &&
+      typeof options.onProgress !== 'function'
+    )
+      throw new TypeError('Browser setup onProgress must be a function');
+    if (
+      options?.timeoutMs !== undefined &&
+      (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)
+    ) {
+      throw new TypeError('Browser setup timeoutMs must be positive');
+    }
+    const controller = new AbortController();
+    const callerSignal = options?.abortSignal;
+    const abort = () => controller.abort();
+    callerSignal?.addEventListener('abort', abort, { once: true });
+    if (callerSignal?.aborted) abort();
+    const deadline = Date.now() + (options?.timeoutMs ?? 195_000);
+    const timer = setTimeout(abort, Math.max(1, deadline - Date.now()));
+    const wait = <T>(pending: Promise<T>): Promise<T> =>
+      new Promise((resolve, reject) => {
+        const cancelled = () => reject(new Error('Browser setup interrupted'));
+        controller.signal.addEventListener('abort', cancelled, { once: true });
+        if (controller.signal.aborted) cancelled();
+        pending
+          .then(resolve, reject)
+          .finally(() =>
+            controller.signal.removeEventListener('abort', cancelled),
+          );
+      });
+    try {
+      if (controller.signal.aborted) return { status: 'cancelled' };
+      options?.onProgress?.({ stage: 'checking' });
+      const capabilities = await wait(
+        this.getCapabilities({ ...options, abortSignal: controller.signal }),
+      );
+      if (capabilities.browser.status !== 'supported') {
+        return {
+          status: 'not-ready',
+          code:
+            capabilities.browser.status === 'unknown'
+              ? 'unknown-capability'
+              : capabilities.browser.code,
+          message:
+            capabilities.browser.message ??
+            'This adapter does not report browser admission support',
+        };
+      }
+      if (!(await wait(this.adapter.isAvailable()))) {
+        return {
+          status: 'not-ready',
+          code: 'runtime-unavailable',
+          message:
+            'The configured agent runtime is unavailable; install or repair it before preparing the browser',
+        };
+      }
+      const { prepareBrowserRuntime } = await import('./browser.js');
+      const result = await prepareBrowserRuntime({
+        ...options,
+        abortSignal: controller.signal,
+        timeoutMs: Math.max(1, deadline - Date.now()),
+      });
+      if (controller.signal.aborted && !callerSignal?.aborted)
+        return {
+          status: 'not-ready',
+          code: 'timeout',
+          message:
+            'Managed browser setup timed out; retry after checking host prerequisites',
+        };
+      return result;
+    } catch (error) {
+      if (callerSignal?.aborted) return { status: 'cancelled' };
+      return {
+        status: 'not-ready',
+        code: controller.signal.aborted ? 'timeout' : 'runtime-unavailable',
+        message: controller.signal.aborted
+          ? 'Managed browser setup timed out'
+          : error instanceof Error
+            ? error.message.slice(-9000)
+            : 'Managed browser setup failed',
+      };
+    } finally {
+      clearTimeout(timer);
+      callerSignal?.removeEventListener('abort', abort);
+    }
   }
 
   async *run(
@@ -361,7 +463,15 @@ export class Cligent<
       observedToolUseIds: new Set<string>(),
     }));
 
-    const pending = new Map<number, Promise<{ index: number; result?: IteratorResult<CligentEvent, void>; error?: unknown; isError: boolean }>>();
+    const pending = new Map<
+      number,
+      Promise<{
+        index: number;
+        result?: IteratorResult<CligentEvent, void>;
+        error?: unknown;
+        isError: boolean;
+      }>
+    >();
 
     function scheduleNext(index: number): void {
       const state = states[index];
@@ -394,10 +504,14 @@ export class Cligent<
           const agentName = task.agent.agentType;
           const taskRole = task.agent.role;
           const sid = generateSessionId();
-          const msg = raceResult.error instanceof Error
-            ? raceResult.error.message
-            : String(raceResult.error);
-          yield injectRole(makeSynthError(agentName, 'PARALLEL_TASK_ERROR', msg, sid), taskRole);
+          const msg =
+            raceResult.error instanceof Error
+              ? raceResult.error.message
+              : String(raceResult.error);
+          yield injectRole(
+            makeSynthError(agentName, 'PARALLEL_TASK_ERROR', msg, sid),
+            taskRole,
+          );
           yield injectRole(
             makeSynthDone(agentName, 'error', sid, Date.now(), {
               toolUses: state?.observedToolUseIds.size ?? 0,

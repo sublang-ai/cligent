@@ -8,6 +8,8 @@
 Accepted (2026-10-01).
 Amends [DR-030](030-players-see-only-their-own-mcp-servers.md) and [DR-031](031-media-input-and-computer-use.md) by admitting caller-selected MCP servers, providing an opt-in managed browser, and exposing native media results.
 
+Amended by [DR-033](033-host-capabilities-and-browser-readiness.md) for contextual discovery, browser launch proof, and owned artifacts.
+
 ## Context
 
 Desktop agents supply their own browser and rendering integrations [[1]][[2]].

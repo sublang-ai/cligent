@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import type { Attachment } from '../../attachments.js';
+import { normalizeMcpServers, type McpServers } from '../../mcp.js';
 import type { Cligent } from '../../cligent.js';
 import type {
   CligentEvent,
@@ -81,6 +83,7 @@ interface ActiveTurn {
 interface RunCligentCallOptions {
   readonly cligent: Cligent<string, boolean, string, string>;
   readonly prompt: string;
+  readonly attachments?: readonly Attachment[];
   readonly model?: string;
   readonly effort?: Effort;
   readonly fastMode?: boolean;
@@ -88,6 +91,8 @@ interface RunCligentCallOptions {
   readonly subagentEffort?: Effort;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
+  readonly browser?: boolean;
+  readonly mcpServers?: McpServers;
   readonly resetPermissionPolicy?: boolean;
   readonly signal: AbortSignal;
   readonly resume?: string | false;
@@ -111,6 +116,8 @@ interface ConfiguredAgentCallSettings {
   readonly subagentEffort?: Effort;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
+  readonly browser?: boolean;
+  readonly mcpServers?: McpServers;
 }
 
 interface EffectiveAgentCallSettings extends ConfiguredAgentCallSettings {
@@ -156,6 +163,8 @@ export class TmuxPlayRuntime {
       subagentEffort: options.captainConfig.subagentEffort,
       instruction: options.captainConfig.instruction,
       permissions: options.captainConfig.permissions,
+      browser: options.captainConfig.browser,
+      mcpServers: snapshotMcpServers(options.captainConfig.mcpServers),
     };
     this.playerHandles = players.map((player) => ({
       id: player.id,
@@ -474,11 +483,14 @@ export class TmuxPlayRuntime {
         subagentEffort: player.subagentEffort,
         instruction: player.instruction,
         permissions: player.permissions,
+        browser: player.browser,
+        mcpServers: player.mcpServers,
       },
       options?.settings,
       resume,
     );
 
+    const attachments = snapshotAttachments(options?.attachments);
     const release = this.admitCall();
     try {
       await this.emit({
@@ -490,6 +502,7 @@ export class TmuxPlayRuntime {
       const call = await runCligentCall({
         cligent: player.cligent,
         prompt,
+        attachments,
         model: settings.model,
         effort: settings.effort,
         fastMode: settings.fastMode,
@@ -497,6 +510,8 @@ export class TmuxPlayRuntime {
         subagentEffort: settings.subagentEffort,
         instruction: settings.instruction,
         permissions: settings.permissions,
+        browser: settings.browser,
+        mcpServers: settings.mcpServers,
         resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
         resume,
@@ -543,10 +558,7 @@ export class TmuxPlayRuntime {
     // lets the tmux presenter skip Boss-pane output while non-presenter
     // observers keep the full trace; the returned result is unaffected.
     const visibility: RecordVisibility = options?.visibility ?? 'visible';
-    const resume = selectAgentCallResume(
-      this.captainCligent,
-      options?.resume,
-    );
+    const resume = selectAgentCallResume(this.captainCligent, options?.resume);
     const settings = resolveAgentCallSettings(
       this.captainCligent.agentType,
       this.captainSettings,
@@ -554,6 +566,7 @@ export class TmuxPlayRuntime {
       resume,
     );
 
+    const attachments = snapshotAttachments(options?.attachments);
     const release = this.admitCall();
     try {
       await this.emit({
@@ -565,6 +578,7 @@ export class TmuxPlayRuntime {
       const call = await runCligentCall({
         cligent: this.captainCligent,
         prompt,
+        attachments,
         model: settings.model,
         effort: settings.effort,
         fastMode: settings.fastMode,
@@ -572,6 +586,8 @@ export class TmuxPlayRuntime {
         subagentEffort: settings.subagentEffort,
         instruction: settings.instruction,
         permissions: settings.permissions,
+        browser: settings.browser,
+        mcpServers: settings.mcpServers,
         resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
         resume,
@@ -924,6 +940,7 @@ export async function createTmuxPlayRuntime(
       role: 'captain',
       permissions: options.captainConfig.permissions,
       browser: options.captainConfig.browser,
+      mcpServers: options.captainConfig.mcpServers,
       effort: options.captainConfig.effort,
       fastMode: options.captainConfig.fastMode,
       subagentModel: options.captainConfig.subagentModel,
@@ -949,6 +966,9 @@ async function runCligentCall(
       subagentModel: options.subagentModel,
       subagentEffort: options.subagentEffort,
       permissions: options.permissions,
+      browser: options.browser,
+      mcpServers: options.mcpServers,
+      attachments: options.attachments,
       ...(options.resetPermissionPolicy
         ? { permissions: createPermissionPolicyReset() }
         : {}),
@@ -1054,6 +1074,8 @@ function resolveAgentCallSettings(
       subagentEffort: snapshot.subagentEffort,
       instruction: snapshot.instruction,
       permissions: snapshot.permissions,
+      browser: snapshot.browser ?? false,
+      mcpServers: snapshot.mcpServers ?? Object.freeze({}),
       explicit: true,
       modelUsesProviderDefault,
       effortUsesProviderDefault,
@@ -1097,7 +1119,9 @@ function snapshotAgentCallSettings(
       key !== 'subagentModel' &&
       key !== 'subagentEffort' &&
       key !== 'instruction' &&
-      key !== 'permissions',
+      key !== 'permissions' &&
+      key !== 'browser' &&
+      key !== 'mcpServers',
   );
   if (unknown.length > 0) {
     throw new TypeError(
@@ -1129,6 +1153,14 @@ function snapshotAgentCallSettings(
   if (instruction !== undefined && typeof instruction !== 'string') {
     throw new TypeError('tmux-play call settings instruction must be a string');
   }
+  const browser = fields.browser;
+  if (browser !== undefined && typeof browser !== 'boolean') {
+    throw new TypeError('tmux-play call settings browser must be a boolean');
+  }
+  const mcpServers = snapshotMcpServers(fields.mcpServers);
+  if (browser && mcpServers && Object.hasOwn(mcpServers, 'cligent_browser')) {
+    throw new TypeError('cligent_browser is reserved when browser is enabled');
+  }
   const permissions = snapshotPermissionPolicy(fields.permissions);
   return Object.freeze({
     model,
@@ -1140,6 +1172,8 @@ function snapshotAgentCallSettings(
       : {}),
     ...(instruction !== undefined ? { instruction } : {}),
     ...(permissions !== undefined ? { permissions } : {}),
+    ...(browser !== undefined ? { browser } : {}),
+    ...(mcpServers !== undefined ? { mcpServers } : {}),
   });
 }
 
@@ -1408,6 +1442,18 @@ function snapshotDenseStringArray(
   value: unknown,
   path: string,
 ): readonly string[] | undefined {
+  return snapshotDenseArray(value, path, (entry, itemPath) => {
+    if (typeof entry !== 'string')
+      throw new TypeError(`${itemPath} must be a string`);
+    return entry;
+  });
+}
+
+function snapshotDenseArray<T>(
+  value: unknown,
+  path: string,
+  capture: (entry: unknown, path: string) => T,
+): readonly T[] | undefined {
   if (value === undefined) return undefined;
   if (
     !Array.isArray(value) ||
@@ -1436,7 +1482,7 @@ function snapshotDenseStringArray(
   ) {
     throw new TypeError(`${path} must have a data length`);
   }
-  const snapshot: string[] = [];
+  const snapshot: T[] = [];
   for (let index = 0; index < lengthDescriptor.value; index += 1) {
     const descriptor = descriptors[String(index)];
     if (!descriptor) {
@@ -1445,12 +1491,78 @@ function snapshotDenseStringArray(
     if (!('value' in descriptor)) {
       throw new TypeError(`${path}[${index}] must not be an accessor`);
     }
-    if (typeof descriptor.value !== 'string') {
-      throw new TypeError(`${path}[${index}] must be a string`);
-    }
-    snapshot.push(descriptor.value);
+    snapshot.push(capture(descriptor.value, `${path}[${index}]`));
   }
   return Object.freeze(snapshot);
+}
+
+function snapshotAttachments(
+  value: unknown,
+): readonly Attachment[] | undefined {
+  return snapshotDenseArray(value, 'tmux-play attachments', (entry, path) => {
+    const fields = ownDataFields(entry, path);
+    if (
+      !fields ||
+      typeof fields.path !== 'string' ||
+      !fields.path.trim() ||
+      fields.path.includes('\0') ||
+      Object.keys(fields).some((key) => key !== 'path' && key !== 'mimeType') ||
+      (fields.mimeType !== undefined &&
+        (typeof fields.mimeType !== 'string' ||
+          !/^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+$/.test(
+            fields.mimeType,
+          )))
+    ) {
+      throw new TypeError(
+        `${path} must be a local-file descriptor with path and optional mimeType`,
+      );
+    }
+    return Object.freeze({
+      path: fields.path,
+      ...(fields.mimeType !== undefined
+        ? { mimeType: fields.mimeType as string }
+        : {}),
+    });
+  });
+}
+
+function snapshotMcpServers(value: unknown): McpServers | undefined {
+  if (value === undefined) return undefined;
+  const path = 'tmux-play call settings mcpServers';
+  const fields = ownDataFields(value, path);
+  if (!fields) throw new TypeError(`${path} must be a plain map`);
+  const servers = Object.fromEntries(
+    Object.entries(fields).map(([name, entry]) => {
+      const config = ownDataFields(entry, `${path}.${name}`);
+      if (!config)
+        throw new TypeError(
+          `${path}.${name} must be a plain server configuration`,
+        );
+      if (config.args !== undefined)
+        config.args = snapshotDenseStringArray(
+          config.args,
+          `${path}.${name}.args`,
+        );
+      for (const key of ['env', 'headers']) {
+        if (config[key] !== undefined) {
+          const data = ownDataFields(config[key], `${path}.${name}.${key}`);
+          if (!data)
+            throw new TypeError(`${path}.${name}.${key} must be a plain map`);
+          config[key] = data;
+        }
+      }
+      return [name, config];
+    }),
+  );
+  const normalized = normalizeMcpServers(servers)!;
+  for (const server of Object.values(normalized)) {
+    if (server.type === 'stdio') {
+      if (server.args) Object.freeze(server.args);
+      if (server.env) Object.freeze(server.env);
+    } else if (server.headers) Object.freeze(server.headers);
+    Object.freeze(server);
+  }
+  return Object.freeze(normalized);
 }
 
 function composePrompt(
@@ -1468,7 +1580,10 @@ function captureText(event: CligentEvent, textParts: string[]): void {
     // `Commit: <id>` line stops starting a line), so each complete message
     // begins on its own line. Deltas stay unseparated: they are fragments of
     // one message.
-    if (textParts.length > 0 && !textParts[textParts.length - 1].endsWith('\n')) {
+    if (
+      textParts.length > 0 &&
+      !textParts[textParts.length - 1].endsWith('\n')
+    ) {
       textParts.push('\n');
     }
     textParts.push((event.payload as TextPayload).content);

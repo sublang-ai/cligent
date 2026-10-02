@@ -285,15 +285,19 @@ afterEach(() => {
 });
 
 describe('GeminiAdapter', () => {
-  it('rejects typed attachments before starting Gemini with native @file guidance', async () => {
+  it('rejects missing typed attachments before starting Gemini', async () => {
     const { spawnProcess, invocations } = makeSpawn(() => {});
-    await expect(
-      collect(
-        new GeminiAdapter({ spawnProcess }).run('Describe', {
-          attachments: [{ path: './clip.mp4' }],
-        }),
-      ),
-    ).rejects.toThrow(/@/);
+    const events = await collect(
+      new GeminiAdapter({ spawnProcess }).run('Describe', {
+        attachments: [{ path: './clip.mp4' }],
+      }),
+    );
+    expect(
+      events.find((event) => event.type === 'error')?.payload,
+    ).toMatchObject({
+      message: expect.stringContaining('readable regular file'),
+    });
+    expect(events.at(-1)?.payload).toMatchObject({ status: 'error' });
     expect(invocations).toHaveLength(0);
   });
 
@@ -1070,8 +1074,7 @@ describe('GeminiAdapter', () => {
       return true;
     };
     const adapter = new GeminiAdapter({
-      spawnProcess: () =>
-        process as unknown as ChildProcessWithoutNullStreams,
+      spawnProcess: () => process as unknown as ChildProcessWithoutNullStreams,
       createSettingsOverride: async () => ({
         env: {},
         cleanup: async () => {
@@ -1427,9 +1430,9 @@ describe('GeminiAdapter', () => {
 
     const events = await collect(adapter.run('start fresh', { resume: '' }));
 
-    expect(invocations[0]?.args.some((arg) => arg.startsWith('--resume='))).toBe(
-      false,
-    );
+    expect(
+      invocations[0]?.args.some((arg) => arg.startsWith('--resume=')),
+    ).toBe(false);
     expect(events.every((event) => event.sessionId.length > 0)).toBe(true);
     expect(new Set(events.map((event) => event.sessionId)).size).toBe(1);
     expect((events.at(-1)?.payload as DonePayload).resumeToken).toBeUndefined();
@@ -2693,8 +2696,7 @@ describe('GeminiAdapter', () => {
       return true;
     };
     const adapter = new GeminiAdapter({
-      spawnProcess: () =>
-        process as unknown as ChildProcessWithoutNullStreams,
+      spawnProcess: () => process as unknown as ChildProcessWithoutNullStreams,
       createTelemetryCapture: async () => ({
         env: {},
         read: async () =>
@@ -3417,13 +3419,31 @@ describe('GeminiAdapter', () => {
 // engine-85: process diagnostics are not pre-execution rejection proof.
 it('does not promote a Gemini stream error to resume rejection', async () => {
   const { spawnProcess, invocations } = makeSpawn((process) => {
-    writeEventsAndClose(process, [
-      JSON.stringify({ type: 'error', code: 'SESSION_RESUME_REJECTED', message: 'session not found', retryable: true }),
-      JSON.stringify({ type: 'result', status: 'error', error: { message: 'failed' } }),
-    ], 1, null);
+    writeEventsAndClose(
+      process,
+      [
+        JSON.stringify({
+          type: 'error',
+          code: 'SESSION_RESUME_REJECTED',
+          message: 'session not found',
+          retryable: true,
+        }),
+        JSON.stringify({
+          type: 'result',
+          status: 'error',
+          error: { message: 'failed' },
+        }),
+      ],
+      1,
+      null,
+    );
   });
-  const events = await collect(new GeminiAdapter({ spawnProcess }).run('continue', { resume: 'saved' }));
-  expect(events.find((event) => event.type === 'error')?.payload).toMatchObject({ code: 'GEMINI_STREAM_ERROR', message: 'session not found' });
+  const events = await collect(
+    new GeminiAdapter({ spawnProcess }).run('continue', { resume: 'saved' }),
+  );
+  expect(events.find((event) => event.type === 'error')?.payload).toMatchObject(
+    { code: 'GEMINI_STREAM_ERROR', message: 'session not found' },
+  );
   expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
   expect(invocations).toHaveLength(1);
 });

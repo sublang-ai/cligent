@@ -128,11 +128,14 @@ the options; see the
 [subagent guide](docs/guide.md#subagent-model-and-effort).
 
 Local media can be attached per call with `attachments: [{ path: 'screen.png' }]`.
-Claude, Codex, Kimi, and OpenCode use native media inputs with adapter-specific
-formats; Gemini already accepts native `@file` references in the text prompt.
+All five built-in adapters accept their supported media formats; Gemini uses
+owned MIME-matched snapshots through native `@file` processing on POSIX hosts.
 Set `browser: true` to let ordinary prompts inspect an app and capture
 screenshots using a managed browser, or supply other tools with `mcpServers`.
 Typed `media` events let a host display returned figures beside the explanation.
+Use instance `getCapabilities()` for contextual transport facts and
+`prepareBrowser()` for cancellable host launch/screenshot readiness without
+sending a prompt.
 See the [media and computer-use guide](docs/media-and-computer-use.md) for the
 capability matrix, examples, and native tool setup.
 

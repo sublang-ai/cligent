@@ -4,11 +4,15 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it } from 'vitest';
-import { prepareBrowserServer } from '../browser.js';
+import { prepareBrowserServer, releaseBrowserServer } from '../browser.js';
+import type { McpServerConfig } from '../mcp.js';
 
 const directories: string[] = [];
+const configurations: McpServerConfig[] = [];
 afterEach(async () => {
+  await Promise.all(configurations.splice(0).map(releaseBrowserServer));
   await Promise.all(
     directories
       .splice(0)
@@ -24,10 +28,84 @@ async function fixture(body: string) {
     cli,
     `const fs = require('node:fs'); const path = require('node:path');\n${body}`,
   );
-  return { cli, executablePath: join(dir, 'chromium'), dir };
+  return {
+    cli,
+    executablePath: join(dir, 'chromium'),
+    dir,
+    probe: async () => {},
+  };
 }
 
 describe('managed browser preparation subprocess', () => {
+  it.skipIf(process.platform === 'win32').each(['timeout', 'cancel'])(
+    'terminates a nonresponsive native browser launch and descendant on %s',
+    async (kind) => {
+      const runtime = await fixture('');
+      const launcher = join(runtime.dir, 'browser.cjs');
+      await writeFile(
+        launcher,
+        `
+      const fs = require('node:fs');
+      fs.writeFileSync(${JSON.stringify(join(runtime.dir, 'browser.pid'))}, String(process.pid));
+      require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(join(runtime.dir, 'descendant.pid'))},String(process.pid));process.on('SIGTERM',()=>{});setInterval(()=>{},1000);`)}], {stdio:'ignore'});
+      process.on('SIGTERM',()=>{}); setInterval(()=>{},1000);
+    `,
+      );
+      await writeFile(
+        runtime.cli,
+        `require('node:fs').writeFileSync(${JSON.stringify(runtime.executablePath)}, ${JSON.stringify(`#!/bin/sh\nexec '${process.execPath.replaceAll("'", "'\\''")}' '${launcher.replaceAll("'", "'\\''")}'\n`)}, {mode:0o700});`,
+      );
+      const controller = new AbortController();
+      const pending = prepareBrowserServer(
+        controller.signal,
+        {
+          ...runtime,
+          probe: undefined,
+          playwright: createRequire(import.meta.url).resolve('playwright'),
+        },
+        kind === 'timeout' ? 4000 : 10_000,
+      ).catch((error) => error as Error);
+      if (kind === 'cancel') {
+        await expect
+          .poll(
+            async () => {
+              try {
+                await readFile(join(runtime.dir, 'descendant.pid'));
+                return true;
+              } catch {
+                return false;
+              }
+            },
+            { timeout: 5000 },
+          )
+          .toBe(true);
+        controller.abort();
+      }
+      expect((await pending).message).toMatch(
+        kind === 'cancel' ? /interrupted/ : /could not launch/,
+      );
+      for (const name of ['browser.pid', 'descendant.pid']) {
+        const pid = Number(await readFile(join(runtime.dir, name), 'utf8'));
+        // Native process-group termination may be observed one scheduling tick
+        // before the child is reaped. Never leave a real descendant running.
+        await expect
+          .poll(
+            () => {
+              try {
+                process.kill(pid, 0);
+                return false;
+              } catch {
+                return true;
+              }
+            },
+            { timeout: 2000 },
+          )
+          .toBe(true);
+      }
+    },
+    10_000,
+  );
+
   it('installs missing Chromium once and returns isolated screenshot-capable MCP arguments', async () => {
     const runtime = await fixture(
       `
@@ -38,7 +116,8 @@ describe('managed browser preparation subprocess', () => {
     );
     const first = await prepareBrowserServer(undefined, runtime);
     const second = await prepareBrowserServer(undefined, runtime);
-    expect(second).toEqual(first);
+    configurations.push(first, second);
+    expect(second).not.toEqual(first);
     expect(await readFile(join(runtime.dir, 'calls'), 'utf8')).toBe(
       'install\n',
     );
@@ -50,9 +129,12 @@ describe('managed browser preparation subprocess', () => {
         '--executable-path',
         runtime.executablePath,
         '--headless',
+        '--sandbox',
         '--isolated',
         '--image-responses',
         'allow',
+        '--output-dir',
+        expect.stringContaining('cligent-browser-output-'),
       ],
     });
   });
@@ -64,7 +146,7 @@ describe('managed browser preparation subprocess', () => {
     await writeFile(runtime.executablePath, 'partially extracted browser', {
       mode: 0o700,
     });
-    await prepareBrowserServer(undefined, runtime);
+    configurations.push(await prepareBrowserServer(undefined, runtime));
     expect(await readFile(join(runtime.dir, 'complete'), 'utf8')).toBe('done');
   });
 

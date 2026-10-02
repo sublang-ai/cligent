@@ -10,6 +10,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ownedChildPath } from '../node-child.js';
 
 const requireFromHere = createRequire(import.meta.url);
 
@@ -88,7 +89,7 @@ export function locateCodexExecutable(
     packageRoot = join(dirname(launcherPath), '..');
   }
   const path = join(packageRoot, candidate.file);
-  return existsSync(path) ? path : undefined;
+  return existsSync(path) ? ownedChildPath(path) : undefined;
 }
 
 export interface CodexBinPathResolutionDeps {
@@ -201,14 +202,14 @@ export function resolveCodexBinPath(
     failures,
   )) {
     try {
-      return createRequire(anchor).resolve(CODEX_BIN_SPECIFIER);
+      return ownedChildPath(createRequire(anchor).resolve(CODEX_BIN_SPECIFIER));
     } catch (error) {
       failures.push(`${route} (${anchor}): ${firstErrorLine(error)}`);
     }
   }
 
   try {
-    return baseRequire.resolve(CODEX_BIN_SPECIFIER);
+    return ownedChildPath(baseRequire.resolve(CODEX_BIN_SPECIFIER));
   } catch (error) {
     failures.push(`cligent module scope: ${firstErrorLine(error)}`);
   }
