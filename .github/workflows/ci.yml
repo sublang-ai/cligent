@@ -72,6 +72,7 @@ jobs:
   browser:
     needs: ci
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -84,7 +85,24 @@ jobs:
       - run: npm ci
       - name: Prepare managed browser prerequisites
         if: runner.os == 'Linux'
-        run: node node_modules/playwright/cli.js install-deps chromium
+        shell: bash
+        run: |
+          node node_modules/playwright/cli.js install-deps chromium
+          # Ubuntu restricts user namespaces for downloaded executables.
+          # Admit only these two CI executables; keep Chromium's sandbox on.
+          # https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md
+          chromium_path=$(node --input-type=module -e "import { chromium } from 'playwright'; console.log(chromium.executablePath())")
+          cat > "$RUNNER_TEMP/cligent-browser-apparmor" <<EOF
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile cligent-ci-chromium "$chromium_path" flags=(unconfined) {
+            userns,
+          }
+          profile cligent-ci-electron "$RUNNER_TEMP/cligent electron/node_modules/electron/dist/electron" flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser -r "$RUNNER_TEMP/cligent-browser-apparmor"
       - name: Verify real browser and agent screenshot loop
         # This lightweight native suite also verifies Gemini attachment bytes
         # through a scripted local provider, without paid-model global setup.
