@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { describeCapabilities } from '../capabilities.js';
+import { ApprovalController } from '../internal/approvals.js';
 
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -960,6 +961,13 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       if (!terminalQueued) queue.push(event);
     };
 
+    const approvals = new ApprovalController({
+      agent: AGENT,
+      handler: options?.approvalHandler,
+      signal: options?.abortSignal,
+      emit: push,
+    });
+
     const finish = (
       status: DonePayload['status'],
       usage: DonePayload['usage'] = {
@@ -968,6 +976,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       },
     ): void => {
       if (terminalQueued) return;
+      approvals.close();
       terminalQueued = true;
       queue.push(
         createEvent(
@@ -1310,9 +1319,10 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       }
       if (abortRequested || terminalQueued)
         return { outcome: { outcome: 'cancelled' } };
-      const allowOnce = request.options.find(
+      const allowChoices = request.options.filter(
         (option) => option.kind === 'allow_once',
       );
+      const allowOnce = allowChoices.length === 1 ? allowChoices[0] : undefined;
       if (
         allowOnce &&
         request.toolCall.title &&
@@ -1325,6 +1335,41 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         return {
           outcome: { outcome: 'selected', optionId: allowOnce.optionId },
         };
+      }
+      if (options?.approvalHandler) {
+        const decision = await approvals.request({
+          sessionId,
+          toolUseId: request.toolCall.toolCallId,
+          toolName:
+            request.toolCall.title ?? request.toolCall.kind ?? 'unknown_tool',
+          input: parseToolInput(request.toolCall.rawInput, true).input,
+          details: {
+            options: request.options,
+            ...(request.toolCall.content
+              ? { content: request.toolCall.content }
+              : {}),
+            ...(request.toolCall.locations
+              ? { locations: request.toolCall.locations }
+              : {}),
+            ...(request.toolCall.kind ? { kind: request.toolCall.kind } : {}),
+          },
+          reason: 'Kimi requested permission for this tool',
+          choices: allowOnce ? ['allow_once', 'deny'] : ['deny'],
+        });
+        if (abortRequested || terminalQueued)
+          return { outcome: { outcome: 'cancelled' } };
+        const rejectChoices = request.options.filter(
+          (option) => option.kind === 'reject_once',
+        );
+        const selected =
+          decision === 'allow_once'
+            ? allowOnce
+            : rejectChoices.length === 1
+              ? rejectChoices[0]
+              : undefined;
+        return selected
+          ? { outcome: { outcome: 'selected', optionId: selected.optionId } }
+          : { outcome: { outcome: 'cancelled' } };
       }
       if (!terminalQueued) {
         push(
@@ -1817,6 +1862,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       }
       await execution;
     } finally {
+      approvals.close();
       markTerminalDelivered();
       removeAbortListener();
       if (!terminalQueued) {

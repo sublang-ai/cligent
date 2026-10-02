@@ -11,7 +11,12 @@ import type {
 } from '../../subagent-model.js';
 import type { Attachment } from '../../attachments.js';
 import type { McpServers } from '../../mcp.js';
-import type { PermissionPolicy } from '../../types.js';
+import type {
+  ApprovalDecision,
+  ApprovalHandler,
+  ApprovalRequest,
+  PermissionPolicy,
+} from '../../types.js';
 
 export interface Captain {
   init?(session: CaptainSession): Promise<void>;
@@ -296,7 +301,22 @@ export type RuntimeCaptainConfig<
   A extends PlayerAdapterName = PlayerAdapterName,
 > = RuntimeCaptainConfigByAdapter[A];
 
+/** Live host approval identity; never supplied to the agent as prompt data. */
+export interface TmuxPlayApprovalRequest {
+  readonly request: ApprovalRequest;
+  readonly turnId: number;
+  readonly actorId: string;
+  readonly invocationId: string;
+}
+
+export type TmuxPlayApprovalHandler = (
+  request: TmuxPlayApprovalRequest,
+  context: Parameters<ApprovalHandler>[1],
+) => Promise<ApprovalDecision>;
+
 export interface RunTmuxPlayOptions {
+  /** Host callback for working calls only; never persisted as configuration. */
+  readonly approvalHandler?: TmuxPlayApprovalHandler;
   readonly captain: Captain;
   readonly captainConfig: RuntimeCaptainConfig;
   readonly players: readonly RuntimePlayerConfig[];

@@ -53,11 +53,19 @@ When browser setup progresses or settles, the public preparation operation shall
 
 When a host consumes a readiness result, `ready` shall describe only a point-in-time host browser launch and screenshot observation, without promising provider authentication, model vision, native authorization, target-app availability, arbitrary desktop control, or future readiness.
 
+### capabilities-9
+
+When a host requests approval capabilities, built-in adapters shall report live host-decision admission [[approvals-1](approvals.md#approvals-1)] as supported for Claude, Kimi, and OpenCode's current pending-registry transport, and unsupported with code `unsupported-transport` for Codex exec and Gemini NDJSON, with absent custom facts denoting unknown and no result promising native policy authorization.
+
 ## Verification
 
 ### capabilities-7
 
 When real `Cligent` instances inspect built-in and custom adapters through default/per-call configurations, integration checks shall verify exact descriptor semantics [[capabilities-1](#capabilities-1)], option merging and unknown custom facts without side effects [[capabilities-2](#capabilities-2)], and contextual restrictions shared with execution [[capabilities-3](#capabilities-3)].
+
+### capabilities-10
+
+When real built-in and custom adapters are queried, integration checks shall verify exact supported, unsupported-transport, and unknown approval facts without provider work [[capabilities-9](#capabilities-9)].
 
 ### capabilities-8
 

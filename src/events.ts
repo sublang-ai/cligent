@@ -14,6 +14,8 @@ import type {
   ThinkingPayload,
   ErrorPayload,
   PermissionRequestPayload,
+  ApprovalRequest,
+  ApprovalResponsePayload,
   ToolUsePayload,
   ToolResultPayload,
   DonePayload,
@@ -27,6 +29,8 @@ export interface AgentEventMap {
   thinking: ThinkingPayload;
   error: ErrorPayload;
   permission_request: PermissionRequestPayload;
+  approval_request: ApprovalRequest;
+  approval_response: ApprovalResponsePayload;
   tool_use: ToolUsePayload;
   tool_result: ToolResultPayload;
   done: DonePayload;

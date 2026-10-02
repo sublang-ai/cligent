@@ -5,7 +5,7 @@
 
 ## Status
 
-Accepted
+Accepted; live host handling amends the headless fallback through [DR-034](034-live-host-tool-approvals.md).
 
 ## Context
 

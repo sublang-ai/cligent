@@ -115,6 +115,11 @@ describe('host capability and preparation contract', () => {
           ATTACHMENT_SUPPORT[adapter.agent as keyof typeof ATTACHMENT_SUPPORT],
         );
         expect(facts.browser).toEqual({ status: 'supported' });
+        expect(facts.approvals).toMatchObject(
+          adapter.agent === 'codex' || adapter.agent === 'gemini'
+            ? { status: 'unsupported', code: 'unsupported-transport' }
+            : { status: 'supported' },
+        );
         expect(
           await client.getCapabilities({
             cwd,

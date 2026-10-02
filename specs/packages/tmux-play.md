@@ -1353,7 +1353,21 @@ When a Captain admits a player or Captain call with `attachments`, tmux-play sha
 
 Where a programmatic runtime configuration supplies a Captain or player `mcpServers` map, tmux-play shall keep the validated detached map as that role's runtime-held default under [[tmux-play-93](#tmux-play-93)], preserving the caller-selected transport contract [[mcp-1](mcp.md#mcp-1)] without adding a YAML configuration field.
 
+### tmux-play-224
+
+Where a programmatic runtime supplies `approvalHandler`, when a working invocation requests a native tool approval, the runtime shall call it with `{ request, turnId, actorId, invocationId }` and the native cancellable `{ signal }` context, preserving native decision admission [[approvals-1](approvals.md#approvals-1)], request identity [[approvals-2](approvals.md#approvals-2)] and bounded cancellation [[approvals-3](approvals.md#approvals-3)]:
+
+- `turnId` is the admitted Boss turn; `actorId` is `captain` or the concrete player ID;
+- `invocationId` is a fresh opaque identifier for each invocation, independent of native request, tool and session IDs;
+- only player and visible working Captain calls receive the callback; hidden Captain calls and calls explicitly restricted to no tools receive none;
+- callback closures are runtime options only, absent from YAML, call settings, model prompts and serialized records;
+- native approval request/response events [[approvals-4](approvals.md#approvals-4)] remain ordinary actor events under the existing ordered record lifecycle [[tmux-play-22](#tmux-play-22)].
+
 ## Verification
+
+### tmux-play-225
+
+When provider fixtures request approvals through the real runtime with concurrent players, repeated native IDs, visible and hidden Captain calls, cancellation and a subsequent Boss turn, integration verification shall assert exact request/context forwarding, independent invocation identities, allow/deny delivery, no hidden or tool-free handler, ordinary event archival, and cancellation before terminal records [[tmux-play-224](#tmux-play-224)].
 
 ### tmux-play-223
 

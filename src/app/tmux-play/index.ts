@@ -44,6 +44,8 @@ export type {
   RunTmuxPlayOptions,
   RuntimePlayerConfig,
   TuningSelection,
+  TmuxPlayApprovalRequest,
+  TmuxPlayApprovalHandler,
 } from './contract.js';
 export {
   AgentCallSettingsError,

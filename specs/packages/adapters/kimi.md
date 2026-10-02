@@ -212,7 +212,7 @@ When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../
 
 ### kimi-22
 
-When an active prompt receives `session/request_permission` for its session and [[kimi-43](#kimi-43)] does not select an admitted-tool once response, the adapter shall emit `permission_request` with the native tool identifier, title then kind then `unknown_tool` name, a headless-run reason, and input selected immediately through this matrix, then select its reply through the option matrix [[7]]:
+When an active prompt receives `session/request_permission` for its session without a live handler and [[kimi-43](#kimi-43)] does not select an admitted-tool once response, the adapter shall emit `permission_request` with the native tool identifier, title then kind then `unknown_tool` name, a headless-run reason, and input selected immediately through this matrix, then select its reply through the option matrix [[7]]:
 
 | Native input | Unified input |
 | --- | --- |
@@ -352,6 +352,10 @@ When a run supplies MCP servers or selects the browser preset, the adapter shall
 | active permission request whose native title begins with this run's complete `mcp__<private alias>__` prefix, has a non-empty tool suffix, and offers `allow_once` | select the first offered once option without emitting a user permission request |
 | no admitted namespace match, or no offered once option | ordinary headless handling selected by [[kimi-22](#kimi-22)] |
 | native denials and unrelated permission modes | unchanged |
+
+### kimi-47
+
+Where an active ACP prompt supplies a live handler and an ask is not already authorized through [[kimi-43](#kimi-43)], the adapter shall forward its authentic tool identity and detached parsed input plus native content, locations, kind, and offered-option metadata [[approvals-2](../approvals.md#approvals-2)] to the per-call handler [[approvals-1](../approvals.md#approvals-1)], offering `allow_once` only when exactly one native option offers it and mapping host denial to the sole `reject_once` option or cancellation, with bounded lifecycle [[approvals-3](../approvals.md#approvals-3)] and streamed host events [[approvals-4](../approvals.md#approvals-4)], never selecting an always option [[approvals-6](../approvals.md#approvals-6)].
 
 ## Internal Behavior
 
@@ -577,6 +581,10 @@ Where either tool-list field is omitted, empty, or non-empty, when the adapter m
 ### kimi-240
 
 Given authentic accounting is sought across successful, interrupted, max-turn, refusal, errored, and synthetic terminal paths, when a caller reads terminal usage, the adapter shall publish no token or cost report for the pinned ACP runtime, including after its context-only `usage_update`, while preserving prompt status, accumulated result, and the distinct observed tool-call count [[kimi-13](#kimi-13)] [[kimi-31](#kimi-31)].
+
+### kimi-48
+
+When a real adapter and ACP peer exchange permission reverse requests, integration checks shall verify that the native tool remains pending until the host answers, exact offered once-only decisions, denial, abort, teardown, timeout and callback failure, with caller-admitted MCP grants unchanged [[kimi-47](#kimi-47)].
 
 ## References
 

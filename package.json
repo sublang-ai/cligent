@@ -87,6 +87,7 @@
     "test:smoke": "vitest run --config config/vitest.smoke.config.ts",
     "test:acceptance": "vitest run --config config/vitest.acceptance.config.ts",
     "test:browser": "vitest run --config config/vitest.browser.config.ts",
+    "test:approvals": "vitest run --config config/vitest.approvals.config.ts",
     "smoke:release": "npm run build && npm run test:package && npm run test:distributable && npm run test:smoke",
     "tmux-play-dev": "node ./bin/tmux-play-dev.mjs",
     "prepack": "npm run build"
