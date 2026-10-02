@@ -12,6 +12,7 @@ export default defineConfig({
       'src/__tests__/claude-approvals.test.ts',
       'src/__tests__/kimi-approvals.test.ts',
       'src/__tests__/opencode-approvals.test.ts',
+      'src/__tests__/opencode-questions.test.ts',
       'src/app/tmux-play/approval.integration.test.ts',
     ],
   },

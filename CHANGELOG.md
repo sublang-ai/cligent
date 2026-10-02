@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode declines unsupported questions tied to its submitted native prompt
+  or owned descendants on a privately managed server. Exact pending request
+  identity is checked before rejection; shared external requests without
+  provable ownership and saved permission policies remain unchanged.
+- External OpenCode calls preserve the caller-owned server workspace during
+  cleanup, preventing a previous turn's disposal from interrupting a resumed
+  turn. Managed server disposal and bounded client cleanup remain in effect.
+
 ## [0.33.0] - 2026-10-01
 
 ### Added

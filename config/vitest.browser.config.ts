@@ -3,7 +3,7 @@
 
 import { defineConfig } from 'vitest/config';
 
-// Real browser and Claude/Codex SDK/CLI tool loops, with local scripted providers.
+// Real browser and SDK/CLI tool loops, with local scripted providers.
 // No agent account, API credential, or paid model request is required.
 export default defineConfig({
   test: {
@@ -12,6 +12,7 @@ export default defineConfig({
       'src/__tests__/claude-browser.acceptance.test.ts',
       'src/adapters/codex-mcp.acceptance.test.ts',
       'src/adapters/gemini-attachments.acceptance.test.ts',
+      'src/adapters/opencode-questions.acceptance.test.ts',
     ],
     fileParallelism: false,
   },
