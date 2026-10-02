@@ -15,7 +15,7 @@ Where an invocation supplies `approvalHandler`, an adapter with a live native de
 
 ### approvals-2
 
-When a native tool ask is admitted, its host request shall be an immutable serializable `ApprovalRequest` with unique opaque `id`, `kind: 'tool'`, authentic `agent`, `sessionId`, `toolUseId`, `toolName`, detached `input`, optional detached native review `details`, optional `reason`, exact supported `choices` drawn from `allow_once` and `deny`, and epoch-millisecond `createdAt` and `expiresAt` ten minutes apart.
+When a native tool ask is admitted, its host request shall be an immutable serializable `ApprovalRequest` with unique opaque `id`, `kind: 'tool'`, authentic `agent`, `sessionId`, `toolUseId`, `toolName`, detached lossless JSON-data `input`, optional detached native review `details`, optional `reason`, exact supported `choices` drawn from `allow_once` and `deny`, and epoch-millisecond `createdAt` and `expiresAt` ten minutes apart.
 
 ### approvals-3
 
@@ -37,7 +37,7 @@ Where a native interaction requires structured answers or persistent permission 
 
 ### approvals-7
 
-When a real adapter invocation reaches its native permission boundary through a controllable SDK or ACP peer, integration checks shall verify per-call admission and unchanged automatic/hard-denied behavior [[approvals-1](#approvals-1)], authentic detached request identity and choices [[approvals-2](#approvals-2)], no native side effect before a supported answer and fail-closed cancellation/error/deadline/teardown [[approvals-3](#approvals-3)], exactly-once ordered events including late answers [[approvals-4](#approvals-4)], unchanged handler-free and unsupported transport execution [[approvals-5](#approvals-5)], and rejection of structured or persistent interactions [[approvals-6](#approvals-6)].
+When a real adapter invocation reaches its native permission boundary through a controllable SDK or ACP peer, integration checks shall verify per-call admission and unchanged automatic/hard-denied behavior [[approvals-1](#approvals-1)], authentic detached request identity and choices including rejection of lossy non-JSON input without invoking its accessors or serializers [[approvals-2](#approvals-2)], no native side effect before a supported answer and fail-closed cancellation/error/deadline/teardown [[approvals-3](#approvals-3)], exactly-once ordered events including late answers [[approvals-4](#approvals-4)], unchanged handler-free and unsupported transport execution [[approvals-5](#approvals-5)], and rejection of structured or persistent interactions [[approvals-6](#approvals-6)].
 
 ### approvals-8
 

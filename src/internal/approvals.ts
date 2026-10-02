@@ -31,6 +31,61 @@ type NativeApproval = Pick<
   | 'choices'
 >;
 
+/** Copy actual JSON data without invoking getters/toJSON or silently losing values. */
+function cloneJsonInput(
+  value: unknown,
+  ancestors = new Set<object>(),
+): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean')
+    return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'object' || ancestors.has(value))
+    throw new Error('Approval input must contain only lossless JSON data');
+
+  const array = Array.isArray(value);
+  const prototype = Object.getPrototypeOf(value);
+  if (
+    array
+      ? prototype !== Array.prototype
+      : prototype !== Object.prototype && prototype !== null
+  )
+    throw new Error('Approval input must contain only plain JSON objects');
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Reflect.ownKeys(descriptors);
+  if (
+    array &&
+    (keys.length !== value.length + 1 ||
+      !Array.from({ length: value.length }, (_, index) => String(index)).every(
+        (key) => Object.hasOwn(descriptors, key),
+      ))
+  )
+    throw new Error('Approval input must contain only dense JSON arrays');
+
+  const result: unknown[] | Record<string, unknown> = array ? [] : {};
+  ancestors.add(value);
+  try {
+    for (const key of keys) {
+      if (array && key === 'length') continue;
+      if (typeof key !== 'string')
+        throw new Error('Approval input cannot contain symbol keys');
+      const descriptor = descriptors[key]!;
+      if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value'))
+        throw new Error(
+          'Approval input cannot contain hidden fields or accessors',
+        );
+      Object.defineProperty(result, key, {
+        value: cloneJsonInput(descriptor.value, ancestors),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+    return result;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
 function freezeJson<T>(value: T): T {
   if (typeof value === 'object' && value !== null) {
     for (const child of Object.values(value)) freezeJson(child);
@@ -76,7 +131,7 @@ export class ApprovalController {
     let request: ApprovalRequest;
     try {
       const createdAt = Date.now();
-      const input: unknown = JSON.parse(JSON.stringify(native.input));
+      const input = cloneJsonInput(native.input);
       if (!input || typeof input !== 'object' || Array.isArray(input))
         return Promise.resolve('deny');
       const details: unknown =
@@ -164,7 +219,8 @@ export class ApprovalController {
         .then(
           (decision) => {
             if (Date.now() >= request.expiresAt) settle('deny', 'timeout');
-            else if (!request.choices.includes(decision)) settle('deny', 'error');
+            else if (!request.choices.includes(decision))
+              settle('deny', 'error');
             else settle(decision, 'host');
           },
           () => settle('deny', 'error'),
