@@ -60,6 +60,7 @@ meta.md       The spec of specs
 | [DR-032](decisions/032-browser-tools-and-media-output.md) | 032-browser-tools-and-media-output.md | Caller-selected MCP tools, managed browser setup, and normalized media output |
 | [DR-033](decisions/033-host-capabilities-and-browser-readiness.md) | 033-host-capabilities-and-browser-readiness.md | Contextual host capability facts, browser launch proof, and Electron child invocation |
 | [DR-034](decisions/034-live-host-tool-approvals.md) | 034-live-host-tool-approvals.md | Per-invocation native tool approval handlers, bounded lifecycle and honest transport capabilities |
+| [DR-035](decisions/035-deterministic-claude-session-title.md) | 035-deterministic-claude-session-title.md | Deterministic fresh Claude native titles using the existing session UUID, preserving resumed titles |
 
 ## Packages
 

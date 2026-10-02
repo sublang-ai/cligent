@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Claude Code through the `@anthropic-ai/claude-agent-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including native fast-mode, subagent-model, and subagent-effort selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
+It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including deterministic native session naming, native fast-mode, subagent-model, and subagent-effort selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 
 ## External Behavior
@@ -398,6 +398,15 @@ When the adapter normalizes an SDK `result` that is not the internal no-op in [[
 
 When a Claude Code run starts without `AgentOptions.resume`, the adapter shall pass a UUID generated through [[engine-7](../engine.md#engine-7)] as SDK `sessionId` so the run has a stable identifier once Claude persists the conversation.
 
+### claude-code-81
+
+When a Claude Code run prepares its native session, the adapter shall select the documented SDK `title` option [[7]] according to this matrix ([DR-035](../../decisions/035-deterministic-claude-session-title.md)):
+
+| Session selection | SDK `title` |
+| --- | --- |
+| fresh run with the generated UUID [[claude-code-7](#claude-code-7)] | exactly `Cligent <UUID>`, using that run's SDK `sessionId` and no prompt or workspace text |
+| non-empty inbound `AgentOptions.resume` | omitted, preserving the resumed session's persisted title |
+
 ### claude-code-25
 
 When the SDK stream yields a normal terminal `result`, the adapter shall select `DonePayload.resumeToken` for `Cligent` continuity [[engine-5](../engine.md#engine-5)] per [DR-003](../../decisions/003-role-scoped-session-management.md) according to this priority matrix, using the latest backend identifier selected by [[claude-code-51](#claude-code-51)]:
@@ -731,6 +740,10 @@ Given the installed native Claude SDK and CLI, packaged managed browser runtime,
 ### claude-code-80
 
 When a real adapter runs against an SDK peer that blocks a native tool on `canUseTool`, integration checks shall verify streamed host requests, exact identity, one-time allowance only after resolution, denial, timeout, cancellation, failed handlers, teardown and unchanged explicit/native grants [[claude-code-78](#claude-code-78)], with structured questions declined without a host call [[claude-code-79](#claude-code-79)].
+
+### claude-code-82
+
+Where fresh, resumed, and explicitly reset `Cligent` turns run through the installed Claude SDK and a recording CLI fixture, when the adapter runs each turn, integration verification shall assert the SDK initialization carries the exact fresh-session title and matching UUID, resumes omit fresh naming controls and preserve the backend token, and a reset receives another generated UUID with its matching title [[claude-code-81](#claude-code-81)], [[claude-code-7](#claude-code-7)], [[claude-code-25](#claude-code-25)].
 
 ## References
 
