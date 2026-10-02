@@ -87,9 +87,14 @@ describe('managed browser preparation subprocess', () => {
           .toBe(true);
         controller.abort();
       }
-      expect((await pending).message).toMatch(
+      const failure = await pending;
+      expect(failure.message).toMatch(
         kind === 'cancel' ? /interrupted/ : /could not launch/,
       );
+      if (kind === 'timeout')
+        expect(failure.message).toContain(
+          'last reported browser step: launching the browser',
+        );
       for (const name of ['browser.pid', 'descendant.pid']) {
         const pid = Number(await readFile(join(runtime.dir, name), 'utf8'));
         // Native process-group termination may be observed one scheduling tick
@@ -110,6 +115,80 @@ describe('managed browser preparation subprocess', () => {
       }
     },
     10_000,
+  );
+
+  it.each(['outer', 'inner'])(
+    'keeps the last fixed proof step across split markers and diagnostic truncation on %s deadline',
+    async (deadline) => {
+      const runtime = await fixture(
+        "fs.writeFileSync(path.join(__dirname, 'chromium'), 'fixture', {mode:0o700});",
+      );
+      const playwright = join(runtime.dir, 'playwright.cjs');
+      await writeFile(
+        playwright,
+        `
+      const fs = require('node:fs');
+      module.exports = { chromium: { launchServer: async () => {
+        fs.writeFileSync(${JSON.stringify(join(runtime.dir, 'proof.pid'))}, String(process.pid));
+        process.stderr.write('__CLIGENT_BROWSER_PROOF_');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        process.stderr.write('STEP__=open-');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        process.stderr.write('page\\n');
+        process.stdout.write('__CLIGENT_BROWSER_PROOF_STEP__=capture-screenshot\\n');
+        process.stderr.write('__CLIGENT_BROWSER_PROOF_STEP__=secret-sentinel\\n');
+        process.stderr.write('x'.repeat(200) + '__CLIGENT_BROWSER_PROOF_STEP__=capture-screenshot\\n');
+        process.stderr.write('secret-sentinel'.repeat(3000));
+        ${
+          deadline === 'inner'
+            ? `
+        require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(join(runtime.dir, 'proof-descendant.pid'))}, String(process.pid));process.on('SIGTERM',()=>{});setInterval(()=>{},1000);`)}], {stdio:'ignore'});
+        for (let attempt = 0; attempt < 100 && !fs.existsSync(${JSON.stringify(join(runtime.dir, 'proof-descendant.pid'))}); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+        if (!fs.existsSync(${JSON.stringify(join(runtime.dir, 'proof-descendant.pid'))})) throw new Error('fixture descendant did not start');
+        process.stderr.write('\\n__CLIGENT_BROWSER_PROOF_DEADLINE__\\n'); process.exit(1);
+        `
+            : ''
+        }
+        await new Promise(() => {});
+      } } };
+      `,
+      );
+      const failure = await prepareBrowserServer(
+        undefined,
+        { ...runtime, probe: undefined, playwright },
+        2000,
+      ).catch((error) => error as Error);
+      expect(failure).toMatchObject({
+        code: 'launch-failed',
+        message: expect.stringContaining(
+          'last reported browser step: opening a browser page',
+        ),
+      });
+      expect((failure as Error).message).not.toContain('secret-sentinel');
+      expect((failure as Error).message).not.toContain(
+        '__CLIGENT_BROWSER_PROOF_STEP__',
+      );
+      expect((failure as Error).message.length).toBeLessThan(1000);
+      const pid = Number(
+        await readFile(join(runtime.dir, 'proof.pid'), 'utf8'),
+      );
+      expect(() => process.kill(pid, 0)).toThrow();
+      if (deadline === 'inner') {
+        const descendant = Number(
+          await readFile(join(runtime.dir, 'proof-descendant.pid'), 'utf8'),
+        );
+        await expect
+          .poll(() => {
+            try {
+              process.kill(descendant, 0);
+              return false;
+            } catch {
+              return true;
+            }
+          })
+          .toBe(true);
+      }
+    },
   );
 
   it('installs missing Chromium once and returns isolated screenshot-capable MCP arguments', async () => {

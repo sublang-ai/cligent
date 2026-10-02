@@ -51,7 +51,11 @@ When managed-browser configuration is returned, the server shall run through the
 
 ### mcp-11
 
-When managed-browser preparation completes, it shall first prove a bounded isolated headless launch and in-memory PNG screenshot with the managed runtime's sandbox posture, disposing the browser before success and retaining independent caller cancellation without installing operating-system packages.
+When managed-browser preparation runs its launch proof, the proof shall select its outcome after bounded isolated headless launch and in-memory PNG capture with the managed runtime's sandbox posture, without installing operating-system packages:
+
+- Success requires a valid screenshot and browser disposal before readiness.
+- A deadline failure names the last reported fixed browser step in plain language, or the starting step if none was reported, without copying arbitrary runtime output into that timeout diagnostic.
+- Caller cancellation remains independent of the deadline and terminates the owned proof with bounded cleanup.
 
 ### mcp-12
 
@@ -65,7 +69,7 @@ When a managed browser server is admitted, its configuration shall select a run-
 
 ### mcp-14
 
-When real browser and Electron host fixtures prepare and execute a browser, integration checks shall verify launch/screenshot proof and cancellation cleanup [[mcp-11](#mcp-11)], Node/Electron child execution without global Node [[mcp-12](#mcp-12)], and automatic artifacts outside an unchanged workspace with release after consumption [[mcp-13](#mcp-13)].
+When real browser and Electron host fixtures prepare and execute a browser, integration checks shall verify launch/screenshot proof, fixed-step deadline diagnostics across split or oversized child output without echoing arbitrary contents, and timeout/cancellation cleanup [[mcp-11](#mcp-11)], Node/Electron child execution without global Node [[mcp-12](#mcp-12)], and automatic artifacts outside an unchanged workspace with release after consumption [[mcp-13](#mcp-13)].
 
 ### mcp-7
 
