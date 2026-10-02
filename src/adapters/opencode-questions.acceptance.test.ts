@@ -352,6 +352,7 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
                     real.instance,
                   );
                   real.instance.dispose = async (...args) => {
+                    observe('instance.dispose.start', { parameters: args[0] });
                     const result = await nativeDispose(...args);
                     observe('instance.dispose', {
                       parameters: args[0],
@@ -470,6 +471,12 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
             payload: { status: 'success', resumeToken: sessionID },
           });
           expect(modelCalls, diagnostics).toBe(expectedModelCalls);
+          expect(
+            observations.filter(
+              (observation) => observation.kind === 'instance.dispose.start',
+            ),
+            diagnostics,
+          ).toEqual([]);
         };
         currentTurn = 1;
         for await (const event of cligent.run(

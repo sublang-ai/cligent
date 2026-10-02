@@ -655,15 +655,16 @@ directory, it shall place that directory through this SDK-version matrix:
 | --- | --- | --- |
 | session create, get, update, children, prompt, status, or abort | top-level `query.directory`, never the request body | top-level `directory` |
 | event subscription | top-level `query.directory` | top-level `directory` |
-| instance disposal | `query.directory` | `directory` |
+| owned managed-instance disposal | `query.directory` | `directory` |
 
 ### opencode-42
 
 After every terminal or failed-dispatch path, the adapter shall abort and
 return the active iterator, make independently bounded client close, shutdown,
-and instance-disposal attempts despite earlier rejection, remove run and
-dispatch abort listeners, release content and permission correlation state,
-and then complete [[opencode-36](#opencode-36)] for an owned managed child.
+and owned managed-instance disposal attempts despite earlier rejection, leave
+an external server's shared instance undisposed, remove run and dispatch abort
+listeners, release content and permission correlation state, and then complete
+[[opencode-36](#opencode-36)] for an owned managed child.
 
 ### opencode-43
 
@@ -864,6 +865,7 @@ matrix:
 | --- | --- |
 | managed startup | exact `opencode serve --hostname <host> --port <port>`, cwd, readiness wait, and discovered URL before client creation [[opencode-4](#opencode-4)], [[opencode-8](#opencode-8)] |
 | external startup | no child spawn and caller URL used [[opencode-4](#opencode-4)] |
+| external success, abort, or failed dispatch through either SDK version | iterator and local client cleanup preserve a same-workspace peer by never disposing the shared instance [[opencode-42](#opencode-42)] |
 | ordinary managed teardown | `SIGTERM` before bounded SDK cleanup [[opencode-36](#opencode-36)] |
 | caller already aborted or abort during pending SDK loading | no prohibited later work, one interrupted terminal, and no child signal [[opencode-9](#opencode-9)]; caller-listener release [[opencode-42](#opencode-42)] |
 | caller abort during non-settling managed readiness | run-owned signal cancellation, no client/session/prompt work, interrupted `done` before `SIGTERM`, and bounded `SIGKILL` escalation [[opencode-9](#opencode-9)], [[opencode-36](#opencode-36)] |
@@ -1016,7 +1018,7 @@ caller abort is exercised, the checks shall exhaust this matrix:
 | race precedence | pending read, query, recovery, ready idle, and ready rejection races each produce only [[opencode-39](#opencode-39)]'s interrupted terminal |
 | dispatch abort/failure | cancellation, known-session abort, raced-result ownership, iterator return, listener cleanup, and resume continuity from [[opencode-40](#opencode-40)] |
 | directory scoping | every legacy and v2 request row of [[opencode-41](#opencode-41)] |
-| post-terminal cleanup | signal-honoring and ignoring iterators, independently failed phases, bounded client/disposal waits, and managed escalation in [[opencode-42](#opencode-42)] |
+| post-terminal cleanup | signal-honoring and ignoring iterators, independently failed phases, bounded client/disposal waits, and managed escalation; v1/v2 external success, abort, and dispatch failure retain local close/shutdown without disposing the shared instance under [[opencode-42](#opencode-42)] |
 | active-session interruption | pre-terminal abort start, bounded retained attempt, backend resume, managed-after-terminal ordering, and external-server preservation in [[opencode-43](#opencode-43)] |
 
 ### opencode-54
@@ -1092,6 +1094,7 @@ When an adapter invocation encounters native structured questions through instal
 | Case                                                                                 | Assertion                                                                                                                     |
 | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | current fresh and resumed root asks, and explicitly owned managed descendants                          | exact native rejection, no fabricated answers or host approval callbacks, unchanged permission rules, bounded native settlement, and ordinary follow-up continuation |
+| consecutive native external-server turns | no remote instance disposal between working calls or during final cleanup [[opencode-42](#opencode-42)] |
 | late ownership metadata                                                              | retained question reconsidered after causal evidence arrives                                                                  |
 | foreign identical prompt before the current prompt, external descendants, unproved, disappeared, changed, replayed, or already answered ask          | no unrelated rejection or question-triggered abort; only matching typed question-not-found is benign                          |
 | legacy and v2 event/registry routes                                                  | exact SDK request path, scope, request identity, and response interpretation                                                  |

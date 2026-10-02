@@ -7577,7 +7577,7 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       }),
     );
     await v1.run?.({ prompt: 'v1 dispose', cwd: '/v1-workspace' });
-    await v1.close?.();
+    await v1.disposeInstance?.();
 
     const v2DisposeCalls: unknown[] = [];
     const v2 = wrapOpencodeClient(
@@ -7605,11 +7605,207 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       { apiVersion: 'v2' },
     );
     await v2.run?.({ prompt: 'v2 dispose', cwd: '/v2-workspace' });
-    await v2.close?.();
+    await v2.disposeInstance?.();
 
     expect(v1DisposeCalls).toEqual([{ query: { directory: '/v1-workspace' } }]);
     expect(v2DisposeCalls).toEqual([{ directory: '/v2-workspace' }]);
   });
+
+  describe.each(['v1', 'v2'] as const)(
+    '%s instance ownership',
+    (apiVersion) => {
+      it.each(['success', 'abort', 'dispatch failure'] as const)(
+        'preserves a shared external instance after %s while closing local resources',
+        async (outcome) => {
+          const controller = new AbortController();
+          const cleanup: string[] = [];
+          let peerActive = true;
+          const adapter = new OpenCodeAdapter(
+            { mode: 'external', serverUrl: 'http://shared.local:7000' },
+            {
+              loadSdk: async () => ({
+                createClient() {
+                  const client = wrapOpencodeClient(
+                    {
+                      session: {
+                        async create() {
+                          return {
+                            data: { id: 'current', title: 'Cligent run' },
+                          };
+                        },
+                        async promptAsync() {
+                          if (outcome === 'dispatch failure')
+                            throw new Error('fixture dispatch failure');
+                          return {};
+                        },
+                        async abort() {
+                          cleanup.push('session.abort');
+                          return { data: true };
+                        },
+                      },
+                      event: {
+                        async subscribe() {
+                          return {
+                            stream: (async function* () {
+                              try {
+                                yield {
+                                  type: 'server.connected',
+                                  properties: {},
+                                };
+                                if (outcome === 'abort') controller.abort();
+                                yield {
+                                  type: 'session.idle',
+                                  properties: { sessionID: 'current' },
+                                };
+                              } finally {
+                                cleanup.push('iterator.return');
+                              }
+                            })(),
+                          };
+                        },
+                      },
+                      instance: {
+                        async dispose() {
+                          peerActive = false;
+                          cleanup.push('instance.dispose');
+                          return { data: true };
+                        },
+                      },
+                    },
+                    { apiVersion },
+                  );
+                  client.close = () => {
+                    cleanup.push('client.close');
+                  };
+                  client.shutdown = () => {
+                    cleanup.push('client.shutdown');
+                  };
+                  return client;
+                },
+              }),
+            },
+          );
+
+          const events = await collect(
+            adapter.run('prompt', {
+              cwd: '/shared-workspace',
+              abortSignal: controller.signal,
+            }),
+          );
+
+          expect(events.filter((event) => event.type === 'done')).toHaveLength(
+            1,
+          );
+          expect(events.at(-1)?.payload).toMatchObject({
+            status:
+              outcome === 'success'
+                ? 'success'
+                : outcome === 'abort'
+                  ? 'interrupted'
+                  : 'error',
+          });
+          expect(cleanup).toContain('iterator.return');
+          expect(cleanup).toContain('client.close');
+          expect(cleanup).toContain('client.shutdown');
+          expect(cleanup).not.toContain('instance.dispose');
+          expect(peerActive).toBe(true);
+          if (outcome === 'abort') expect(cleanup).toContain('session.abort');
+        },
+      );
+
+      it.each(['success', 'reject', 'hang'] as const)(
+        'bounds owned managed disposal that can %s independently of local cleanup',
+        async (outcome) => {
+          const cleanup: string[] = [];
+          const disposalArguments: unknown[] = [];
+          const { spawnProcess, invocations } = makeSpawn({
+            onKill() {
+              cleanup.push('SIGTERM');
+            },
+          });
+          const adapter = new OpenCodeAdapter(
+            { mode: 'managed' },
+            {
+              spawnProcess,
+              probeCliAvailability: async () => true,
+              waitForServerReady: async () => 'http://owned.local:7000',
+              loadSdk: async () => ({
+                createClient() {
+                  const client = wrapOpencodeClient(
+                    {
+                      session: {
+                        async create() {
+                          return { data: { id: 'owned' } };
+                        },
+                        async promptAsync() {
+                          return {};
+                        },
+                      },
+                      event: {
+                        async subscribe() {
+                          return {
+                            stream: (async function* () {
+                              yield {
+                                type: 'server.connected',
+                                properties: {},
+                              };
+                              yield {
+                                type: 'session.idle',
+                                properties: { sessionID: 'owned' },
+                              };
+                            })(),
+                          };
+                        },
+                      },
+                      instance: {
+                        async dispose(args: unknown) {
+                          cleanup.push('instance.dispose');
+                          disposalArguments.push(args);
+                          if (outcome === 'reject')
+                            throw new Error('fixture disposal failure');
+                          if (outcome === 'hang')
+                            await new Promise<void>(() => {});
+                          return { data: true };
+                        },
+                      },
+                    },
+                    { apiVersion },
+                  );
+                  client.close = () => {
+                    cleanup.push('client.close');
+                    throw new Error('local close failed');
+                  };
+                  client.shutdown = () => {
+                    cleanup.push('client.shutdown');
+                  };
+                  return client;
+                },
+              }),
+            },
+          );
+
+          const startedAt = performance.now();
+          const events = await collect(
+            adapter.run('prompt', { cwd: '/owned-workspace' }),
+          );
+          expect(performance.now() - startedAt).toBeLessThan(1_000);
+          expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+          expect(cleanup).toEqual([
+            'SIGTERM',
+            'client.close',
+            'client.shutdown',
+            'instance.dispose',
+          ]);
+          expect(disposalArguments).toEqual([
+            apiVersion === 'v1'
+              ? { query: { directory: '/owned-workspace' } }
+              : { directory: '/owned-workspace' },
+          ]);
+          expect(invocations[0]?.process.killSignals).toEqual(['SIGTERM']);
+        },
+      );
+    },
+  );
 
   it('maps v2 session status and abort through the real SDK service seam', async () => {
     const statusCalls: unknown[] = [];

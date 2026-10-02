@@ -324,6 +324,8 @@ interface OpenCodeClient {
   }) => Promise<readonly string[] | undefined>;
   close?: () => Promise<void> | void;
   shutdown?: () => Promise<void> | void;
+  /** Remote workspace teardown; only an adapter-owned server may be disposed. */
+  disposeInstance?: () => Promise<void> | void;
 }
 
 interface OpenCodeSdk {
@@ -2472,7 +2474,7 @@ export function wrapOpencodeClient(
       };
     },
 
-    async close(): Promise<void> {
+    async disposeInstance(): Promise<void> {
       if (instanceDispose) {
         const result = await instanceDispose(
           apiVersion === 'v2'
@@ -6495,6 +6497,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           client?.shutdown?.bind(client),
           ITERATOR_CLEANUP_TIMEOUT_MS,
         ),
+        this.mode === 'managed'
+          ? maybeCallAsyncWithin(
+              client?.disposeInstance?.bind(client),
+              ITERATOR_CLEANUP_TIMEOUT_MS,
+            )
+          : Promise.resolve(),
       ]).then(() => {});
       const termCleanup =
         serverProcess && !serverClosed && serverLifecyclePromise

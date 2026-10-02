@@ -165,6 +165,10 @@ import { OpenCodeAdapter } from '@sublang/cligent/adapters/opencode';
 const agent = new Cligent(new OpenCodeAdapter());
 ```
 
+The default managed mode owns a server process for the call. External mode
+connects to the caller's server and leaves its workspace instance running
+when the call closes; cancellation still targets the call's native session.
+
 **Kimi Code**
 
 ```ts
