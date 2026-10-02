@@ -6,7 +6,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
@@ -106,6 +106,17 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
       const promptRequests: Array<Record<string, unknown>> = [];
       const rejectedRequests: unknown[] = [];
       const permissionSnapshots: unknown[] = [];
+      const observations: Array<{
+        turn: number;
+        time: number;
+        kind: string;
+        data: unknown;
+      }> = [];
+      let currentTurn = 0;
+      let lastClient: ReturnType<typeof createOpencodeClient> | undefined;
+      let finalNativeState: unknown;
+      const observe = (kind: string, data: unknown) =>
+        observations.push({ turn: currentTurn, time: Date.now(), kind, data });
       let approvalCalls = 0;
       let modelCalls = 0;
       let sessionID: string | undefined;
@@ -126,6 +137,11 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
             Buffer.concat(chunks).toString('utf8'),
           ) as ProviderRequest;
           requests.push(body);
+          observe('provider.request', {
+            index: requests.length,
+            modelCalls,
+            tools: body.tools?.map((tool) => tool.function?.name),
+          });
           const workingCall = body.tools?.some(
             (tool) => tool.function?.name === 'question',
           );
@@ -307,9 +323,53 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
               return {
                 createClient({ baseUrl } = {}) {
                   const real = createOpencodeClient({ baseUrl });
+                  lastClient = real;
+                  const nativeGet = real.session.get.bind(real.session);
+                  real.session.get = async (...args) => {
+                    const result = await nativeGet(...args);
+                    observe('session.get', {
+                      parameters: args[0],
+                      status: result.response.status,
+                      data: result.data,
+                      error: result.error,
+                    });
+                    return result;
+                  };
+                  const nativeChildren = real.session.children.bind(
+                    real.session,
+                  );
+                  real.session.children = async (...args) => {
+                    const result = await nativeChildren(...args);
+                    observe('session.children', {
+                      parameters: args[0],
+                      status: result.response.status,
+                      data: result.data,
+                      error: result.error,
+                    });
+                    return result;
+                  };
+                  const nativeDispose = real.instance.dispose.bind(
+                    real.instance,
+                  );
+                  real.instance.dispose = async (...args) => {
+                    const result = await nativeDispose(...args);
+                    observe('instance.dispose', {
+                      parameters: args[0],
+                      status: result.response.status,
+                      data: result.data,
+                      error: result.error,
+                    });
+                    return result;
+                  };
                   const nativeCreate = real.session.create.bind(real.session);
                   real.session.create = async (...args) => {
                     const result = await nativeCreate(...args);
+                    observe('session.create', {
+                      parameters: args[0],
+                      status: result.response.status,
+                      data: result.data,
+                      error: result.error,
+                    });
                     if (result.data) {
                       sessionID = result.data.id;
                       permissionSnapshots.push(
@@ -323,7 +383,14 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
                   );
                   real.session.promptAsync = async (...args) => {
                     promptRequests.push(structuredClone(args[0]));
-                    return nativePrompt(...args);
+                    observe('session.prompt.start', args[0]);
+                    const result = await nativePrompt(...args);
+                    observe('session.prompt.finish', {
+                      status: result.response.status,
+                      data: result.data,
+                      error: result.error,
+                    });
+                    return result;
                   };
                   const nativeReject = real.question.reject.bind(real.question);
                   real.question.reject = async (...args) => {
@@ -350,6 +417,7 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
                       stream: (async function* () {
                         for await (const event of subscription.stream) {
                           nativeEvents.push(event);
+                          observe('native.event', event);
                           yield event;
                         }
                       })(),
@@ -369,6 +437,41 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
           approvalCalls++;
           return 'allow_once' as const;
         };
+        const assertSettledTurn = (
+          start: number,
+          expectedModelCalls: number,
+        ) => {
+          const turnEvents = events.slice(start);
+          const diagnostics = JSON.stringify(
+            {
+              turn: currentTurn,
+              root,
+              sessionID,
+              modelCalls,
+              promptRequests,
+              turnEvents,
+              recentObservations: observations.slice(-12),
+              childLog: childLog.slice(-4000),
+            },
+            null,
+            2,
+          );
+          expect(errors, diagnostics).toEqual([]);
+          expect(
+            turnEvents.filter((event) => event.type === 'error'),
+            diagnostics,
+          ).toEqual([]);
+          expect(
+            turnEvents.filter((event) => event.type === 'done'),
+            diagnostics,
+          ).toHaveLength(1);
+          expect(turnEvents.at(-1), diagnostics).toMatchObject({
+            type: 'done',
+            payload: { status: 'success', resumeToken: sessionID },
+          });
+          expect(modelCalls, diagnostics).toBe(expectedModelCalls);
+        };
+        currentTurn = 1;
         for await (const event of cligent.run(
           'Ask the fixture question, then continue if the user declines it.',
           {
@@ -382,18 +485,16 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
           },
         )) {
           events.push(event);
+          observe('cligent.event', event);
         }
 
         // Native QuestionTool dismissal ends the current turn. Do not enable
         // continue-on-deny or invent a model retry; a later ordinary user turn
         // proves native history and continuation survive that settlement.
-        expect(modelCalls).toBe(1);
-        expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
-        expect(events.at(-1)).toMatchObject({
-          type: 'done',
-          payload: { status: 'success', resumeToken: sessionID },
-        });
+        assertSettledTurn(0, 1);
         expect(child.exitCode).toBeNull();
+        currentTurn = 2;
+        const secondTurnStart = events.length;
         for await (const event of cligent.run(
           'Ask the fixture question again in this resumed turn.',
           {
@@ -403,13 +504,11 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
           },
         )) {
           events.push(event);
+          observe('cligent.event', event);
         }
-        expect(modelCalls).toBe(2);
-        expect(events.filter((event) => event.type === 'done')).toHaveLength(2);
-        expect(events.at(-1)).toMatchObject({
-          type: 'done',
-          payload: { status: 'success', resumeToken: sessionID },
-        });
+        assertSettledTurn(secondTurnStart, 2);
+        currentTurn = 3;
+        const thirdTurnStart = events.length;
         for await (const event of cligent.run(
           'Continue without answering the dismissed question.',
           {
@@ -419,7 +518,9 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
           },
         )) {
           events.push(event);
+          observe('cligent.event', event);
         }
+        assertSettledTurn(thirdTurnStart, 3);
 
         expect(errors).toEqual([]);
         expect(
@@ -542,7 +643,34 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
         passed = true;
       } finally {
         clearTimeout(timeout);
+        const abortedBeforeCleanup = controller.signal.aborted;
         controller.abort();
+        // Query only after the test body settles, so diagnostics cannot add a
+        // delay between native turns or mask ordering/timing failures.
+        if (!passed && lastClient && sessionID && child?.exitCode === null) {
+          const diagnosticAbort = new AbortController();
+          const diagnosticTimer = setTimeout(
+            () => diagnosticAbort.abort(),
+            2_000,
+          );
+          try {
+            const options = { signal: diagnosticAbort.signal };
+            finalNativeState = await Promise.allSettled([
+              lastClient.session.get({ sessionID, directory: cwd }, options),
+              lastClient.session.messages(
+                { sessionID, directory: cwd },
+                options,
+              ),
+              lastClient.session.children(
+                { sessionID, directory: cwd },
+                options,
+              ),
+              lastClient.session.status({ directory: cwd }, options),
+            ]);
+          } finally {
+            clearTimeout(diagnosticTimer);
+          }
+        }
         if (child && child.exitCode === null && child.signalCode === null) {
           child.kill('SIGTERM');
           if (childClosed && !(await settles(childClosed, 2_000))) {
@@ -575,6 +703,20 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
                 promptRequests,
                 rejectedRequests,
                 permissionSnapshots,
+                observations,
+                finalNativeState,
+                fixture: {
+                  command,
+                  version: version.stdout.trim(),
+                  platform: process.platform,
+                  root,
+                  cwd,
+                  home,
+                  sessionID,
+                  currentTurn,
+                  modelCalls,
+                  abortedBeforeCleanup,
+                },
                 childLog,
               },
               null,
@@ -584,6 +726,21 @@ describe('OpenCode native structured-question refusal (opencode-66)', () => {
           process.stderr.write(
             `OpenCode question acceptance evidence: ${root}\n`,
           );
+          // Keep the original native workspace/home path, including Windows
+          // temp aliases. Only the evidence copy belongs in the CI artifact
+          // directory; changing cwd would mask the path-sensitive failure.
+          if (process.env.RUNNER_TEMP) {
+            const artifactRoot = await mkdtemp(
+              join(process.env.RUNNER_TEMP, 'cligent-opencode-question-'),
+            );
+            await copyFile(
+              join(root, 'failure.json'),
+              join(artifactRoot, 'failure.json'),
+            );
+            process.stderr.write(
+              `OpenCode question CI artifact: ${artifactRoot}\n`,
+            );
+          }
         }
       }
     },

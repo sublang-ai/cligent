@@ -111,6 +111,14 @@ jobs:
         run: npm install -g @google/gemini-cli@0.61.0 opencode-ai@1.18.33
       - name: Verify native browser, media and question loops
         run: npm run test:browser
+      - name: Retain isolated native question failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: native-question-failure-${{ runner.os }}
+          path: ${{ runner.temp }}/cligent-opencode-question-*/failure.json
+          if-no-files-found: ignore
+          retention-days: 7
       - run: npm run build
       - name: Install separate Electron host proof runtime
         shell: bash
