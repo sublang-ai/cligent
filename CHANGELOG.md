@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Managed browser proof timeouts name the last reported browser step without
+  exposing arbitrary child output. A child-reported proof deadline also reaps
+  the owned process tree, including resistant descendants after its launcher
+  exits. Existing deadlines and caller cancellation behavior remain unchanged.
+
 ## [0.33.3] - 2026-10-02
 
 ### Fixed

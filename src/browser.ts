@@ -58,12 +58,25 @@ async function executableExists(path: string): Promise<boolean> {
   }
 }
 
+const proofStepLabels = {
+  'load-runtime': 'loading the browser runtime',
+  'launch-browser': 'launching the browser',
+  'connect-browser': 'connecting to the browser',
+  'open-page': 'opening a browser page',
+  'set-content': 'setting the page content',
+  'capture-screenshot': 'capturing the screenshot',
+  'dispose-browser': 'disposing the browser',
+} as const;
+const proofStepPrefix = '__CLIGENT_BROWSER_PROOF_STEP__=';
+const proofDeadlineMarker = '__CLIGENT_BROWSER_PROOF_DEADLINE__';
+
 function runBrowserChild(
   cli: string,
   args: readonly string[],
   signal: AbortSignal | undefined,
   timeoutMs: number,
   operation: string,
+  trackProofSteps = false,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -76,15 +89,51 @@ function runBrowserChild(
       env: { ...process.env, ...nodeChildEnvironment() },
     });
     let diagnostics = '';
+    let proofLine = '';
+    let discardProofLine = false;
+    let lastProofStep = 'starting the browser proof';
+    let proofDeadlineReported = false;
     let stopped: Error | undefined;
     let settled = false;
     let escalation: ReturnType<typeof setTimeout> | undefined;
     let deadline: ReturnType<typeof setTimeout> | undefined;
-    const output = (chunk: Buffer) => {
-      diagnostics = (diagnostics + chunk.toString('utf8')).slice(-8192);
+    const output = (chunk: Buffer, parseProofSteps = false) => {
+      const text = chunk.toString('utf8');
+      if (parseProofSteps) {
+        // Keep the fixed progress protocol independent of stderr truncation.
+        // Discard an oversized line through its newline, never parse its tail.
+        for (const character of text) {
+          if (character === '\n') {
+            if (!discardProofLine) {
+              const line = proofLine.replace(/\r$/, '');
+              if (line === proofDeadlineMarker) proofDeadlineReported = true;
+              else if (line.startsWith(proofStepPrefix)) {
+                const step = line.slice(proofStepPrefix.length);
+                if (Object.hasOwn(proofStepLabels, step))
+                  lastProofStep =
+                    proofStepLabels[step as keyof typeof proofStepLabels];
+              }
+            }
+            proofLine = '';
+            discardProofLine = false;
+          } else if (!discardProofLine) {
+            if (proofLine.length < 128) proofLine += character;
+            else {
+              proofLine = '';
+              discardProofLine = true;
+            }
+          }
+        }
+      }
+      diagnostics = (diagnostics + text).slice(-8192);
     };
+    const stderrOutput = (chunk: Buffer) => output(chunk, trackProofSteps);
+    const timeoutError = () =>
+      new Error(
+        `${operation} timed out; ${trackProofSteps ? `last reported browser step: ${lastProofStep}; ` : ''}check host prerequisites and retry`,
+      );
     child.stdout.on('data', output);
-    child.stderr.on('data', output);
+    child.stderr.on('data', stderrOutput);
     const kill = (kind: NodeJS.Signals) => {
       try {
         if (process.platform !== 'win32' && child.pid)
@@ -109,7 +158,7 @@ function runBrowserChild(
       clearTimeout(deadline);
       signal?.removeEventListener('abort', abort);
       child.stdout.off('data', output);
-      child.stderr.off('data', output);
+      child.stderr.off('data', stderrOutput);
       if (error) reject(error);
       else resolve();
     };
@@ -126,29 +175,23 @@ function runBrowserChild(
       }, 1000);
     };
     const abort = () => stop(new Error('Browser preparation interrupted'));
-    const timeout = setTimeout(
-      () =>
-        stop(
-          new Error(
-            `${operation} timed out; check host prerequisites and retry`,
-          ),
-        ),
-      timeoutMs,
-    );
+    const timeout = setTimeout(() => stop(timeoutError()), timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
     child.once('error', (error) => finish(stopped ?? error));
     child.once('close', (code) => {
-      // The installer can exit while an inherited descendant ignores SIGTERM.
+      // A child can exit while an inherited descendant ignores SIGTERM.
       // Finish owned-tree termination before cancelling the escalation timer.
-      if (stopped) kill('SIGKILL');
+      if (stopped || proofDeadlineReported) kill('SIGKILL');
       finish(
         stopped ??
-          (code === 0
-            ? undefined
-            : new Error(
-                `${operation} failed (${code ?? 'signal'}). Check network access and host prerequisites, then retry.\n${diagnostics}`,
-              )),
+          (proofDeadlineReported
+            ? timeoutError()
+            : code === 0
+              ? undefined
+              : new Error(
+                  `${operation} failed (${code ?? 'signal'}). Check network access and host prerequisites, then retry.\n${trackProofSteps ? diagnostics.replace(/^__CLIGENT_BROWSER_PROOF_(?:STEP__=[^\r\n]*|DEADLINE__)\r?\n?/gm, '') : diagnostics}`,
+                )),
       );
     });
   });
@@ -300,23 +343,30 @@ async function probeBrowser(
   const source = `
 process.on('SIGTERM', () => process.exit(1));
 process.on('SIGINT', () => process.exit(1));
-const timer = setTimeout(() => { console.error('Browser launch proof timed out'); process.exit(1); }, ${timeoutMs});
+const step = value => console.error(${JSON.stringify('\n' + proofStepPrefix)} + value);
+const timer = setTimeout(() => { console.error(${JSON.stringify('\n' + proofDeadlineMarker)}); process.exit(1); }, ${timeoutMs});
 (async () => {
+  step('load-runtime');
   const { chromium } = require(${JSON.stringify(runtime.playwright)});
   let server;
   try {
+    step('launch-browser');
     server = await chromium.launchServer({
       executablePath: ${JSON.stringify(runtime.executablePath)},
       headless: true, chromiumSandbox: true,
       downloadsPath: ${JSON.stringify(directory)}, host: '127.0.0.1',
       timeout: ${timeoutMs}, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
     });
+    step('connect-browser');
     const browser = await chromium.connect(server.wsEndpoint(), { timeout: ${timeoutMs} });
+    step('open-page');
     const page = await browser.newPage();
+    step('set-content');
     await page.setContent('<!doctype html><title>Browser readiness</title><p>Ready</p>');
+    step('capture-screenshot');
     const png = await page.screenshot({ type: 'png', timeout: ${timeoutMs} });
     if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('Browser returned no PNG screenshot');
-  } finally { await server?.kill(); }
+  } finally { step('dispose-browser'); await server?.kill(); }
   clearTimeout(timer);
 })().then(() => process.exit(0), error => { console.error(String(error)); process.exit(1); });
 `;
@@ -328,6 +378,7 @@ const timer = setTimeout(() => { console.error('Browser launch proof timed out')
       signal,
       timeoutMs,
       'Managed Chromium launch/screenshot proof',
+      true,
     );
   } finally {
     await rm(directory, {
