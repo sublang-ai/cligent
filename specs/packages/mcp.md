@@ -43,7 +43,7 @@ When the managed browser is prepared, preparation shall use the pinned packaged 
 
 ### mcp-5
 
-When a managed-browser installation runs, preparation shall bound its duration and captured diagnostic output, terminate its owned process on cancellation or timeout with bounded escalation, and reject with an actionable failure unless installation completes and the executable becomes available.
+When a managed-browser installation runs, preparation shall bound its duration and captured diagnostic output, use a 180,000 millisecond installation limit for ordinary browser-enabled calls, terminate its owned process on cancellation or timeout with bounded escalation, and reject with an actionable failure unless installation completes and the executable becomes available.
 
 ### mcp-6
 

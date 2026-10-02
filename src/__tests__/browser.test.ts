@@ -5,13 +5,19 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { afterEach, describe, expect, it } from 'vitest';
+import { setTimeout as delay } from 'node:timers/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as browser from '../browser.js';
+import { Cligent } from '../cligent.js';
+import type { AgentAdapter } from '../types.js';
 import { prepareBrowserServer, releaseBrowserServer } from '../browser.js';
 import type { McpServerConfig } from '../mcp.js';
 
 const directories: string[] = [];
 const configurations: McpServerConfig[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   await Promise.all(configurations.splice(0).map(releaseBrowserServer));
   await Promise.all(
     directories
@@ -233,5 +239,200 @@ describe('managed browser preparation subprocess', () => {
     await expect(
       readFile(join(runtime.dir, 'unexpected')),
     ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+async function installerPid(runtime: { dir: string }): Promise<number> {
+  for (let attempt = 0; attempt < 500; attempt++) {
+    try {
+      return Number(await readFile(join(runtime.dir, 'pid'), 'utf8'));
+    } catch {
+      await delay(10);
+    }
+  }
+  throw new Error('Controlled installer did not start');
+}
+
+const controlledInstaller = `
+fs.writeFileSync(path.join(__dirname, 'pid'), String(process.pid));
+const timer = setInterval(() => {
+  if (fs.existsSync(path.join(__dirname, 'finish'))) {
+    fs.writeFileSync(path.join(__dirname, 'chromium'), 'fixture', {mode: 0o700});
+    clearInterval(timer);
+  }
+}, 10);
+`;
+
+function setupClient(available: () => Promise<boolean> = async () => true) {
+  return new Cligent({
+    agent: 'fixture',
+    getCapabilities: () => ({ browser: { status: 'supported' } }),
+    isAvailable: available,
+    async *run() {
+      throw new Error('Browser setup must not start a provider');
+    },
+  } satisfies AgentAdapter);
+}
+
+describe('explicit browser setup overall budget', () => {
+  it.each(['caller', 'default', 'runtime-default'] as const)(
+    'honors the %s budget beyond the previous installer cap and shares it with discovery and launch',
+    async (kind) => {
+      const runtime = await fixture(controlledInstaller);
+      const budgets: number[] = [];
+      const realPrepare = browser.prepareBrowserRuntime;
+      const fixtureRuntime = {
+        ...runtime,
+        probe: async (_signal: AbortSignal | undefined, timeoutMs: number) => {
+          budgets.push(timeoutMs);
+        },
+      };
+      vi.spyOn(browser, 'prepareBrowserRuntime').mockImplementation((options) =>
+        realPrepare(options, fixtureRuntime),
+      );
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      const controller = new AbortController();
+      let completeDiscovery!: () => void;
+      const discovery = new Promise<boolean>((resolve) => {
+        completeDiscovery = () => resolve(true);
+      });
+      const budget = kind === 'caller' ? 900_000 : 600_000;
+      const options = {
+        abortSignal: controller.signal,
+        ...(kind === 'caller' ? { timeoutMs: budget } : {}),
+      };
+      const stages: string[] = [];
+      const pending =
+        kind === 'runtime-default'
+          ? realPrepare(
+              { ...options, onProgress: (value) => stages.push(value.stage) },
+              fixtureRuntime,
+            )
+          : setupClient(() => discovery).prepareBrowser({
+              ...options,
+              onProgress: (value) => stages.push(value.stage),
+            });
+      let settled = false;
+      void pending.finally(() => {
+        settled = true;
+      });
+      try {
+        const discoveryElapsed = kind === 'runtime-default' ? 0 : 45_000;
+        if (discoveryElapsed) {
+          await vi.advanceTimersByTimeAsync(discoveryElapsed);
+          completeDiscovery();
+        }
+        const pid = await installerPid(runtime);
+        await vi.advanceTimersByTimeAsync(195_001 - discoveryElapsed);
+        expect(settled).toBe(false);
+        expect(() => process.kill(pid, 0)).not.toThrow();
+        // The remaining overall budget, rather than a fresh launch allowance,
+        // is passed to the readiness probe after a slow successful install.
+        await vi.advanceTimersByTimeAsync(budget - 5000 - 195_001);
+        expect(settled).toBe(false);
+        await writeFile(join(runtime.dir, 'finish'), 'finish');
+        expect(await pending).toMatchObject({ status: 'ready' });
+        expect(budgets).toEqual([5000]);
+        expect(stages).toEqual(
+          kind === 'runtime-default'
+            ? ['installing', 'launching']
+            : ['checking', 'installing', 'launching'],
+        );
+        expect(() => process.kill(pid, 0)).toThrow();
+      } finally {
+        controller.abort();
+        vi.useRealTimers();
+        await pending;
+      }
+    },
+  );
+
+  it.each(['timeout', 'cancel'] as const)(
+    'retires the owned installer on explicit setup %s without launching a provider',
+    async (kind) => {
+      const runtime = await fixture(controlledInstaller);
+      const realPrepare = browser.prepareBrowserRuntime;
+      vi.spyOn(browser, 'prepareBrowserRuntime').mockImplementation((options) =>
+        realPrepare(options, runtime),
+      );
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      const controller = new AbortController();
+      const stages: string[] = [];
+      const pending = setupClient().prepareBrowser({
+        timeoutMs: kind === 'timeout' ? 1200 : 900_000,
+        abortSignal: controller.signal,
+        onProgress: (value) => stages.push(value.stage),
+      });
+      let settled = false;
+      void pending.finally(() => {
+        settled = true;
+      });
+      try {
+        const pid = await installerPid(runtime);
+        await vi.advanceTimersByTimeAsync(kind === 'timeout' ? 1199 : 200_000);
+        expect(settled).toBe(false);
+        expect(() => process.kill(pid, 0)).not.toThrow();
+        if (kind === 'timeout') await vi.advanceTimersByTimeAsync(1);
+        else controller.abort();
+        expect(await pending).toMatchObject(
+          kind === 'timeout'
+            ? { status: 'not-ready', code: 'timeout' }
+            : { status: 'cancelled' },
+        );
+        expect(stages).toEqual(['checking', 'installing']);
+        expect(() => process.kill(pid, 0)).toThrow();
+      } finally {
+        controller.abort();
+        vi.useRealTimers();
+        await pending;
+      }
+    },
+  );
+
+  it('retains the ordinary-call three-minute installer deadline', async () => {
+    const runtime = await fixture(controlledInstaller);
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    const controller = new AbortController();
+    const pending = prepareBrowserServer(controller.signal, runtime).catch(
+      (error) => error as Error,
+    );
+    let settled = false;
+    void pending.finally(() => {
+      settled = true;
+    });
+    try {
+      const pid = await installerPid(runtime);
+      await vi.advanceTimersByTimeAsync(179_999);
+      expect(settled).toBe(false);
+      expect(() => process.kill(pid, 0)).not.toThrow();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await pending).toMatchObject({
+        message: expect.stringContaining('installation timed out'),
+      });
+      expect(() => process.kill(pid, 0)).toThrow();
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
+      await pending;
+    }
+  });
+
+  it('retains the ten-second launch cap when explicit setup has ample time', async () => {
+    const runtime = await fixture(
+      "fs.writeFileSync(path.join(__dirname, 'chromium'), 'fixture', {mode: 0o700});",
+    );
+    const budgets: number[] = [];
+    expect(
+      await browser.prepareBrowserRuntime(
+        { timeoutMs: 900_000 },
+        {
+          ...runtime,
+          probe: async (_signal, budget) => {
+            budgets.push(budget);
+          },
+        },
+      ),
+    ).toMatchObject({ status: 'ready' });
+    expect(budgets).toEqual([10_000]);
   });
 });

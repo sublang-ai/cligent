@@ -5,6 +5,9 @@ import { getAttachmentSupport, type AttachmentSupport } from './attachments.js';
 import { normalizeMcpServers, type McpOptions } from './mcp.js';
 import type { AgentOptions, RunOptions } from './types.js';
 
+/** Default overall deadline for explicit host preparation, in milliseconds. */
+export const DEFAULT_BROWSER_SETUP_TIMEOUT_MS = 600_000;
+
 export type CapabilityRestriction =
   | 'unsupported-transport'
   | 'unsupported-host'
@@ -79,6 +82,11 @@ export type BrowserSetupOptions<
   SM extends string = string,
   SE extends string = string,
 > = Omit<CapabilityOptions<E, FM, SM, SE>, 'browser'> & {
+  /**
+   * Overall discovery, availability, installation and launch budget; defaults to
+   * 600,000 ms. Must be finite, positive and at most 2,147,483,647 ms. Bounded
+   * owned-process cleanup may finish after the deadline.
+   */
   readonly timeoutMs?: number;
   readonly onProgress?: (progress: BrowserSetupProgress) => void;
 };

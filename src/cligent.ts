@@ -21,6 +21,7 @@ import {
   recordObservedToolUse,
 } from './protocol.js';
 import { generateSessionId } from './events.js';
+import { DEFAULT_BROWSER_SETUP_TIMEOUT_MS } from './capabilities.js';
 import type {
   AgentCapabilities,
   CapabilityOptions,
@@ -188,16 +189,21 @@ export class Cligent<
       throw new TypeError('Browser setup onProgress must be a function');
     if (
       options?.timeoutMs !== undefined &&
-      (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)
+      (!Number.isFinite(options.timeoutMs) ||
+        options.timeoutMs <= 0 ||
+        options.timeoutMs > 2_147_483_647)
     ) {
-      throw new TypeError('Browser setup timeoutMs must be positive');
+      throw new TypeError(
+        'Browser setup timeoutMs must be positive and at most 2147483647',
+      );
     }
     const controller = new AbortController();
     const callerSignal = options?.abortSignal;
     const abort = () => controller.abort();
     callerSignal?.addEventListener('abort', abort, { once: true });
     if (callerSignal?.aborted) abort();
-    const deadline = Date.now() + (options?.timeoutMs ?? 195_000);
+    const deadline =
+      Date.now() + (options?.timeoutMs ?? DEFAULT_BROWSER_SETUP_TIMEOUT_MS);
     const timer = setTimeout(abort, Math.max(1, deadline - Date.now()));
     const wait = <T>(pending: Promise<T>): Promise<T> =>
       new Promise((resolve, reject) => {
