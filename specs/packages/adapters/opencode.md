@@ -77,6 +77,7 @@ shall dispatch the event according to this table:
 | `message.part.updated` (image part)                                             | `opencode:image_part` (extension)                                                                                                                                           |
 | `permission.updated` / `permission.asked`                                       | the headless outcome selected by [[opencode-20](#opencode-20)]                                                                                                              |
 | `permission.replied`                                                            | the reply outcome selected by [[opencode-16](#opencode-16)]                                                                                                                 |
+| `question.asked` / `question.v2.asked` | unsupported-question refusal selected by [[opencode-65](#opencode-65)] |
 | `session.idle` or idle `session.status`                                          | the terminal selected by [[opencode-26](#opencode-26)]                                                                                                                      |
 | `error` or `session.error`                                                       | the payload and state effect selected by [[opencode-27](#opencode-27)]                                                                                                      |
 | absent or any other event type                                                   | no event                                                                                                                                                                    |
@@ -468,7 +469,7 @@ matrix:
 
 | Portable input | OpenCode outcome |
 | --- | --- |
-| prompt | one native text part with the exact string, followed by any [[opencode-58](#opencode-58)] file parts, and no caller-supplied message identifier, because OpenCode mints the identifier and a foreign one leaves the session busy without a terminal [[14]] |
+| prompt | one native text part with the exact string, followed by any [[opencode-58](#opencode-58)] file parts, and a fresh adapter-owned native-format `messageID`, returned only as internal wrapper provenance for question control; no caller identifier is accepted [[14]][[22]] |
 | non-empty `cwd` | wrapper `cwd` and the version-specific request placement in [[opencode-41](#opencode-41)]; omit provider directory data for absent or empty `cwd` |
 | any model string containing `/` | split at its first slash into native `{ providerID, modelID }`, including an empty side |
 | non-empty model without `/` | pass through unchanged |
@@ -556,6 +557,19 @@ When a run supplies MCP servers or selects the browser preset, the adapter shall
 | surviving permission ask whose native tool name matches an admitted server prefix, with every matching server prefix in the returned registry admitted | automated once response through [[opencode-20](#opencode-20)] |
 | ambiguous ambient prefix or no admitted match | ordinary headless policy |
 | native hard denial | retain native authority |
+
+### opencode-65
+
+When a live stream exposes `question.asked` or `question.v2.asked`, the adapter shall decline unsupported structured input [[approvals-6](../approvals.md#approvals-6)] according to this matrix without changing native permission policy or invoking the host approval handler:
+
+| Case                                                                                                                                                                        | Outcome                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| native tool message is an assistant whose `parentID` equals this invocation's exact dispatched prompt ID [[opencode-44](#opencode-44)], or an explicitly owned descendant on the adapter-owned managed server | compare native request ID, session, complete questions, and tool message/call identity against the corresponding authoritative pending registry immediately before rejecting the exact request, with no fabricated answer or persistent grant |
+| already owned session, but current-prompt ownership not yet proven                                                                                                                                                    | retain the observation for reconsideration after later stream metadata; shared external-server ancestry alone never authorizes rejection or a question-triggered native abort                                                                                |
+| unrelated, removed, or changed pending operation                                                                                                                            | no native response; a matching typed `QuestionNotFoundError` during rejection is an already resolved request                                                                                                                                  |
+| confirmed rejection                                                                                                                                                         | allow the native tool result and ordinary native settlement to establish the outcome; no synthesized successful answer                                                                                                                       |
+| proved-current request with missing request ID, malformed supplied tool message/call identity, or unavailable, malformed, failed, or unconfirmed registry/rejection route                                                     | cancel native I/O, attempt bounded active-session abort, and emit `OPENCODE_QUESTION_REPLY_FAILED` followed by one error terminal, unless caller cancellation requires interruption [[opencode-9](#opencode-9)]                               |
+| lookup and rejection waiting                                                                                                                                                | share one five-second provider-operation budget and the invocation's cancellation signal, with failure cleanup before terminal output                                                                                                         |
 
 ## Internal Behavior
 
@@ -1062,7 +1076,7 @@ causal report matrix while preserving independently observed `toolUses`
 | Concern | Assertions |
 | --- | --- |
 | stream establishment | before-prompt subscription, bounded handshake wait, first-event preservation, and cleanup transfer [[opencode-45](#opencode-45)] |
-| prompt boundary | no caller-supplied message identifier plus every proof, exclusion, ambiguity, fresh fallback, resumed no-fallback, background, and concurrent-prompt row in [[opencode-44](#opencode-44)] and [[opencode-46](#opencode-46)] |
+| prompt boundary | native-format adapter-owned message identifier and separate control provenance plus every accounting proof, exclusion, ambiguity, fresh fallback, resumed no-fallback, background, and concurrent-prompt row in [[opencode-44](#opencode-44)] and [[opencode-46](#opencode-46)] |
 | step ledger | assistant-`parentID` and task-child causal propagation, causal descendant inclusion without child conversation, foreign/pre-existing/unscoped exclusion, key de-duplication/replacement, removal retention, identity failure, and settled coverage [[opencode-47](#opencode-47)] |
 | title suppression | fresh, default resumed, meaningful resumed, parent, and every unproved-suppression row in [[opencode-48](#opencode-48)] |
 | health gate | healthy exact version plus every partial-without-blocking row in [[opencode-49](#opencode-49)] |
@@ -1070,6 +1084,18 @@ causal report matrix while preserving independently observed `toolUses`
 | task/background continuation | command continuation, reused task, repeated/conflicting task identity, one-to-one background success, missing/unmatched/error result, idle ordering, malformed identity, and active-child rows in [[opencode-51](#opencode-51)] |
 | public token report | inclusive totals, exact cache/reasoning subsets, complete/partial/omitted coverage, exact records, no removed flat or availability fields, and generic-idle alias rejection [[opencode-21](#opencode-21)] |
 | cost | finite non-negative USD `agent-estimate` records, measured-zero retention, missing-cost omission, and whole-run cost only for complete all-cost coverage |
+
+### opencode-66
+
+When an adapter invocation encounters native structured questions through installed SDK HTTP codecs and a credential-free native OpenCode tool loop, integration checks shall verify the refusal matrix [[opencode-65](#opencode-65)]:
+
+| Case                                                                                 | Assertion                                                                                                                     |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| current fresh and resumed root asks, and explicitly owned managed descendants                          | exact native rejection, no fabricated answers or host approval callbacks, unchanged permission rules, bounded native settlement, and ordinary follow-up continuation |
+| late ownership metadata                                                              | retained question reconsidered after causal evidence arrives                                                                  |
+| foreign identical prompt before the current prompt, external descendants, unproved, disappeared, changed, replayed, or already answered ask          | no unrelated rejection or question-triggered abort; only matching typed question-not-found is benign                          |
+| legacy and v2 event/registry routes                                                  | exact SDK request path, scope, request identity, and response interpretation                                                  |
+| missing or malformed route, failed lookup/rejection, timeout, or caller cancellation | bounded failure or interruption, native I/O cancellation, one terminal, and no claim of successful rejection                  |
 
 ## References
 
@@ -1093,3 +1119,5 @@ causal report matrix while preserving independently observed `toolUses`
 [20]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/provider/transform.ts#L385-L417 'OpenCode 1.18.33 model-specific media eligibility handling'
 
 [21]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/mcp/index.ts "OpenCode 1.18.33 dynamic MCP registration and connection status"
+
+[22]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/id/id.ts 'OpenCode 1.18.33 native ascending identifiers'

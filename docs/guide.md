@@ -864,8 +864,25 @@ Capability discovery returns optional `capabilities.approvals`, using
 `supported`, `unsupported` with code `unsupported-transport`, or `unknown`.
 Absent facts from a custom adapter are unknown. These facts describe transport
 support, not native authorization, account readiness, or automatic human consent.
-Structured forms, Claude `AskUserQuestion`, and persistent “always allow” grants
-are outside this boolean tool-decision API.
+The callback is independent of tool and application names, so a native consent
+tool can use the same route as any other unresolved tool permission.
+Structured questions such as Claude `AskUserQuestion`, MCP form or URL
+elicitation, and persistent “always allow” grants are outside this boolean
+tool-decision API. A later prompt cannot answer a native callback already
+waiting inside the current call; those interactions need their own typed
+response transport. Operating-system and controlling-application grants must
+be completed in the system that owns them.
+
+OpenCode refuses unsupported questions only after proving ownership: a root
+question must link to the exact prompt identifier dispatched by that call;
+explicitly owned descendants can also be declined on its managed server.
+Shared external-server descendants lack an authoritative per-prompt link and
+remain untouched, as do root questions after an internally inserted prompt
+without a proven link to the dispatched prompt. Unproved and unrelated asks
+receive no answer. These runs retain normal inactivity recovery and caller
+cancellation. The inactivity limit is not an absolute question deadline: real
+session activity can extend it; global server heartbeats cannot. No question
+is converted into an allow-once decision or answered with invented text.
 
 ## Parallel execution
 

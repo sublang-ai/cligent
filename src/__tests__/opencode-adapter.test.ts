@@ -6023,9 +6023,10 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
       };
     };
     expect(promptArgs.path.id).toBe('new-session-42');
-    // The run never dictates a message id: OpenCode mints ids in its own
-    // format and a foreign one leaves the session busy forever.
-    expect(promptArgs.body.messageID).toBeUndefined();
+    // Control decisions bind to this native-format, adapter-owned prompt ID.
+    expect(promptArgs.body.messageID).toMatch(
+      /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/,
+    );
     expect(promptArgs.body.parts).toEqual([{ type: 'text', text: 'hello v1' }]);
   });
 
@@ -7211,10 +7212,10 @@ describe('wrapOpencodeClient (v1 SDK wrapper)', () => {
         { permission: 'webfetch', pattern: '*', action: 'deny' },
       ],
     });
-    // objectContaining alone would let a dictated `messageID` return unnoticed.
-    expect(
-      (capturedPromptArgs as Record<string, unknown>).messageID,
-    ).toBeUndefined();
+    // The adapter owns a native-format prompt identifier for control correlation.
+    expect((capturedPromptArgs as Record<string, unknown>).messageID).toMatch(
+      /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/,
+    );
     expect(capturedPromptArgs).toEqual(
       expect.objectContaining({
         sessionID: 'v2-session-permissions',

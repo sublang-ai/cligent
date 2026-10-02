@@ -9,6 +9,7 @@ import type {
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { randomBytes } from 'node:crypto';
 import { basename } from 'node:path';
 import { isDeepStrictEqual, promisify } from 'node:util';
 
@@ -82,6 +83,28 @@ const DEFAULT_MANAGED_SERVER_KILL_GRACE_MS = 500;
 const PERMISSION_REPLY_TIMEOUT_MS = 5_000;
 const STREAM_CONNECT_GRACE_MS = 250;
 const CLIGENT_SESSION_TITLE = 'Cligent run';
+let lastPromptTimestamp = 0;
+let promptIdCounter = 0;
+
+// OpenCode 1.18.33 Identifier.ascending format. A generic UUID is not a
+// MessageID and can prevent native message ordering/settlement. Keep the
+// native time prefix and random alphabet while owning this prompt's identity.
+function createOpenCodePromptMessageId(): string {
+  const timestamp = Date.now();
+  promptIdCounter = timestamp === lastPromptTimestamp ? promptIdCounter + 1 : 1;
+  lastPromptTimestamp = timestamp;
+  const encoded = BigInt(timestamp) * 0x1000n + BigInt(promptIdCounter);
+  const time = Buffer.alloc(6);
+  for (let index = 0; index < 6; index++) {
+    time[index] = Number((encoded >> BigInt(40 - 8 * index)) & 0xffn);
+  }
+  const alphabet =
+    '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  const suffix = [...randomBytes(14)]
+    .map((byte) => alphabet[byte % 62])
+    .join('');
+  return `msg_${time.toString('hex')}${suffix}`;
+}
 const OPENCODE_ACCOUNTING_SERVER_VERSION =
   AGENT_RUNTIME_TARGETS.opencode[0]!.tested;
 const OPENCODE_DEFAULT_SESSION_TITLE =
@@ -167,6 +190,18 @@ interface PendingPermissionIdentity {
   patterns: string[];
 }
 
+interface PendingQuestion {
+  id: string;
+  sessionID: string;
+  questions: unknown;
+  tool?: unknown;
+}
+
+interface ObservedQuestion {
+  version: 'legacy' | 'v2';
+  request: PendingQuestion;
+}
+
 /** Observe external resolution without consuming the invocation's SSE stream. */
 function watchPendingPermission(
   lookup: (signal: AbortSignal) => Promise<boolean>,
@@ -238,6 +273,12 @@ function watchPendingPermission(
 interface OpenCodeClient {
   /** Human decisions require an authoritative registry, absent in old v1. */
   canApprovePermissions?: boolean;
+  declineQuestion?: (
+    options: ObservedQuestion & {
+      cwd?: string;
+      signal: AbortSignal;
+    },
+  ) => Promise<void>;
   addMcpServers?: (options: {
     servers: McpServers;
     cwd?: string;
@@ -1356,6 +1397,8 @@ export function wrapOpencodeClient(
   const instance = real.instance as Record<string, unknown> | undefined;
   const globalService = real.global as Record<string, unknown> | undefined;
   const permission = real.permission as Record<string, unknown> | undefined;
+  const question = asRecord(real.question);
+  const v2Question = asRecord(asRecord(asRecord(real.v2).session).question);
   const configService = real.config as Record<string, unknown> | undefined;
   const mcpService = real.mcp as Record<string, unknown> | undefined;
   const mcpAdd =
@@ -1963,10 +2006,12 @@ export function wrapOpencodeClient(
         }
         if (signal?.aborted) return stopAbortedDispatch();
         const promptSessionId = sessionId;
+        const promptMessageId = createOpenCodePromptMessageId();
         const attachmentParts = (options.attachmentParts ??
           []) as FilePartInput[];
 
         const promptBody = {
+          messageID: promptMessageId,
           parts: [{ type: 'text', text: options.prompt }, ...attachmentParts],
           ...(modelVal ? { model: modelVal } : {}),
           ...(variantVal ? { variant: variantVal } : {}),
@@ -1980,6 +2025,7 @@ export function wrapOpencodeClient(
           directory?: string;
         } = {
           sessionID: promptSessionId,
+          messageID: promptMessageId,
           parts: [
             { type: 'text', text: asString(options.prompt) ?? '' },
             ...attachmentParts,
@@ -2109,6 +2155,7 @@ export function wrapOpencodeClient(
         return {
           id: sessionId,
           sessionId,
+          promptMessageId,
           ownedSessionIds: [...ownedSessionIds],
           ...(usageCoverageIncomplete ? { usageCoverageIncomplete: true } : {}),
           ...(events ? { events } : {}),
@@ -2163,6 +2210,97 @@ export function wrapOpencodeClient(
     },
 
     canApprovePermissions: permissionList !== undefined,
+
+    async declineQuestion({ version, request, cwd, signal }): Promise<void> {
+      const route = version === 'v2' ? v2Question : question;
+      if (
+        typeof route.list !== 'function' ||
+        typeof route.reject !== 'function'
+      ) {
+        throw new Error(
+          `OpenCode ${version} question list/reject API not available`,
+        );
+      }
+      const list = route.list.bind(route) as (
+        parameters?: unknown,
+        options?: unknown,
+      ) => Promise<unknown>;
+      const reject = route.reject.bind(route) as (
+        parameters: unknown,
+        options?: unknown,
+      ) => Promise<unknown>;
+      const result = await list(
+        version === 'v2'
+          ? { sessionID: request.sessionID }
+          : apiVersion === 'v2'
+            ? cwd
+              ? { directory: cwd }
+              : undefined
+            : { ...(cwd ? { query: { directory: cwd } } : {}), signal },
+        version === 'v2' || apiVersion === 'v2' ? { signal } : undefined,
+      );
+      throwIfSdkResultError(result, 'OpenCode question lookup failed');
+      const data = unwrapSdkData(result);
+      const pending = version === 'v2' ? asRecord(data).data : data;
+      if (!Array.isArray(pending)) {
+        throw new Error(
+          'OpenCode question registry returned a non-array response',
+        );
+      }
+      // The native ID is minted by OpenCode. Compare its full operation before
+      // rejection: a replay or another client's already answered ask is inert.
+      const matches = pending.filter((entry) => {
+        const value = asRecord(entry);
+        return value.id === request.id && value.sessionID === request.sessionID;
+      });
+      if (matches.length !== 1) return;
+      const current = asRecord(matches[0]);
+      if (
+        !isDeepStrictEqual(
+          {
+            id: current.id,
+            sessionID: current.sessionID,
+            questions: current.questions,
+            ...(current.tool !== undefined ? { tool: current.tool } : {}),
+          },
+          request,
+        )
+      )
+        return;
+      if (signal.aborted)
+        throw new Error('OpenCode question rejection cancelled');
+      const reply = await reject(
+        version === 'v2'
+          ? { sessionID: request.sessionID, requestID: request.id }
+          : apiVersion === 'v2'
+            ? { requestID: request.id, ...(cwd ? { directory: cwd } : {}) }
+            : {
+                path: { requestID: request.id },
+                ...(cwd ? { query: { directory: cwd } } : {}),
+                signal,
+              },
+        version === 'v2' || apiVersion === 'v2' ? { signal } : undefined,
+      );
+      const error = asRecord(asRecord(reply).error);
+      if (
+        error._tag === 'QuestionNotFoundError' &&
+        error.requestID === request.id
+      )
+        return;
+      throwIfSdkResultError(reply, 'OpenCode question rejection failed');
+      // Legacy routes return true; the v2 session route returns HTTP 204.
+      if (version === 'legacy' && unwrapSdkData(reply) !== true) {
+        throw new Error('OpenCode did not confirm question rejection');
+      }
+      if (
+        version === 'v2' &&
+        asRecord(asRecord(reply).response).status !== 204
+      ) {
+        throw new Error(
+          'OpenCode did not confirm question rejection with HTTP 204',
+        );
+      }
+    },
 
     async isPermissionPending(options): Promise<boolean> {
       const operation =
@@ -2574,12 +2712,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     let sessionAbortAttempted = false;
     let sessionAbortPromise: Promise<void> | undefined;
     const ownedSessionIds = new Set<string>();
+    let dispatchedPromptMessageId: string | undefined;
+    const observedQuestions = new Map<string, ObservedQuestion>();
     let wrapperUsageCoverageIncomplete = false;
 
-    // The run's causal boundary is the user message its prompt creates, which
-    // OpenCode assistant messages name as `parentID`. The id is observed, never
-    // dictated: OpenCode mints ids in its own format, and a foreign id leaves
-    // the session busy forever.
+    // Accounting observes the user message the prompt creates, which OpenCode
+    // assistant messages name as `parentID`. This compatibility ledger retains
+    // its observed-message rules; native question control separately uses the
+    // exact adapter-owned prompt ID returned by the SDK wrapper.
     //
     // A resumed root session is not exclusively this run's: a background task
     // started by an earlier invocation injects its result as a fresh prompt
@@ -4331,6 +4471,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         throw runOutcome.error;
       }
       const runResult = runOutcome.value;
+      dispatchedPromptMessageId = asString(asRecord(runResult).promptMessageId);
 
       const loadedId = loadSessionId(runResult);
       if (loadedId) {
@@ -4446,6 +4587,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         permissionSessionId: string,
         requestId: string,
         toolName: string,
+        requestKind: 'permission' | 'question' = 'permission',
       ): AsyncGenerator<AgentEvent, void, void> {
         if (requestKey) releasePermissionRequest(requestKey);
         // Cancel the failed operation and paired SSE transport before yielding
@@ -4486,9 +4628,12 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           'error',
           AGENT,
           {
-            code: 'OPENCODE_PERMISSION_REPLY_FAILED',
+            code:
+              requestKind === 'question'
+                ? 'OPENCODE_QUESTION_REPLY_FAILED'
+                : 'OPENCODE_PERMISSION_REPLY_FAILED',
             message:
-              'Failed to resolve OpenCode headless permission request ' +
+              `Failed to resolve OpenCode headless ${requestKind} request ` +
               `(sessionID=${JSON.stringify(permissionSessionId)}, ` +
               `requestID=${JSON.stringify(requestId)}, ` +
               `permission=${JSON.stringify(toolName)}): ${detail}`,
@@ -4533,6 +4678,80 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           sessionId,
         );
         doneYielded = true;
+      };
+
+      const managedQuestionLineage = this.mode === 'managed';
+      const declineOwnedQuestions = async function* (): AsyncGenerator<
+        AgentEvent,
+        void,
+        void
+      > {
+        for (const [key, observation] of observedQuestions) {
+          const request = observation.request;
+          const messageId = asString(asRecord(request.tool).messageID);
+          const message =
+            messageId === undefined
+              ? undefined
+              : messageFacts.get(
+                  openCodeUsageKey(request.sessionID, messageId),
+                );
+          const ownsRootPrompt =
+            request.sessionID === sessionId &&
+            dispatchedPromptMessageId !== undefined &&
+            message?.role === 'assistant' &&
+            message.parentId === dispatchedPromptMessageId;
+          const ownsManagedDescendant =
+            managedQuestionLineage &&
+            request.sessionID !== sessionId &&
+            ownedSessionIds.has(request.sessionID);
+          // Text equality and presently unique stream order are accounting
+          // evidence, never authority for irreversible native control.
+          if (!ownsRootPrompt && !ownsManagedDescendant) continue;
+          observedQuestions.delete(key);
+          const startedAt = performance.now();
+          const nativeTool = asRecord(request.tool);
+          const validRequest =
+            request.id.length > 0 &&
+            Array.isArray(request.questions) &&
+            (request.tool === undefined ||
+              (asString(nativeTool.messageID) !== undefined &&
+                asString(nativeTool.callID) !== undefined));
+          const operation =
+            validRequest && client?.declineQuestion
+              ? client.declineQuestion({
+                  ...observation,
+                  ...(options?.cwd ? { cwd: options.cwd } : {}),
+                  signal: eventStreamController.signal,
+                })
+              : Promise.reject(
+                  new Error(
+                    validRequest
+                      ? 'SDK client question refusal API not available'
+                      : 'Native question request has no valid identifier, questions, or tool identity',
+                  ),
+                );
+          const result = await waitForPermissionOperation(
+            operation,
+            { remainingMs: PERMISSION_REPLY_TIMEOUT_MS },
+            startedAt,
+          );
+          if (result.kind === 'abort') {
+            operation.catch(() => {});
+            throw new OpenCodePromptDispatchAbortError(sessionId);
+          }
+          if (result.kind === 'error' || result.kind === 'timeout') {
+            yield* terminatePermissionFailure(
+              undefined,
+              operation,
+              result,
+              request.sessionID,
+              request.id || '<missing>',
+              'question',
+              'question',
+            );
+            return;
+          }
+        }
       };
 
       const describeControlOutcome = (
@@ -4997,10 +5216,15 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         // OpenCode SSE events wrap data in { type, properties: { ... } }.
         // Flatten so downstream code can access fields directly.
         const props = asRecord(rawEvent.properties);
+        const questionData = eventType.startsWith('question.v2.')
+          ? asRecord(rawEvent.data)
+          : {};
         const event =
           Object.keys(props).length > 0
             ? { ...props, type: eventType }
-            : rawEvent;
+            : Object.keys(questionData).length > 0
+              ? { ...questionData, type: eventType }
+              : rawEvent;
 
         // Use strict extractor — only explicit session fields, no generic `id`
         // that could match message/event IDs and cause false filtering.
@@ -5053,6 +5277,46 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         const ownedSessionEvent =
           eventSessionId !== undefined && ownedSessionIds.has(eventSessionId);
         const accountingEventSequence = ++accountingSequence;
+
+        // Questions need structured answers, never an allow-once permission.
+        // Retain observations until later message/task metadata proves their
+        // invocation. A shared resumed session is not itself that proof.
+        if (
+          eventType === 'question.asked' ||
+          eventType === 'question.v2.asked'
+        ) {
+          if (eventSessionId && ownedSessionIds.has(eventSessionId)) {
+            const version = eventType === 'question.v2.asked' ? 'v2' : 'legacy';
+            const request: PendingQuestion = {
+              id: asString(event.id) ?? '',
+              sessionID: eventSessionId,
+              questions: event.questions,
+              ...(event.tool !== undefined ? { tool: event.tool } : {}),
+            };
+            observedQuestions.set(
+              JSON.stringify([version, eventSessionId, request.id]),
+              {
+                version,
+                request,
+              },
+            );
+          }
+        } else if (
+          eventType === 'question.replied' ||
+          eventType === 'question.rejected' ||
+          eventType === 'question.v2.replied' ||
+          eventType === 'question.v2.rejected'
+        ) {
+          const version = eventType.startsWith('question.v2.')
+            ? 'v2'
+            : 'legacy';
+          const requestId = asString(event.requestID);
+          if (eventSessionId && requestId) {
+            observedQuestions.delete(
+              JSON.stringify([version, eventSessionId, requestId]),
+            );
+          }
+        }
 
         // Accounting and conversational visibility have different scopes.
         // Observe canonical messages and parts for every run-owned session
@@ -5122,6 +5386,9 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
             completedOwnedSessions.set(eventSessionId, accountingEventSequence);
           }
         }
+
+        yield* declineOwnedQuestions();
+        if (doneYielded) break;
 
         // Session ownership and output visibility are distinct scopes. Every
         // explicitly tagged event from the root or one of its descendants
@@ -6188,6 +6455,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
     } finally {
       approvals.close();
+      observedQuestions.clear();
       abortPermissionWait = undefined;
       permissionRequests.clear();
       reportPermissionState();

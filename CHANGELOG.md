@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode declines unsupported questions tied to its submitted native prompt
+  or owned descendants on a privately managed server. Exact pending request
+  identity is checked before rejection; shared external requests without
+  provable ownership and saved permission policies remain unchanged.
+
 ## [0.33.0] - 2026-10-01
 
 ### Added

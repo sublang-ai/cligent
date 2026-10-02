@@ -105,11 +105,11 @@ jobs:
           }
           EOF
           sudo apparmor_parser -r "$RUNNER_TEMP/cligent-browser-apparmor"
-      - name: Verify real browser and agent screenshot loop
+      - name: Install exact native fixture runtimes
         # This lightweight native suite also verifies Gemini attachment bytes
         # through a scripted local provider, without paid-model global setup.
-        run: npm install -g @google/gemini-cli@0.61.0
-      - name: Verify native media and browser loops
+        run: npm install -g @google/gemini-cli@0.61.0 opencode-ai@1.18.33
+      - name: Verify native browser, media and question loops
         run: npm run test:browser
       - run: npm run build
       - name: Install separate Electron host proof runtime

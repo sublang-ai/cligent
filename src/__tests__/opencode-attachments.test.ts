@@ -142,7 +142,9 @@ describe('OpenCode attachments (opencode-58 / opencode-59)', () => {
           })),
         ]);
         expect(prompts[0]?.url.searchParams.get('directory')).toBe(cwd);
-        expect(prompts[0]?.body).not.toHaveProperty('messageID');
+        expect(prompts[0]?.body.messageID).toMatch(
+          /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/,
+        );
 
         const resumed = await collect(cligent.run('Continue without files.'));
         expect(resumed.at(-1)?.payload).toMatchObject({ status: 'success' });
