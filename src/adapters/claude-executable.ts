@@ -9,6 +9,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ownedChildPath } from '../node-child.js';
 
 /** @internal */
 export const CLAUDE_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk';
@@ -206,7 +207,8 @@ export function probeClaudeExecutable(
   for (const candidate of candidates) {
     try {
       const path = resolveFromSdk.resolve(candidate);
-      if (existsSync(path)) return { state: 'present', path };
+      if (existsSync(path))
+        return { state: 'present', path: ownedChildPath(path) };
     } catch {
       // Not installed here; try the next candidate.
     }

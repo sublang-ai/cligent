@@ -278,8 +278,14 @@ acceptanceIt(
       controller.abort();
       provider.closeAllConnections();
       await new Promise<void>((resolve) => provider.close(() => resolve()));
-      await rm(root, { recursive: true, force: true });
+      // Native background handles can outlive the terminal SDK event.
+      await rm(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      });
     }
   },
-  35_000,
+  60_000,
 );

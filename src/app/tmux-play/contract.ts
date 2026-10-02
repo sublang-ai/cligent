@@ -9,6 +9,8 @@ import type {
   SubagentEffortForAgent,
   SubagentModelForAgent,
 } from '../../subagent-model.js';
+import type { Attachment } from '../../attachments.js';
+import type { McpServers } from '../../mcp.js';
 import type { PermissionPolicy } from '../../types.js';
 
 export interface Captain {
@@ -70,6 +72,8 @@ export type TuningSelection<T extends string = string> =
  * omitting `subagentEffort` leaves each subagent's effort to the agent.
  * Omitting `instruction` or `permissions` means no per-call instruction or
  * permission policy; configured values are not merged into this object.
+ * Omitting `browser` disables browser tools; omitting `mcpServers` selects
+ * an empty server map for this invocation.
  */
 export interface AgentCallSettings {
   readonly model: TuningSelection;
@@ -90,6 +94,8 @@ export interface AgentCallSettings {
   readonly subagentEffort?: Effort;
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
+  readonly mcpServers?: McpServers;
+  readonly browser?: boolean;
 }
 
 const AGENT_CALL_SETTINGS_ERROR = Symbol.for('cligent.agentCallSettingsError');
@@ -130,6 +136,8 @@ export function isAgentCallSettingsError(
 }
 
 export interface CallCaptainOptions {
+  /** Local files for this call only; never inherited by the next call. */
+  readonly attachments?: readonly Attachment[];
   /**
    * Whether the Captain call's records reach the Boss pane. Defaults to
    * `'visible'`. `'hidden'` produces zero Boss-pane output while returning
@@ -160,6 +168,8 @@ export interface CallCaptainOptions {
  * player's runtime-managed auto-resume behavior.
  */
 export interface CallPlayerOptions {
+  /** Local files for this call only; never inherited by the next call. */
+  readonly attachments?: readonly Attachment[];
   readonly resume?: string | false;
   /**
    * Replace every configured call setting atomically for this invocation.
@@ -247,6 +257,7 @@ interface RuntimePlayerConfigBase {
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
   readonly browser?: boolean;
+  readonly mcpServers?: McpServers;
 }
 
 type RuntimePlayerConfigByAdapter = {
@@ -268,6 +279,7 @@ interface RuntimeCaptainConfigBase {
   readonly instruction?: string;
   readonly permissions?: PermissionPolicy;
   readonly browser?: boolean;
+  readonly mcpServers?: McpServers;
 }
 
 type RuntimeCaptainConfigByAdapter = {

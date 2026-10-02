@@ -125,6 +125,7 @@ interface MockThreadOptions {
 }
 
 interface MockCodexConstructorOptions {
+  configOverrides?: string[];
   codexPathOverride?: string;
   config?: Record<string, unknown>;
 }
@@ -2512,7 +2513,10 @@ describe('CodexAdapter', () => {
           capturedCodexOptions = options;
           wrapperPath = options?.codexPathOverride;
           if (wrapperPath) {
-            wrapperScript = readFileSync(wrapperPath, 'utf8');
+            wrapperScript = readFileSync(
+              wrapperPath.replace(/\.sh$/, '.mjs'),
+              'utf8',
+            );
           }
         },
       }),
@@ -2531,13 +2535,11 @@ describe('CodexAdapter', () => {
     });
     expect(wrapperPath).toBeDefined();
     expect(wrapperScript).toContain('--ignore-user-config');
-    expect(wrapperScript).toContain('projects={');
-    expect(wrapperScript).not.toContain('projects.\\"');
-    expect(wrapperScript).toContain('trust_level=\\"trusted\\"');
-    expect(wrapperScript).toContain(
-      'permissions.cligent-workspace-extra-writes={extends=\\"' +
-        ':workspace\\", filesystem={\\":workspace_roots\\"={\\".git\\"=\\"write\\"}}}',
-    );
+    const raw = capturedCodexOptions?.configOverrides?.join('\n');
+    expect(raw).toContain('projects={');
+    expect(raw).toContain('trust_level="trusted"');
+    expect(raw).toContain('permissions.cligent-workspace-extra-writes=');
+    expect(raw).toContain('".git"="write"');
     expect(existsSync(wrapperPath!)).toBe(false);
   });
 
@@ -3075,7 +3077,8 @@ describe('CodexAdapter', () => {
   });
 
   it('supplies managed runs with non-persisted project trust', () => {
-    const projectRoot = process.cwd();
+    const projectRoot = mkdtempSync(join(tmpdir(), 'codex-project-trust-'));
+    mkdirSync(join(projectRoot, '.git'));
     const cwd = join(projectRoot, 'src', 'adapters');
     const unmanaged = mapAgentOptionsToCodexOptions({ cwd });
     const managed = mapAgentOptionsToCodexOptions({
@@ -3118,6 +3121,7 @@ describe('CodexAdapter', () => {
       `projects={${JSON.stringify(projectRoot)}={trust_level="trusted"}}`,
       'permissions.cligent-workspace-extra-writes={extends=":workspace", filesystem={":workspace_roots"={".git"="write"}}}',
     ]);
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
   it('matches Codex Windows device-path simplification', () => {

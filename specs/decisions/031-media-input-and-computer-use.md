@@ -8,6 +8,8 @@
 Accepted (2026-10-01).
 Amended by [DR-032](032-browser-tools-and-media-output.md): managed browser setup, caller-selected MCP servers, and native media output are now supported.
 
+Amended by [DR-033](033-host-capabilities-and-browser-readiness.md) for verified structured Gemini attachments.
+
 ## Context
 
 The shared API takes a text prompt, but Claude accepts streamed user messages containing image and document blocks [[1]], Codex accepts local-image input parts [[2]], OpenCode accepts file parts [[3]], and Kimi ACP advertises image prompt capability [[4]].

@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { describeCapabilities, CapabilityError } from '../capabilities.js';
+
 import { createEvent, generateSessionId } from '../events.js';
 import { prepareAttachments, readAttachment } from '../attachments.js';
 import {
   normalizeMcpServers,
   prepareMcpServers,
+  withMcpResources,
   type McpServers,
 } from '../mcp.js';
 import { mediaFromMcpContent } from '../media.js';
@@ -159,6 +162,7 @@ type ClaudeMcpServer =
 
 interface ClaudeQueryOptions {
   prompt: ClaudePrompt;
+  pathToClaudeCodeExecutable?: string;
   cwd?: string;
   model?: string;
   maxTurns?: number;
@@ -1291,7 +1295,8 @@ function assertClaudeMcpAllowlist(
     options?.allowedTools !== undefined &&
     (options.browser === true || Object.keys(mcpServers ?? {}).length > 0)
   ) {
-    throw new Error(
+    throw new CapabilityError(
+      'tool-restriction',
       'ClaudeCodeAdapter cannot combine allowedTools with nonempty mcpServers or browser: true; ' +
         'the SDK cannot enforce the portable allowlist on explicit MCP tools. Use disallowedTools to deny selected tools.',
     );
@@ -1322,6 +1327,21 @@ export class ClaudeCodeAdapter implements AgentAdapter<
    * installed. An importable SDK whose optional platform package npm
    * dropped is not available, since its first run fails on "executable not
    * found". */
+  getCapabilities(options?: Parameters<ClaudeCodeAdapter['run']>[1]) {
+    return describeCapabilities(
+      AGENT,
+      async () => {
+        assertClaudeMcpAllowlist(
+          { ...options, browser: true },
+          normalizeMcpServers(options?.mcpServers),
+        );
+        const mapped = mapAgentOptionsToClaudeQueryOptions(options);
+        mapped.cleanupAbort();
+      },
+      options,
+    );
+  }
+
   async isAvailable(): Promise<boolean> {
     try {
       await this.loadSdk();
@@ -1332,6 +1352,15 @@ export class ClaudeCodeAdapter implements AgentAdapter<
   }
 
   async *run(
+    prompt: string,
+    options?: AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>,
+  ): AsyncGenerator<AgentEvent, void, void> {
+    yield* withMcpResources(options, (scoped) =>
+      this.runWithMcpResources(prompt, scoped),
+    );
+  }
+
+  private async *runWithMcpResources(
     prompt: string,
     options?: AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
@@ -1433,6 +1462,8 @@ export class ClaudeCodeAdapter implements AgentAdapter<
       browser: false,
       mcpServers,
     });
+    if (process.versions.electron && executable.path.includes('.asar.unpacked'))
+      queryOptions.pathToClaudeCodeExecutable = executable.path;
     if (!inboundResume) {
       // The SDK forwards this typed option to `claude --session-id`. It gives
       // fresh runs a stable id once Claude persists the conversation, but an

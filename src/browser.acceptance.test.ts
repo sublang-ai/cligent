@@ -2,13 +2,17 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { createServer } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { expect, it } from 'vitest';
 import { prepareMcpServers } from './mcp.js';
+import { releaseBrowserServer } from './browser.js';
+import type { McpServerConfig } from './mcp.js';
+import { Cligent } from './cligent.js';
+import { CodexAdapter } from './adapters/codex.js';
 
 it('prepares the packaged browser, navigates to a local app, and returns a real screenshot', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'cligent-browser-output-'));
@@ -27,20 +31,38 @@ it('prepares the packaged browser, navigates to a local app, and returns a real 
     version: '1.0.0',
   });
   let transport: StdioClientTransport | undefined;
+  let browserConfig: McpServerConfig | undefined;
+  let outputDir: string | undefined;
   try {
+    const progress: string[] = [];
+    const setup = await new Cligent(new CodexAdapter()).prepareBrowser({
+      onProgress: ({ stage }) => progress.push(stage),
+    });
+    expect(setup).toMatchObject({
+      status: 'ready',
+      checkedAt: expect.any(Number),
+    });
+    expect(progress[0]).toBe('checking');
+    expect(progress.at(-1)).toBe('launching');
     const config = (await prepareMcpServers({ browser: true }))!
       .cligent_browser!;
+    browserConfig = config;
     if (config.type !== 'stdio')
       throw new Error('Expected packaged stdio browser');
+    outputDir = config.args![config.args!.indexOf('--output-dir') + 1];
+    expect(outputDir!.startsWith(cwd)).toBe(false);
     transport = new StdioClientTransport({
       command: config.command,
       args: [...(config.args ?? [])],
       cwd,
-      env: Object.fromEntries(
-        Object.entries(process.env).filter(
-          (entry): entry is [string, string] => entry[1] !== undefined,
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(
+            (entry): entry is [string, string] => entry[1] !== undefined,
+          ),
         ),
-      ),
+        ...config.env,
+      },
       stderr: 'pipe',
     });
     await client.connect(transport);
@@ -71,9 +93,15 @@ it('prepares the packaged browser, navigates to a local app, and returns a real 
     const bytes = Buffer.from(images[0]!.data!, 'base64');
     expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
     expect(bytes.length).toBeGreaterThan(1000);
+    expect(await readdir(cwd)).toEqual([]);
+    expect(
+      (await readdir(outputDir!)).some((name) => name.endsWith('.png')),
+    ).toBe(true);
   } finally {
     await client.close();
     await transport?.close();
+    if (browserConfig) await releaseBrowserServer(browserConfig);
+    if (outputDir) await expect(access(outputDir)).rejects.toThrow();
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );

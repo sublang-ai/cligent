@@ -142,7 +142,7 @@ async function expectAgentCallSettingsRejection(
 
 describe('TmuxPlayRuntime', () => {
   it.each([true, false, undefined])(
-    'retains instance browser %s across role calls and settings replacement',
+    'replaces configured browser %s on a complete call-settings replacement',
     async (browser) => {
       const captured: { prompt: string; browser: boolean | undefined }[] = [];
       const script: RunScript = async function* (prompt, options) {
@@ -185,14 +185,14 @@ describe('TmuxPlayRuntime', () => {
         await runtime.runBossTurn('inspect');
         expect(captured).toEqual([
           { prompt: 'captain default', browser },
-          { prompt: 'captain replacement', browser },
+          { prompt: 'captain replacement', browser: false },
           {
             prompt: 'player default',
             browser: browser === undefined ? undefined : !browser,
           },
           {
             prompt: 'player replacement',
-            browser: browser === undefined ? undefined : !browser,
+            browser: false,
           },
         ]);
       } finally {
@@ -200,6 +200,220 @@ describe('TmuxPlayRuntime', () => {
       }
     },
   );
+  it('delivers per-call attachments and complete tool settings without mutation or carryover', async () => {
+    const captured: { prompt: string; options?: AgentOptions }[] = [];
+    const files = [
+      { path: '/tmp/first image.png', mimeType: 'image/png' },
+      { path: '/tmp/second image.jpg', mimeType: 'image/jpeg' },
+    ];
+    const expectedFiles = structuredClone(files);
+    const servers = {
+      inspect: {
+        type: 'stdio' as const,
+        command: 'fixture',
+        args: ['original'],
+        env: { VALUE: 'original' },
+      },
+    };
+    const expectedServers = structuredClone(servers);
+    const defaults = {
+      configured: { type: 'http' as const, url: 'https://example.test/mcp' },
+    };
+    const replacements = {
+      model: { kind: 'provider-default' as const },
+      effort: { kind: 'provider-default' as const },
+      browser: true,
+      mcpServers: servers,
+    };
+    const script: RunScript = async function* (prompt, options) {
+      captured.push({ prompt, options });
+      yield doneEvent('test-agent', 'done');
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          await context.callPlayer('worker', 'exact user text', {
+            attachments: files,
+            settings: replacements,
+          });
+          await context.callPlayer('worker', 'next default');
+          await context.callCaptain('captain files', {
+            attachments: expectedFiles,
+            settings: {
+              model: { kind: 'provider-default' },
+              effort: { kind: 'provider-default' },
+            },
+          });
+          await context.callCaptain('captain default');
+          await context.callPlayer('worker', 'explicit disabled', {
+            settings: { ...replacements, browser: false, mcpServers: {} },
+          });
+        },
+      },
+      captainConfig: { adapter: 'claude', browser: true, mcpServers: defaults },
+      players: [
+        {
+          id: 'worker',
+          adapter: 'codex',
+          browser: false,
+          mcpServers: defaults,
+        },
+      ],
+      adapterImports: adapterImports({
+        claude: { agent: 'test-agent', run: script },
+        codex: { agent: 'test-agent', run: script },
+      }),
+      observers: [
+        {
+          onRecord(record) {
+            if (
+              record.type === 'player_prompt' &&
+              record.prompt === 'exact user text'
+            ) {
+              files[0].path = '/tmp/changed.png';
+              files.pop();
+              servers.inspect.args[0] = 'changed';
+              servers.inspect.env.VALUE = 'changed';
+            }
+          },
+        },
+      ],
+    });
+    try {
+      await runtime.runBossTurn('inspect');
+      expect(captured.map(({ prompt }) => prompt)).toEqual([
+        'exact user text',
+        'next default',
+        'captain files',
+        'captain default',
+        'explicit disabled',
+      ]);
+      expect(captured[0]?.options).toMatchObject({
+        attachments: expectedFiles,
+        browser: true,
+        mcpServers: expectedServers,
+      });
+      expect(Object.isFrozen(captured[0]?.options?.attachments)).toBe(true);
+      expect(Object.isFrozen(captured[0]?.options?.attachments?.[0])).toBe(
+        true,
+      );
+      expect(Object.isFrozen(captured[0]?.options?.mcpServers?.inspect)).toBe(
+        true,
+      );
+      expect(captured[1]?.options).toMatchObject({
+        browser: false,
+        mcpServers: defaults,
+      });
+      expect(captured[1]?.options?.attachments).toBeUndefined();
+      expect(captured[2]?.options).toMatchObject({
+        attachments: expectedFiles,
+        browser: false,
+        mcpServers: {},
+      });
+      expect(captured[3]?.options).toMatchObject({
+        browser: true,
+        mcpServers: defaults,
+      });
+      expect(captured[3]?.options?.attachments).toBeUndefined();
+      expect(captured[4]?.options).toMatchObject({
+        browser: false,
+        mcpServers: {},
+      });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it('rejects malformed media/tool inputs before prompt emission without invoking accessors', async () => {
+    const getter = vi.fn(() => '/tmp/image.png');
+    const mcpGetter = vi.fn(() => 'fixture');
+    const run = vi.fn();
+    const records: TmuxPlayRecord[] = [];
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          for (const attachments of [
+            [{ path: '' }],
+            [{ path: '/tmp/file', mimeType: 'invalid' }],
+            [
+              Object.defineProperty({}, 'path', {
+                enumerable: true,
+                get: getter,
+              }),
+            ],
+            Array(1),
+          ]) {
+            await expect(
+              context.callPlayer('worker', 'invalid', { attachments }),
+            ).rejects.toThrow();
+            await expect(
+              context.callCaptain('invalid', { attachments }),
+            ).rejects.toThrow();
+          }
+          for (const extra of [
+            { browser: 'yes' },
+            {
+              mcpServers: {
+                test: { type: 'http', url: 'file:///tmp/private' },
+              },
+            },
+            {
+              mcpServers: {
+                test: Object.defineProperty({ type: 'stdio' }, 'command', {
+                  enumerable: true,
+                  get: mcpGetter,
+                }),
+              },
+            },
+            {
+              browser: true,
+              mcpServers: {
+                cligent_browser: { type: 'stdio', command: 'fixture' },
+              },
+            },
+          ]) {
+            await expectAgentCallSettingsRejection(
+              context.callPlayer('worker', 'invalid', {
+                settings: {
+                  model: { kind: 'provider-default' },
+                  effort: { kind: 'provider-default' },
+                  ...extra,
+                } as never,
+              }),
+              '',
+            );
+          }
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'worker', adapter: 'codex' }],
+      adapterImports: adapterImports({
+        claude: { agent: 'test-agent', run },
+        codex: { agent: 'test-agent', run },
+      }),
+      observers: [
+        {
+          onRecord(record) {
+            records.push(record);
+          },
+        },
+      ],
+    });
+    try {
+      await runtime.runBossTurn('invalid calls');
+      expect(
+        records.some(
+          (record) =>
+            record.type === 'player_prompt' || record.type === 'captain_prompt',
+        ),
+      ).toBe(false);
+      expect(run).not.toHaveBeenCalled();
+      expect(getter).not.toHaveBeenCalled();
+      expect(mcpGetter).not.toHaveBeenCalled();
+    } finally {
+      await runtime.dispose();
+    }
+  });
   it('separates whole captured messages when done brings no result', async () => {
     let playerResult: PlayerRunResult | undefined;
     const captain: Captain = {
@@ -1052,13 +1266,15 @@ describe('TmuxPlayRuntime', () => {
       captain: {
         async handleBossTurn(_turn, context) {
           for (const adapter of adapters) {
-            const rejection = await context.callPlayer(`dev.${adapter}`, 'work', {
-              settings: {
-                model: { kind: 'provider-default' },
-                effort: { kind: 'provider-default' },
-                fastMode: false,
-              },
-            }).catch((error: unknown) => error);
+            const rejection = await context
+              .callPlayer(`dev.${adapter}`, 'work', {
+                settings: {
+                  model: { kind: 'provider-default' },
+                  effort: { kind: 'provider-default' },
+                  fastMode: false,
+                },
+              })
+              .catch((error: unknown) => error);
             expect(rejection).toBeInstanceOf(AgentCallSettingsError);
             expect((rejection as Error).message).toContain(adapter);
           }
@@ -1071,20 +1287,27 @@ describe('TmuxPlayRuntime', () => {
       })) as never,
       observers: [{ onRecord: (record) => records.push(record) }],
       adapterImports: adapterImports(
-        Object.fromEntries(adapters.map((adapter) => [adapter, {
-          agent: adapter,
-          async *run() {
-            providerRuns += 1;
-            yield doneEvent(adapter, 'done');
-          },
-        }])) as never,
+        Object.fromEntries(
+          adapters.map((adapter) => [
+            adapter,
+            {
+              agent: adapter,
+              async *run() {
+                providerRuns += 1;
+                yield doneEvent(adapter, 'done');
+              },
+            },
+          ]),
+        ) as never,
       ),
     });
 
     await runtime.runBossTurn('go');
 
     expect(providerRuns).toBe(0);
-    expect(records.some((record) => record.type === 'player_prompt')).toBe(false);
+    expect(records.some((record) => record.type === 'player_prompt')).toBe(
+      false,
+    );
   });
 
   it('classifies only complete-settings preflight rejections', async () => {

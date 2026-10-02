@@ -4,7 +4,14 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +30,10 @@ import type { McpServers } from '../mcp.js';
 
 const fixturePaths = vi.hoisted(() => ({ codex: '' }));
 const browserPreparation = vi.hoisted(() => vi.fn());
-vi.mock('../browser.js', () => ({ prepareBrowserServer: browserPreparation }));
+vi.mock('../browser.js', () => ({
+  prepareBrowserServer: browserPreparation,
+  releaseBrowserServer: async () => {},
+}));
 vi.mock('../adapters/codex-executable.js', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('../adapters/codex-executable.js')>();
@@ -70,13 +80,15 @@ const servers: McpServers = {
 };
 
 describe('per-run MCP native boundaries', () => {
-  it('Codex delivers whole-entry MCP overrides through the installed SDK and executable wrapper (codex-71)', async () => {
-    const cwd = await temp();
-    const capture = join(cwd, 'codex-args.json');
-    fixturePaths.codex = join(cwd, 'codex-fixture.mjs');
-    await writeFile(
-      fixturePaths.codex,
-      `import { writeFileSync } from 'node:fs';
+  it.skipIf(process.platform === 'win32')(
+    'Codex delivers whole-entry MCP overrides through the installed SDK raw configuration (codex-71)',
+    async () => {
+      const cwd = await temp();
+      const capture = join(cwd, 'codex-args.json');
+      fixturePaths.codex = join(cwd, 'codex-fixture.mjs');
+      await writeFile(
+        fixturePaths.codex,
+        `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs';
       let prompt = ''; process.stdin.setEncoding('utf8');
       process.stdin.on('data', (chunk) => { prompt += chunk; });
       process.stdin.on('end', () => {
@@ -84,41 +96,43 @@ describe('per-run MCP native boundaries', () => {
         console.log(JSON.stringify({type:'thread.started',thread_id:'mcp-codex'}));
         console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:0,cached_input_tokens:0,output_tokens:0}}));
       });`,
-    );
-    let wrapper: string | undefined;
-    const adapter = new CodexAdapter({
-      loadSdk: async () => ({
-        Codex: class extends Codex {
-          constructor(options?: ConstructorParameters<typeof Codex>[0]) {
-            super(options);
-            wrapper = options?.codexPathOverride;
-          }
-        },
-      }),
-    });
-    const events = await collect(
-      adapter.run('Use the supplied tools', { cwd, mcpServers: servers }),
-    );
-    expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
-    const captured = JSON.parse(await readFile(capture, 'utf8')) as {
-      args: string[];
-      prompt: string;
-    };
-    expect(captured.prompt).toBe('Use the supplied tools');
-    const overrides = captured.args.filter((arg) =>
-      arg.startsWith('mcp_servers.'),
-    );
-    expect(overrides).toHaveLength(2);
-    expect(overrides[0]).toBe(
-      'mcp_servers.browser={"command" = ' +
-        JSON.stringify(process.execPath) +
-        ', "args" = ["a space", "a\\"quote", "a\\nline"], "env" = {"MCP_FIXTURE" = "value\\"\\n"}, "required" = true, "default_tools_approval_mode" = "approve"}',
-    );
-    expect(overrides[1]).toBe(
-      'mcp_servers.remote={"url" = "https://example.test/mcp?test=1", "http_headers" = {"Authorization" = "Bearer fixture"}, "required" = true, "default_tools_approval_mode" = "approve"}',
-    );
-    expect(existsSync(wrapper!)).toBe(false);
-  });
+      );
+      await chmod(fixturePaths.codex, 0o700);
+      let wrapper: string | undefined;
+      const adapter = new CodexAdapter({
+        loadSdk: async () => ({
+          Codex: class extends Codex {
+            constructor(options?: ConstructorParameters<typeof Codex>[0]) {
+              super({ ...options, codexPathOverride: fixturePaths.codex });
+              wrapper = options?.codexPathOverride;
+            }
+          },
+        }),
+      });
+      const events = await collect(
+        adapter.run('Use the supplied tools', { cwd, mcpServers: servers }),
+      );
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+      const captured = JSON.parse(await readFile(capture, 'utf8')) as {
+        args: string[];
+        prompt: string;
+      };
+      expect(captured.prompt).toBe('Use the supplied tools');
+      const overrides = captured.args.filter((arg) =>
+        arg.startsWith('mcp_servers.'),
+      );
+      expect(overrides).toHaveLength(2);
+      expect(overrides[0]).toBe(
+        'mcp_servers.browser={"command" = ' +
+          JSON.stringify(process.execPath) +
+          ', "args" = ["a space", "a\\"quote", "a\\nline"], "env" = {"MCP_FIXTURE" = "value\\"\\n"}, "required" = true, "default_tools_approval_mode" = "approve"}',
+      );
+      expect(overrides[1]).toBe(
+        'mcp_servers.remote={"url" = "https://example.test/mcp?test=1", "http_headers" = {"Authorization" = "Bearer fixture"}, "required" = true, "default_tools_approval_mode" = "approve"}',
+      );
+      expect(wrapper).toBeUndefined();
+    },
+  );
 
   it('Gemini child receives a temporary merged settings file and keeps tool policy restrictions (gemini-49)', async () => {
     const cwd = await temp();

@@ -47,9 +47,25 @@ When a managed-browser installation runs, preparation shall bound its duration a
 
 ### mcp-6
 
-When managed-browser configuration is returned, the server shall run through the current absolute Node executable and resolved MCP entrypoint with the matching Chromium executable, headless operation, isolated temporary profile, and image responses enabled, without selecting a global permission-bypass mode.
+When managed-browser configuration is returned, the server shall run through the current absolute Node executable and resolved MCP entrypoint with the matching Chromium executable, headless operation, Chromium sandbox enabled, isolated temporary profile, and image responses enabled, without selecting a global permission-bypass mode.
+
+### mcp-11
+
+When managed-browser preparation completes, it shall first prove a bounded isolated headless launch and in-memory PNG screenshot with the managed runtime's sandbox posture, disposing the browser before success and retaining independent caller cancellation without installing operating-system packages.
+
+### mcp-12
+
+When an owned JavaScript child or managed MCP server is configured, its invocation shall use the current absolute runtime executable with child-local Electron Node mode where applicable and physical unpacked runtime paths for archived Electron dependencies, refusing an unusable packaged layout without requiring a global Node executable or mutating the parent environment.
+
+### mcp-13
+
+When a managed browser server is admitted, its configuration shall select a run-owned temporary output directory outside the user workspace and release it after preceding media consumption before terminal delivery, or when a stream closes early, without interpreting textual artifact paths or claiming to confine explicit native filename requests.
 
 ## Verification
+
+### mcp-14
+
+When real browser and Electron host fixtures prepare and execute a browser, integration checks shall verify launch/screenshot proof and cancellation cleanup [[mcp-11](#mcp-11)], Node/Electron child execution without global Node [[mcp-12](#mcp-12)], and automatic artifacts outside an unchanged workspace with release after consumption [[mcp-13](#mcp-13)].
 
 ### mcp-7
 

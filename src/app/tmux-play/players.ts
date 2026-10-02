@@ -8,6 +8,7 @@ import type {
   SubagentEffortForAgent,
   SubagentModelForAgent,
 } from '../../subagent-model.js';
+import { normalizeMcpServers, type McpServers } from '../../mcp.js';
 import type { AgentAdapter, PermissionPolicy } from '../../types.js';
 
 export const KNOWN_PLAYER_ADAPTERS = [
@@ -26,6 +27,7 @@ interface PlayerConfigBase {
   instruction?: string;
   permissions?: PermissionPolicy;
   browser?: boolean;
+  mcpServers?: McpServers;
 }
 
 type PlayerConfigByAdapter = {
@@ -49,6 +51,7 @@ type ResolvedPlayerByAdapter = {
     instruction?: string;
     permissions?: PermissionPolicy;
     browser?: boolean;
+    mcpServers?: McpServers;
     effort?: EffortForAgent<A>;
     fastMode?: FastModeForAgent<A>;
     subagentModel?: SubagentModelForAgent<A>;
@@ -77,6 +80,7 @@ export interface CreatePlayerCligentOptions<
   role?: string;
   permissions?: PermissionPolicy;
   browser?: boolean;
+  mcpServers?: McpServers;
   effort?: EffortForAgent<A>;
   fastMode?: FastModeForAgent<A>;
   subagentModel?: SubagentModelForAgent<A>;
@@ -110,12 +114,9 @@ const PLAYER_ID_RE = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/;
 export const DEFAULT_ADAPTER_IMPORTS: PlayerAdapterImports = {
   claude: async () =>
     (await import('../../adapters/claude-code.js')).ClaudeCodeAdapter,
-  codex: async () =>
-    (await import('../../adapters/codex.js')).CodexAdapter,
-  gemini: async () =>
-    (await import('../../adapters/gemini.js')).GeminiAdapter,
-  kimi: async () =>
-    (await import('../../adapters/kimi.js')).KimiAdapter,
+  codex: async () => (await import('../../adapters/codex.js')).CodexAdapter,
+  gemini: async () => (await import('../../adapters/gemini.js')).GeminiAdapter,
+  kimi: async () => (await import('../../adapters/kimi.js')).KimiAdapter,
   opencode: async () =>
     (await import('../../adapters/opencode.js')).OpenCodeAdapter,
 };
@@ -185,9 +186,10 @@ async function createPlayerCligentInternal<A extends PlayerAdapterName>(
   return new Cligent(new AdapterClass(), {
     cwd: options.cwd,
     role: options.role,
-    browser: options.browser,
     ...(inheritCallDefaults
       ? {
+          browser: options.browser,
+          mcpServers: normalizeMcpServers(options.mcpServers),
           model: options.model,
           permissions: options.permissions,
           effort: options.effort,
@@ -253,6 +255,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
       role: config.id,
       permissions: config.permissions,
       browser: config.browser,
+      mcpServers: config.mcpServers,
       effort: config.effort,
       fastMode: config.fastMode,
       subagentModel: config.subagentModel,
@@ -267,6 +270,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
     instruction: config.instruction,
     permissions: config.permissions,
     browser: config.browser,
+    mcpServers: normalizeMcpServers(config.mcpServers),
     effort: config.effort,
     fastMode: config.fastMode,
     subagentModel: config.subagentModel,

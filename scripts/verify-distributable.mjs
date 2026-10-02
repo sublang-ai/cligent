@@ -594,6 +594,10 @@ const opencode = new Cligent(new OpenCodeAdapter(), { effort: 'minimal' });
 const mcpServers: McpServers = { browser: { type: 'stdio', command: 'server', args: [] } };
 const browserAgent = new Cligent(new ClaudeCodeAdapter(), { browser: true, mcpServers });
 browserAgent.run('inspect', { browser: false, mcpServers: {} });
+browserAgent.getCapabilities({ cwd: '/work', allowedTools: [] });
+browserAgent.prepareBrowser({ timeoutMs: 10_000, onProgress: ({ stage }) => console.log(stage) });
+// @ts-expect-error Browser preparation does not accept input attachments.
+browserAgent.prepareBrowser({ attachments: [{ path: 'image.png' }] });
 const figure: MediaPayload = { mimeType: 'image/png', source: { type: 'base64', data: 'cGl4ZWw=' } };
 createEvent('media', 'claude-code', figure);
 // @ts-expect-error Browser selection is boolean.
@@ -1044,7 +1048,7 @@ if (expectation === 'missing') {
   );
   if (!wrapper) throw new Error('config override wrapper was not created');
   try {
-    const scriptPath = wrapper.path.endsWith('.cmd')
+    const scriptPath = wrapper.path.endsWith('.cmd') || wrapper.path.endsWith('.sh')
       ? join(dirname(wrapper.path), 'codex-wrapper.mjs')
       : wrapper.path;
     const script = readFileSync(scriptPath, 'utf8');

@@ -23,7 +23,7 @@ When a built-in adapter prepares an attachment list, preparation shall select th
 | --- | --- |
 | absent or empty array | no attached content |
 | non-array | reject with the adapter and `attachments` validation path |
-| nonempty list on an adapter with no structured attachment transport | reject with the adapter and `attachments` path; Gemini's diagnostic directs callers to native `@file` prompt references |
+| nonempty list on an adapter with no structured attachment transport | reject with the adapter and `attachments` path |
 | entry lacking a non-blank string path, containing NUL, or not an object | reject with its adapter and indexed validation path |
 | relative path | resolve against the effective run `cwd`, otherwise the process cwd |
 | absolute path | retain its local-file identity |
@@ -49,7 +49,7 @@ The exported `ATTACHMENT_SUPPORT` shall expose deeply frozen `AttachmentSupport`
 | --- | --- | --- |
 | `claude-code` | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `application/pdf` | native image and document blocks [[claude-code-46](adapters/claude-code.md#claude-code-46)] |
 | `codex` | `image/png`, `image/jpeg`, `image/gif`, `image/webp` | native local-image inputs [[codex-67](adapters/codex.md#codex-67)] |
-| `gemini` | empty | native `@file` text-prompt references already accept media; the structured option is unsupported [[gemini-46](adapters/gemini.md#gemini-46)] |
+| `gemini` | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `application/pdf`, `audio/mpeg`, `audio/wav`, `audio/flac`, `audio/ogg`, `audio/aac`, `audio/aiff`, `video/mp4`, `video/mpeg`, `video/quicktime`, `video/webm` | owned MIME-matched snapshots through native `@file`; at most 20 MiB per file, POSIX with a representable temporary-directory path required [[gemini-46](adapters/gemini.md#gemini-46)] |
 | `kimi` | `image/png`, `image/jpeg`, `image/gif`, `image/webp` | ACP image capability required [[kimi-40](adapters/kimi.md#kimi-40)]; video can be requested through a plain-prompt ReadMediaFile invocation |
 | `opencode` | `image/*`, `audio/*`, `video/*`, `application/pdf`, `text/plain` | inline data URLs work across local and external servers; unsupported model modalities may become upstream error text [[opencode-58](adapters/opencode.md#opencode-58)] |
 

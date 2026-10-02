@@ -706,6 +706,10 @@ When a built-in adapter emits `init`, it shall set `InitPayload.reportedModel` t
 - it is absent when the runtime names none, and it is never filled from the requested model, a Cligent-internal alias, or a placeholder such as `unknown`;
 - `InitPayload.model` keeps its requested-model and `unknown` fallbacks.
 
+### engine-126
+
+The `Cligent` instance shall expose context discovery and explicit browser setup through `getCapabilities` and `prepareBrowser`, with an optional `AgentAdapter.getCapabilities` hook and the outcomes defined by [[capabilities-1](capabilities.md#capabilities-1)], option handling defined by [[capabilities-2](capabilities.md#capabilities-2)], and setup sequencing defined by [[capabilities-4](capabilities.md#capabilities-4)] and [[capabilities-5](capabilities.md#capabilities-5)].
+
 ## Verification
 
 ### engine-123
@@ -951,3 +955,7 @@ When a discovery integration suite supplies provider initialization responses, t
 ### engine-28
 
 Where each built-in adapter's runtime names a model, names none, or names a Cligent-internal alias, with and without a requested model, when the adapter emits `init`, the check shall assert [[engine-27](#engine-27)]'s verbatim `reportedModel`, its absence without a runtime-named model, no requested-value, alias, or placeholder echo, and unchanged `InitPayload.model`.
+
+### engine-127
+
+When a consumer uses instance discovery and setup with built-in and custom adapters, integration checks shall verify the optional adapter hook and both public methods [[engine-126](#engine-126)].

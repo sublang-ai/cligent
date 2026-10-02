@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Contextual `Cligent.getCapabilities()` and cancellable `prepareBrowser()` expose
+  adapter admission facts and actual host launch/screenshot readiness without
+  provider work or session changes — DR-033.
+- Managed browser preparation proves launch and screenshot before agent use,
+  with isolated probe-process cancellation and run-owned automatic artifacts
+  outside the workspace, cleaned after media consumption.
+- Electron main and ASAR hosts use absolute Node-mode child runtimes and physical
+  unpacked dependencies. Codex uses SDK raw MCP overrides; native Windows supports
+  MCP/browser calls without an explicit permission policy.
+- Programmatic tmux player/Captain calls accept per-call attachments and complete
+  browser/MCP settings, including explicit clearing without session rotation.
+- Gemini accepts validated per-call media through ordered MIME-canonical snapshots
+  and native file references on supported POSIX hosts, with a 20 MiB per-file limit.
+
+
 ## [0.31.0] - 2026-10-01
 
 ### Added

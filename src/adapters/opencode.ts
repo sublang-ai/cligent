@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { describeCapabilities, CapabilityError } from '../capabilities.js';
+
 import { execFile, spawn } from 'node:child_process';
 import type {
   ChildProcessWithoutNullStreams,
@@ -15,6 +17,7 @@ import { mediaFromUri } from '../media.js';
 import {
   normalizeMcpServers,
   prepareMcpServers,
+  withMcpResources,
   type McpServers,
 } from '../mcp.js';
 import { createEvent, generateSessionId } from '../events.js';
@@ -2378,6 +2381,32 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     this.observePermissionState = deps.observePermissionState;
   }
 
+  private assertBrowserAdmission(options?: AgentOptions<OpenCodeEffort>): void {
+    assertOpenCodeToolRestrictionsUnsupported(options);
+    assertOpenCodeTurnLimitUnsupported(options);
+    normalizeMcpServers(options?.mcpServers);
+    if (this.mode === 'external')
+      throw new CapabilityError(
+        'unsupported-server-mode',
+        'OpenCode per-run MCP servers and browser support require managed mode; an external server shares its MCP registry across sessions',
+      );
+    mapPermissionsToOpenCodeOptions(options?.permissions, {
+      allowedTools: options?.allowedTools,
+      disallowedTools: options?.disallowedTools,
+    });
+    mapEffortToOpenCodeVariant(options?.model, options?.effort);
+  }
+
+  getCapabilities(options?: Parameters<OpenCodeAdapter['run']>[1]) {
+    return describeCapabilities(
+      AGENT,
+      async () => {
+        this.assertBrowserAdmission(options);
+      },
+      options,
+    );
+  }
+
   async isAvailable(): Promise<boolean> {
     try {
       await this.loadSdkFn();
@@ -2396,6 +2425,15 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     prompt: string,
     options?: AgentOptions<OpenCodeEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
+    yield* withMcpResources(options, (scoped) =>
+      this.runWithMcpResources(prompt, scoped),
+    );
+  }
+
+  private async *runWithMcpResources(
+    prompt: string,
+    options?: AgentOptions<OpenCodeEffort>,
+  ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
     assertBuiltInSubagentEffortOption(
@@ -2405,26 +2443,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     );
     assertOpenCodeToolRestrictionsUnsupported(options);
     assertOpenCodeTurnLimitUnsupported(options);
-    const requestedMcp = normalizeMcpServers(options?.mcpServers);
-    if (
-      this.mode === 'external' &&
-      (options?.browser === true || Object.keys(requestedMcp ?? {}).length > 0)
-    ) {
-      throw new Error(
-        'OpenCode per-run MCP servers and browser support require managed mode; an external server shares its MCP registry across sessions',
-      );
-    }
     if (
       options?.browser === true ||
-      Object.keys(requestedMcp ?? {}).length > 0
-    ) {
-      // Reject unsupported controls before a browser download can start.
-      mapPermissionsToOpenCodeOptions(options?.permissions, {
-        allowedTools: options?.allowedTools,
-        disallowedTools: options?.disallowedTools,
-      });
-      mapEffortToOpenCodeVariant(options?.model, options?.effort);
-    }
+      Object.keys(normalizeMcpServers(options?.mcpServers) ?? {}).length > 0
+    )
+      this.assertBrowserAdmission(options);
 
     let sdk: OpenCodeSdk;
     let hasAdmittedMcpServers = false;

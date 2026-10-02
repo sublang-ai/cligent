@@ -213,7 +213,9 @@ When a run has no permission policy or a supplied policy whose mapping succeeds,
 | Permission-policy input | Configuration source |
 | --- | --- |
 | policy absent | emit no `--ignore-user-config`, inherit Codex's native configuration, and preserve normal `CODEX_HOME` authentication and session state |
-| any supplied policy, including empty | include `--ignore-user-config` in the selected Codex `exec` arguments while preserving normal `CODEX_HOME` authentication and session state, so user-level legacy `sandbox_mode` or stale `default_permissions` cannot replace the selected profile |
+| any supplied policy on POSIX, including empty | include `--ignore-user-config` in the selected Codex `exec` arguments while preserving normal `CODEX_HOME` authentication and session state, so user-level legacy `sandbox_mode` or stale `default_permissions` cannot replace the selected profile |
+
+| any supplied policy on native Windows | reject before browser preparation because the executable wrapper cannot enforce isolated configuration on that host |
 
 ### codex-32
 
@@ -386,7 +388,7 @@ When a canonical MCP tool call first completes, after its unchanged tool result 
 
 ### codex-70
 
-When a run supplies MCP servers or selects the browser preset, the adapter shall prepare the server map through [[mcp-1](../mcp.md#mcp-1)], [[mcp-2](../mcp.md#mcp-2)], and [[mcp-3](../mcp.md#mcp-3)] before SDK invocation and apply each entry as one complete native `mcp_servers.<validated bare name>` TOML-value override through the executable wrapper, using this matrix [[13]]:
+When a run supplies MCP servers or selects the browser preset, the adapter shall prepare the server map through [[mcp-1](../mcp.md#mcp-1)], [[mcp-2](../mcp.md#mcp-2)], and [[mcp-3](../mcp.md#mcp-3)] before SDK invocation and apply each entry as one complete native `mcp_servers.<validated bare name>` TOML-value override through the SDK constructor’s raw `configOverrides` array, using this matrix [[13]]:
 
 | Entry | Native configuration |
 | --- | --- |
@@ -538,7 +540,7 @@ Where the exact native Codex conformance target is installed, when the real engi
 
 ### codex-71
 
-When a run supplies both MCP transports with quotes, whitespace, and newlines, the integration check shall exercise the installed SDK through the generated executable wrapper into a fixture subprocess and verify exact complete-entry arguments, scoped approval and required-server flags, unchanged prompt, successful terminal, and wrapper cleanup [[codex-70](#codex-70)].
+When a run supplies both MCP transports with quotes, whitespace, and newlines, the integration check shall exercise the installed SDK directly into a fixture subprocess and verify exact complete-entry arguments, scoped approval and required-server flags, unchanged prompt, successful terminal, and no generated wrapper for MCP-only calls [[codex-70](#codex-70)].
 
 ### codex-73
 

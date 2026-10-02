@@ -43,7 +43,7 @@ decoding, model, and account limits.
 | --- | --- | --- |
 | Claude Code | PNG, JPEG, GIF, WebP; PDF | Image/document blocks in one SDK user message |
 | Codex | PNG, JPEG, GIF, WebP | SDK `local_image` parts become native `--image` inputs |
-| Gemini | Use the text prompt instead | `@file` references for images, audio, video, PDFs, and text |
+| Gemini | PNG, JPEG, GIF, WebP; PDF; MP3, WAV, FLAC, OGG, AAC, AIFF; MP4, MPEG, MOV, WebM | Owned snapshots through native `@file` processing; POSIX, maximum 20 MiB per file |
 | Kimi | PNG, JPEG, GIF, WebP, when ACP advertises image support | Ask `ReadMediaFile` to read a local image/video path |
 | OpenCode | `image/*`, `audio/*`, `video/*`, PDF, plain text | Inline native file parts, including with an external server |
 
@@ -67,16 +67,23 @@ for await (const event of videoAgent.run('Summarize this clip.', {
 }
 ```
 
-For Gemini, use its existing native syntax without an `attachments` option:
+Gemini accepts the same attachment option on supported POSIX hosts:
 
 ```ts
-const events = geminiAgent.run('Summarize @./demo.mp4 and compare @./screen.png');
+const events = geminiAgent.run('Summarize the clip and compare the screen.', {
+  attachments: [{ path: 'demo.mp4' }, { path: 'screen.png' }],
+});
 ```
 
-Gemini performs its own path parsing, file inclusion, and access checks. Follow
-its native quoting rules for paths with spaces. A nonempty `attachments` list
-on Gemini fails with guidance to use `@file`; omitted or empty lists preserve
-text behavior. For Kimi video, an ordinary prompt such as
+Cligent copies selected Gemini inputs into a temporary directory with generated
+filenames and MIME-matched extensions, then removes them before the terminal
+event. This avoids native `@file` glob expansion and filename/MIME ambiguity
+without changing the working directory or originals. Each file must be at most
+20 MiB; native Windows and temporary paths containing control characters,
+backslashes, glob characters, or commas are unsupported. Spaces are supported.
+Use contextual `getCapabilities()` facts to present this restriction. Omitted
+or empty lists preserve existing native `@file` prompts, including text files.
+For Kimi video, an ordinary prompt such as
 `Use ReadMediaFile to summarize /work/project/demo.mp4` lets the configured
 agent use that tool. Kimi's ACP image support does not imply ACP audio, video,
 or binary-document support.
@@ -120,17 +127,46 @@ cancellable and bounded; offline downloads or missing host prerequisites fail
 with a diagnostic. Cligent does not install system libraries or replace a
 system browser. Plain text calls and importing the library install nothing.
 
-Preparation verifies the Node requirement, native installation completion, and
-executable presence. It does not launch a browser as a readiness probe. Ubuntu
-Server needs no desktop or display for this headless browser, but still needs
-Chromium's system libraries. Missing libraries can pass installation with a
-native warning and fail when the first browser tool launches Chromium. Hosts
-should treat `browser: true` as a requested capability, not a readiness result,
-and show the resulting setup or tool diagnostic to the user. An administrator
-must install missing system dependencies; Cligent does not run `sudo` for them.
+Preparation verifies native installation completion, then launches the managed
+browser and captures an in-memory PNG before admitting tools. The probe runs
+in an owned process with bounded cancellation and cleanup. Linux servers need
+no display for the headless browser, but still need Chromium's system libraries
+and sandbox prerequisites. A failed launch produces a setup diagnostic before
+the agent starts; Cligent does not install OS packages or run `sudo`.
+
+Hosts can discover support and prepare the browser before a user sends a task:
+
+```ts
+const capabilities = await agent.getCapabilities({ cwd: '/work/project' });
+// attachments.mimeTypes reuses the transport descriptor. Absent facts mean
+// unknown; custom adapters opt in through an optional getCapabilities hook.
+if (capabilities.browser.status === 'supported') {
+  const result = await agent.prepareBrowser({
+    timeoutMs: 195_000,
+    abortSignal: controller.signal,
+    onProgress: ({ stage }) => showSetupStage(stage),
+  });
+  // result.status is ready, not-ready (code/message), or cancelled.
+  // Only ready carries checkedAt, in epoch milliseconds.
+}
+```
+
+Discovery merges per-call options with instance defaults and performs no install,
+provider session, or tool call. Known contextual conflicts are reported as
+unsupported; unknown custom capabilities are preserved as unknown. Preparation
+first checks admission and agent-runtime availability. It does not enable a run
+option, alter resume state, or invoke a model. A ready result proves only the
+host's launch and screenshot at that time; model/account eligibility, native
+policy, target-app availability, and later failures remain independent.
 
 Every browser process uses an isolated temporary profile. It has no personal
 browser logins and does not import the desktop application's tabs or plugins.
+Automatic screenshot artifacts use a run-owned temporary output directory outside
+the workspace and are removed after media consumption before the terminal event.
+Request screenshots without a filename to obtain native inline image content.
+An explicit native filename can select a workspace path and suppress inline
+image output; these tools are not filesystem-confined or inherently read-only.
+Inspection hosts must check their unchanged-workspace receipt themselves.
 Existing native policy precedence still applies; no global permission bypass
 is enabled. Supplying a tool
 server authorizes its tools within that run; Cligent uses scoped approval
@@ -139,6 +175,18 @@ rather than enabling every tool. See adapter limitations below.
 `browser` is also available on per-call options, including direct and parallel
 calls. `{ browser: false }` disables an instance default for one call. In the
 bundled `tmux-play` YAML configuration, a player or Captain can set `browser: true`.
+Programmatic complete call settings carry `browser` and `mcpServers`; omitted
+values disable the browser and clear the server map. Per-call player/Captain
+`attachments` accept local files and never become conversation defaults.
+
+Electron hosts use their current absolute executable in child-local Node mode;
+a global Node installation is unnecessary. Packaged apps must retain Electron's
+`runAsNode` fuse and unpack executable agent/browser dependency trees, including
+matching Playwright modules and the SDK-owned Claude/Codex native packages. Cligent selects
+physical `.asar.unpacked` paths for owned children and reports unusable layouts.
+Both ordinary and ASAR Electron main-process fixtures exercise the native
+browser-to-model-to-host loop. Browser capability does not grant control over
+Electron windows or other desktop applications.
 
 ## Return figures alongside an explanation
 
@@ -213,7 +261,7 @@ semantics; this API does not promise universal MCP isolation.
 | Adapter | Admission and output |
 | --- | --- |
 | Claude Code | Only supplied servers are admitted; account connectors remain disabled. Their tools receive scoped approval, with `disallowedTools` retained. A supplied server or managed browser together with an explicit `allowedTools` list is rejected because that combination cannot preserve Cligent's exact tool-availability contract. Native tool-result screenshots produce correlated `media` events. |
-| Codex | Supplied servers are passed as runtime configuration, including under existing permission-policy isolation. Native MCP image/resource results produce `media`. MCP/browser configuration is unsupported on native Windows in this release because its configuration wrapper cannot be launched by the SDK there; use a Linux or macOS host for this capability. |
+| Codex | Supplied servers are passed as runtime configuration, including under existing permission-policy isolation. Native MCP image/resource results produce `media`. Raw SDK configuration supports ordinary MCP/browser calls on native Windows. A supplied `permissions` policy remains unsupported there because Cligent cannot enforce its isolated-config executable wrapper; discovery reports that restriction before downloading a browser. |
 | Gemini | Supplied servers use a temporary native settings overlay. Unsupported overlay contexts fail explicitly. The CLI exposes text-only tool display output, so the model can use screenshots while screenshot bytes are unavailable to Cligent; use the runtime's saved-file references where needed. |
 | Kimi | Servers are supplied through ACP, with HTTP capability negotiation. Run-specific server names keep scoped approvals separate from ambient tools. Native rules naming the original server do not match those aliases; use applicable wildcard rules or the exposed native names. Native image/tool content produces `media`. |
 | OpenCode | Supplied servers are admitted into the run's managed server. External shared servers reject caller MCP/browser options because changing their tool registry affects other sessions; configure those servers independently. Native file and completed-tool attachments produce `media`. |

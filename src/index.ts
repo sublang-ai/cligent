@@ -44,6 +44,17 @@ export type {
 } from './types.js';
 
 export type { McpServerConfig, McpServers } from './mcp.js';
+export type {
+  AgentCapabilities,
+  CapabilityState,
+  CapabilityRestriction,
+  CapabilityOptions,
+  AdapterCapabilityOptions,
+  BrowserSetupProgress,
+  BrowserSetupFailure,
+  BrowserSetupResult,
+  BrowserSetupOptions,
+} from './capabilities.js';
 
 export { ATTACHMENT_SUPPORT, getAttachmentSupport } from './attachments.js';
 export type { Attachment, AttachmentSupport } from './attachments.js';

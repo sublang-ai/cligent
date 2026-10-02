@@ -22,6 +22,45 @@ export interface McpOptions {
   abortSignal?: AbortSignal;
 }
 
+const resourceScope = Symbol('managed MCP resources');
+interface ResourceScope {
+  closed: boolean;
+  cleanups: Set<() => Promise<void>>;
+}
+type ScopedOptions = McpOptions & { [resourceScope]?: ResourceScope };
+
+/** Keeps automatic browser artifacts alive until the adapter stream is consumed. */
+export async function* withMcpResources<
+  T extends McpOptions,
+  E extends { type: string },
+>(
+  options: T | undefined,
+  run: (options: T) => AsyncGenerator<E, void, void>,
+): AsyncGenerator<E, void, void> {
+  const resources: ResourceScope = { closed: false, cleanups: new Set() };
+  const scoped = { ...options, [resourceScope]: resources } as unknown as T;
+  const cleanup = async () => {
+    if (resources.closed) return;
+    resources.closed = true;
+    const results = await Promise.allSettled(
+      [...resources.cleanups].map((release) => release()),
+    );
+    if (results.some((result) => result.status === 'rejected'))
+      throw new Error('Managed browser output cleanup failed');
+  };
+  try {
+    for await (const event of run(scoped)) {
+      // Cligent deliberately doesn't wait for arbitrary adapter return() after
+      // a terminal event. By this point every preceding media yield has been
+      // consumed, so finish owned artifact cleanup before exposing done.
+      if (event.type === 'done') await cleanup();
+      yield event;
+    }
+  } finally {
+    await cleanup();
+  }
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return false;
@@ -134,7 +173,14 @@ export async function prepareMcpServers(
   }
   if (options.abortSignal?.aborted)
     throw new Error('Browser preparation interrupted');
-  const { prepareBrowserServer } = await import('./browser.js');
+  const { prepareBrowserServer, releaseBrowserServer } =
+    await import('./browser.js');
   const browser = await prepareBrowserServer(options.abortSignal);
+  const scope = (options as ScopedOptions)[resourceScope];
+  if (scope?.closed) {
+    await releaseBrowserServer(browser);
+    throw new Error('Browser preparation interrupted');
+  }
+  scope?.cleanups.add(() => releaseBrowserServer(browser));
   return { ...servers, cligent_browser: browser };
 }

@@ -150,8 +150,11 @@ describe('local attachment request preparation', () => {
       ),
     ).rejects.toThrow('attachments[1]');
     await expect(
-      prepareAttachments('gemini', [{ path: 'clip.mp4' }], directory),
-    ).rejects.toThrow('@file');
+      prepareAttachments('custom', [{ path: 'clip.mp4' }], directory),
+    ).rejects.toThrow('not supported');
+    expect(
+      await prepareAttachments('gemini', [{ path: 'clip.mp4' }], directory),
+    ).toEqual([{ path: join(directory, 'clip.mp4'), mimeType: 'video/mp4' }]);
     expect(await prepareAttachments('gemini', [], directory)).toEqual([]);
     expect(await prepareAttachments('codex', undefined)).toEqual([]);
   });

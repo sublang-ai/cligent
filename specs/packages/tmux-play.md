@@ -347,12 +347,14 @@ When the runtime creates a `CaptainContext`, it shall expose this turn-scoped su
 | `CallPlayerOptions.resume`, string | explicitly resume that opaque backend token instead of the player's stored automatic token |
 | `CallPlayerOptions.resume`, `false` | force a fresh backend session |
 | `CallPlayerOptions.resume`, omitted | preserve automatic continuity per [[tmux-play-41](#tmux-play-41)] |
+| `CallPlayerOptions.attachments` | optional ordered local-file inputs per [[tmux-play-221](#tmux-play-221)] |
 | `CallPlayerOptions.settings` | optional complete per-call replacement per [[tmux-play-93](#tmux-play-93)] |
 | `CallPlayerOptions` visibility boundary | expose no `visibility` member; player presentation is unchanged |
 | `callCaptain(prompt: string, options?: CallCaptainOptions): Promise<CaptainRunResult>` | return [[tmux-play-33](#tmux-play-33)]'s `CaptainRunResult` |
 | `CallCaptainOptions.visibility` | `'visible' \| 'hidden'`, defaulting to `'visible'`, per [[tmux-play-72](#tmux-play-72)] |
 | `CallCaptainOptions.resume` | select the Captain backend session with the same string / `false` / omitted meanings |
 | `CallCaptainOptions.allowedTools?: readonly string[]` | optional tool-name restriction per [[tmux-play-88](#tmux-play-88)] |
+| `CallCaptainOptions.attachments` | optional ordered local-file inputs per [[tmux-play-221](#tmux-play-221)] |
 | `CallCaptainOptions.settings` | optional complete per-call replacement per [[tmux-play-93](#tmux-play-93)] |
 | `setVisiblePlayers(playerIds: readonly string[]): Promise<void>` | [[tmux-play-81](#tmux-play-81)]'s turn-scoped visibility control |
 | `emitReply(text: string): Promise<void>` | [[tmux-play-97](#tmux-play-97)]'s turn-scoped conversational reply, presented per [[tmux-play-92](#tmux-play-92)] |
@@ -1249,12 +1251,12 @@ When tmux-play admits a player or Captain call, it shall resolve complete call s
 
 | Input or state | Admission outcome |
 | --- | --- |
-| `settings` omitted | use the configured model, effort, [[tmux-play-206](#tmux-play-206)] `fastMode`, [[tmux-play-211](#tmux-play-211)] `subagentModel`, [[tmux-play-216](#tmux-play-216)] `subagentEffort`, instruction, and permissions as complete runtime-held defaults; map each supplied policy through [[engine-52](engine.md#engine-52)], omit every unconfigured field so the provider default remains in control, and leave generic `Cligent` merging outside this runtime unchanged per [[engine-3](engine.md#engine-3)] |
-| `settings` supplied | require one closed `AgentCallSettings` object whose `model` and `effort` are `{ kind: 'value', value: <nonempty string> }` or `{ kind: 'provider-default' }`, whose optional `fastMode` is boolean, whose optional `subagentModel` is a string containing a non-whitespace character, whose optional `subagentEffort` is an `Effort` value, and whose optional `instruction` and [[engine-21](engine.md#engine-21)] `permissions` are the complete effective values; omitted `fastMode` selects provider default under [[engine-75](engine.md#engine-75)], omitted `subagentModel` selects provider default under [[engine-91](engine.md#engine-91)], omitted `subagentEffort` leaves the effort to the agent under [[engine-97](engine.md#engine-97)], other omission means none, and no member merges with configured defaults |
-| supplied settings admitted | capture the object, selections, fast-mode value, subagent-model and subagent-effort values, and permission data as a detached frozen snapshot before asynchronous work |
+| `settings` omitted | use the configured model, effort, [[tmux-play-206](#tmux-play-206)] `fastMode`, [[tmux-play-211](#tmux-play-211)] `subagentModel`, [[tmux-play-216](#tmux-play-216)] `subagentEffort`, instruction, permissions, browser selection, and programmatic MCP server map as complete runtime-held defaults; map each supplied policy through [[engine-52](engine.md#engine-52)], omit every unconfigured field so the provider default remains in control, and leave generic `Cligent` merging outside this runtime unchanged per [[engine-3](engine.md#engine-3)] |
+| `settings` supplied | require one closed `AgentCallSettings` object whose `model` and `effort` are `{ kind: 'value', value: <nonempty string> }` or `{ kind: 'provider-default' }`, whose optional `fastMode` is boolean, whose optional `subagentModel` is a string containing a non-whitespace character, whose optional `subagentEffort` is an `Effort` value, and whose optional `browser` is boolean, whose optional `mcpServers` is a server map validated per [[mcp-2](mcp.md#mcp-2)], and whose optional `instruction` and [[engine-21](engine.md#engine-21)] `permissions` are the complete effective values; omitted `fastMode` selects provider default under [[engine-75](engine.md#engine-75)], omitted `subagentModel` selects provider default under [[engine-91](engine.md#engine-91)], omitted `subagentEffort` leaves the effort to the agent under [[engine-97](engine.md#engine-97)], omitted `browser` disables managed browser tools, omitted `mcpServers` selects an empty map, other omission means none, and no member merges with configured defaults |
+| supplied settings admitted | capture the object, selections, fast-mode value, subagent-model and subagent-effort values, browser selection, MCP server data, and permission data as a detached frozen snapshot before asynchronous work |
 | accessor, unknown field, incomplete selection, invalid effort vocabulary, non-boolean or adapter-unsupported fast mode under [[tmux-play-206](#tmux-play-206)], non-string, blank, or adapter-unsupported subagent model under [[tmux-play-211](#tmux-play-211)], subagent effort without a subagent model, outside the adapter's vocabulary, or adapter-unsupported under [[tmux-play-216](#tmux-play-216)], or another unenforceable setting | reject before the prompt record and provider run |
 | session selection | resolve the explicit token, forced-fresh selection, or stored automatic token exactly once at admission per [[tmux-play-41](#tmux-play-41)] and [[tmux-play-88](#tmux-play-88)], then give the same detached selection to reset preflight and `Cligent.run()` |
-| runtime-owned `Cligent` | carry none of the configured model, effort, `fastMode`, `subagentModel`, `subagentEffort`, instruction, or permissions defaults |
+| runtime-owned `Cligent` | carry none of the configured model, effort, `fastMode`, `subagentModel`, `subagentEffort`, instruction, permissions, browser, or MCP server defaults |
 | provider-default selection | omit the selected model or effort, and omit `fastMode` under [[engine-75](engine.md#engine-75)], `subagentModel` under [[engine-91](engine.md#engine-91)], or `subagentEffort` under [[engine-97](engine.md#engine-97)] when absent from supplied settings, from `Cligent.run()`; never restore the configured role value |
 | concrete Gemini effort without a [[gemini-11](adapters/gemini.md#gemini-11)] model alias, or concrete OpenCode effort without an [[opencode-12](adapters/opencode.md#opencode-12)] variant | reject instead of silently ignoring the effort |
 | resumed Claude, provider-default model | reject because [[claude-code-6](adapters/claude-code.md#claude-code-6)] omission restores the transcript model |
@@ -1335,19 +1337,31 @@ When a visible normalized media event [[engine-100](engine.md#engine-100)] or na
 
 ### tmux-play-219
 
-When Captain or player configuration supplies optional `browser`, tmux-play shall retain the role's managed-browser selection through configuration loading, snapshots, session setup, and its runtime-owned `Cligent` instance [[engine-124](engine.md#engine-124)]:
+When Captain or player configuration supplies optional `browser`, tmux-play shall retain the role's managed-browser selection through configuration loading, snapshots, session setup, and runtime-held call defaults resolved per [[tmux-play-93](#tmux-play-93)]:
 
 | Value | Outcome |
 | --- | --- |
 | omitted | preserve omission and do not enable browser tools |
-| boolean | preserve `true` or `false` as an instance default independent of per-call settings replacements, selecting managed browser behavior per [[mcp-3](mcp.md#mcp-3)] |
+| boolean | preserve `true` or `false` as a configured call default, selecting managed browser behavior per [[mcp-3](mcp.md#mcp-3)] |
 | other value | reject with the offending `captain.browser` or `players[i].browser` path |
+
+### tmux-play-221
+
+When a Captain admits a player or Captain call with `attachments`, tmux-play shall capture an ordered detached frozen list of local-file descriptors before asynchronous record dispatch and pass it only to that call's `Cligent.run()` as local-file inputs [[attachments-1](attachments.md#attachments-1)], rejecting malformed descriptors or accessors before the prompt record, leaving file and transport validation to the selected adapter [[attachments-2](attachments.md#attachments-2)], without modifying the prompt or inheriting inputs into subsequent calls.
+
+### tmux-play-222
+
+Where a programmatic runtime configuration supplies a Captain or player `mcpServers` map, tmux-play shall keep the validated detached map as that role's runtime-held default under [[tmux-play-93](#tmux-play-93)], preserving the caller-selected transport contract [[mcp-1](mcp.md#mcp-1)] without adding a YAML configuration field.
 
 ## Verification
 
+### tmux-play-223
+
+When a programmatic runtime executes a Captain and player with configured browser/MCP tools, replacement settings, and attachment inputs across consecutive calls, integration verification shall assert complete replacement and later configured-default restoration [[tmux-play-93](#tmux-play-93)], independent role defaults [[tmux-play-222](#tmux-play-222)], unchanged prompt and attachment ordering, snapshot isolation across asynchronous observer mutation, and no attachment carryover [[tmux-play-221](#tmux-play-221)], with malformed settings and descriptors rejected before prompt records.
+
 ### tmux-play-220
 
-When configuration and runtime integration flows exercise omitted, enabled, disabled, and malformed browser values, verification shall assert path-specific validation, unchanged snapshots, independent Captain and player selections reaching adapter calls, and retained selection after a per-call settings replacement [[tmux-play-219](#tmux-play-219)].
+When configuration and runtime integration flows exercise omitted, enabled, disabled, and malformed browser values, verification shall assert path-specific validation, unchanged snapshots, independent Captain and player selections reaching adapter calls, and configured selection restored on a later call without replacement [[tmux-play-219](#tmux-play-219)].
 
 ### tmux-play-218
 

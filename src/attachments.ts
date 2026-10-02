@@ -37,9 +37,22 @@ export const ATTACHMENT_SUPPORT = Object.freeze({
     notes: 'Native local-image inputs; model and runtime limits apply.',
   }),
   gemini: Object.freeze({
-    mimeTypes: Object.freeze([] as string[]),
+    mimeTypes: Object.freeze([
+      ...IMAGES,
+      'application/pdf',
+      'audio/mpeg',
+      'audio/wav',
+      'audio/flac',
+      'audio/ogg',
+      'audio/aac',
+      'audio/aiff',
+      'video/mp4',
+      'video/mpeg',
+      'video/quicktime',
+      'video/webm',
+    ]),
     notes:
-      'Use native @file references in the text prompt for images, audio, video, PDF, and text. The attachments option is unsupported.',
+      'Owned MIME-matched snapshots through native @file. At most 20 MiB per file; requires POSIX and a temporary path without control, backslash, glob, or comma characters. Encoded media must be valid; model and runtime limits apply. Text files remain available through native @file prompts.',
   }),
   kimi: Object.freeze({
     mimeTypes: IMAGES,

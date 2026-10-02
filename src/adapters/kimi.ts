@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { describeCapabilities } from '../capabilities.js';
+
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -27,7 +29,7 @@ import type {
   ToolCallContent,
   ToolCallStatus,
 } from '@agentclientprotocol/sdk';
-import { prepareMcpServers } from '../mcp.js';
+import { prepareMcpServers, withMcpResources } from '../mcp.js';
 import type { AcpSessionConfigOption } from './acp-schema.js';
 import {
   ACTED_ON_UPDATES,
@@ -760,11 +762,30 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       deps.reportCleanupFailure ?? defaultReportCleanupFailure;
   }
 
+  getCapabilities(options?: Parameters<KimiAdapter['run']>[1]) {
+    return describeCapabilities(
+      AGENT,
+      async () => {
+        mapAgentOptionsToKimiOptions(options);
+      },
+      options,
+    );
+  }
+
   async isAvailable(): Promise<boolean> {
     return this.probeAvailability();
   }
 
   async *run(
+    prompt: string,
+    options?: AgentOptions<KimiEffort>,
+  ): AsyncGenerator<AgentEvent, void, void> {
+    yield* withMcpResources(options, (scoped) =>
+      this.runWithMcpResources(prompt, scoped),
+    );
+  }
+
+  private async *runWithMcpResources(
     prompt: string,
     options?: AgentOptions<KimiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
