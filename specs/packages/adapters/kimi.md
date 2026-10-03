@@ -349,8 +349,8 @@ When a run supplies MCP servers or selects the browser preset, the adapter shall
 | fresh or resumed session | send the current map, using new private aliases and reconnecting servers even on resume |
 | absent or empty map without browser | `mcpServers: []`, preserving native ambient behavior |
 | abort during preparation | interrupted terminal without spawning |
-| active permission request whose native title begins with this run's complete `mcp__<private alias>__` prefix, has a non-empty tool suffix, and offers `allow_once` | select the first offered once option without emitting a user permission request |
-| no admitted namespace match, or no offered once option | ordinary headless handling selected by [[kimi-22](#kimi-22)] |
+| active permission request whose native title begins with this run's complete `mcp__<private alias>__` prefix, has a non-empty tool suffix, and offers exactly one `allow_once` option | select that option without emitting a user permission request |
+| no admitted namespace match, or not exactly one offered `allow_once` option | ordinary headless handling selected by [[kimi-22](#kimi-22)] |
 | native denials and unrelated permission modes | unchanged |
 
 ### kimi-47
@@ -416,7 +416,7 @@ After a run has spawned a child, cleanup shall perform this containment sequence
 
 ### kimi-44
 
-When fixture subprocesses exchange real ACP messages with the adapter for fresh and resumed sessions, the integration check shall verify both transports, private names, exact environment and header values, approval of only an offered once option for an admitted namespace, denial of ambient and ordinary tools, and fallback denial when no once option is offered; an HTTP-capability refusal shall send no session request [[kimi-43](#kimi-43)].
+When fixture subprocesses exchange real ACP messages with the adapter for fresh and resumed sessions, the integration check shall verify both transports, private names, exact environment and header values, approval of only an offered once option for an admitted namespace, denial of ambient and ordinary tools, and fallback denial when other than exactly one once option is offered; an HTTP-capability refusal shall send no session request [[kimi-43](#kimi-43)].
 
 ### kimi-46
 
