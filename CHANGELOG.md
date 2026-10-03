@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposing arbitrary child output. A child-reported proof deadline also reaps
   the owned process tree, including resistant descendants after its launcher
   exits. Existing deadlines and caller cancellation behavior remain unchanged.
+- Codex and OpenCode validate attachments before preparing caller MCP servers
+  or the managed browser, so an invalid attachment list is rejected without
+  first downloading or launching Chromium, matching Claude, Gemini, and Kimi.
 
 ## [0.33.3] - 2026-10-02
 
