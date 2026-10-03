@@ -189,8 +189,44 @@ describe('local attachment request preparation', () => {
       expect(Object.isFrozen(descriptor)).toBe(true);
       expect(Object.isFrozen(descriptor.mimeTypes)).toBe(true);
     }
-    expect(ATTACHMENT_SUPPORT.opencode.mimeTypes).toContain('video/*');
-    expect(ATTACHMENT_SUPPORT.codex.mimeTypes).not.toContain('video/*');
+    const images = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+    const matrix = {
+      'claude-code': [...images, 'application/pdf'],
+      codex: images,
+      gemini: [
+        ...images,
+        'application/pdf',
+        'audio/mpeg',
+        'audio/wav',
+        'audio/flac',
+        'audio/ogg',
+        'audio/aac',
+        'audio/aiff',
+        'video/mp4',
+        'video/mpeg',
+        'video/quicktime',
+        'video/webm',
+      ],
+      kimi: images,
+      opencode: [
+        'image/*',
+        'audio/*',
+        'video/*',
+        'application/pdf',
+        'text/plain',
+      ],
+    };
+    expect(Object.keys(ATTACHMENT_SUPPORT).sort()).toEqual(
+      Object.keys(matrix).sort(),
+    );
+    for (const [agent, mimeTypes] of Object.entries(matrix)) {
+      const descriptor = getAttachmentSupport(agent);
+      expect(descriptor).toBe(
+        ATTACHMENT_SUPPORT[agent as keyof typeof ATTACHMENT_SUPPORT],
+      );
+      expect(descriptor?.mimeTypes).toEqual(mimeTypes);
+      expect(descriptor?.notes).toEqual(expect.stringMatching(/\S/));
+    }
   });
 });
 

@@ -220,12 +220,13 @@ describe('per-run MCP native boundaries', () => {
       let selected = []; let promptId; let requestIndex = 0;
       const send = (value) => console.log(JSON.stringify({ jsonrpc: '2.0', ...value }));
       const ask = () => { const alias = selected[0].name;
-        const titles = ['mcp__' + alias + '__navigate', 'mcp__browser__navigate', 'Shell', 'mcp__' + alias + '__close'];
-        send({id: 1000 + requestIndex, method:'session/request_permission', params:{sessionId:'kimi-mcp',toolCall:{toolCallId:'tool-' + requestIndex,title:titles[requestIndex],status:'pending'},options:[...(requestIndex === 3 ? [] : [{optionId:'yes-once',name:'Yes',kind:'allow_once'}]),{optionId:'no',name:'No',kind:'reject_once'}]}});
+        const titles = ['mcp__' + alias + '__navigate', 'mcp__browser__navigate', 'Shell', 'mcp__' + alias + '__close', 'mcp__' + alias + '__reload'];
+        const once = requestIndex === 3 ? [] : requestIndex === 4 ? [{optionId:'yes-once',name:'Yes',kind:'allow_once'},{optionId:'yes-again',name:'Yes again',kind:'allow_once'}] : [{optionId:'yes-once',name:'Yes',kind:'allow_once'}];
+        send({id: 1000 + requestIndex, method:'session/request_permission', params:{sessionId:'kimi-mcp',toolCall:{toolCallId:'tool-' + requestIndex,title:titles[requestIndex],status:'pending'},options:[...once,{optionId:'no',name:'No',kind:'reject_once'}]}});
       };
       for await (const line of createInterface({input:process.stdin})) {
         const req = JSON.parse(line); appendFileSync(${JSON.stringify(capture)}, JSON.stringify(req) + '\\n');
-        if (!req.method) { if (++requestIndex < 4) ask(); else send({id:promptId,result:{stopReason:'end_turn'}}); continue; }
+        if (!req.method) { if (++requestIndex < 5) ask(); else send({id:promptId,result:{stopReason:'end_turn'}}); continue; }
         if (req.method === 'initialize') send({id:req.id,result:{protocolVersion:1,agentCapabilities:{mcpCapabilities:{http:true}}}});
         else if (req.method === 'session/new' || req.method === 'session/resume') {selected=req.params.mcpServers;send({id:req.id,result:req.method === 'session/new' ? {sessionId:'kimi-mcp'} : {}});}
         else if (req.method === 'session/prompt') {promptId=req.id;ask();}
@@ -245,7 +246,7 @@ describe('per-run MCP native boundaries', () => {
       expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
       expect(
         events.filter((event) => event.type === 'permission_request'),
-      ).toHaveLength(3);
+      ).toHaveLength(4);
       const requests = (await readFile(capture, 'utf8'))
         .trim()
         .split('\n')
@@ -279,7 +280,7 @@ describe('per-run MCP native boundaries', () => {
         requests
           .filter((request) => request.id >= 1000)
           .map((request) => request.result.outcome.optionId),
-      ).toEqual(['yes-once', 'no', 'no', 'no']);
+      ).toEqual(['yes-once', 'no', 'no', 'no', 'no']);
     },
   );
 
@@ -380,6 +381,33 @@ describe('per-run MCP native boundaries', () => {
     expect(loadSdk).not.toHaveBeenCalled();
     expect(browserPreparation).not.toHaveBeenCalled();
   });
+
+  it.each(['codex', 'opencode'] as const)(
+    '%s rejects an invalid attachment before browser preparation (attachments-2)',
+    async (agent) => {
+      const cwd = await temp();
+      const loadSdk = vi.fn();
+      const spawnProcess = vi.fn();
+      const adapter =
+        agent === 'codex'
+          ? new CodexAdapter({ loadSdk })
+          : new OpenCodeAdapter({}, { loadSdk, spawnProcess });
+      await expect(
+        collect(
+          adapter.run('browser', {
+            cwd,
+            browser: true,
+            attachments: [{ path: 'capture.unknown' }],
+          }),
+        ),
+      ).rejects.toThrow(
+        `attachments[0] for adapter "${agent}".mimeType is required for an unknown file extension`,
+      );
+      expect(browserPreparation).not.toHaveBeenCalled();
+      expect(loadSdk).not.toHaveBeenCalled();
+      expect(spawnProcess).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects Gemini browser when native sandbox or the home workspace prevents delivery (gemini-49)', async () => {
     const cwd = await temp();

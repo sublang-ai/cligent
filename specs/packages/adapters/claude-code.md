@@ -244,6 +244,8 @@ When a run prepares caller MCP servers or a managed browser, the adapter shall a
 | one or more prepared servers | pass only those servers and auto-approve their tools through SDK `allowedTools` entries `mcp__<server-name>__*`, without changing the built-in `tools` selection or permission mode |
 | `disallowedTools` supplied | preserve the SDK deny mapping and its precedence [[claude-code-22](#claude-code-22)] |
 
+> Admission limit: stdio `env` values and HTTP `headers` travel in the native CLI's `--mcp-config` JSON argument, which local process listings expose, so hosts must not place secrets there.
+
 ### claude-code-77
 
 When the first native initialization reports MCP connection states for the selected servers in [[claude-code-74](#claude-code-74)], the adapter shall emit the ordinary `init` selected by [[claude-code-15](#claude-code-15)] and apply this readiness matrix:

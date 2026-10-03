@@ -401,6 +401,8 @@ When a run supplies MCP servers or selects the browser preset, the adapter shall
 | unsupported tool restrictions | reject before browser preparation |
 | cancellation during preparation | interrupted terminal selected by [[codex-27](#codex-27)] without starting the SDK |
 
+> Admission limit: stdio `env` values and HTTP `headers` travel in native `--config mcp_servers.<name>=…` arguments, which local process listings expose, so hosts must not place secrets there.
+
 ## Internal Behavior
 
 ### Session Identity

@@ -1532,8 +1532,8 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     let sdkPrompt: Parameters<NonNullable<CodexThread['runStreamed']>>[0] =
       prompt;
     try {
-      const mcpServers = await prepareMcpServers(options);
-      if (mcpServers !== undefined) options = { ...options, mcpServers };
+      // attachments-2: the cheap attachment check precedes MCP preparation,
+      // which may download and launch the managed browser.
       const attachments = await prepareAttachments(
         AGENT,
         options?.attachments,
@@ -1550,6 +1550,8 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
                 path: attachment.path,
               })),
             ];
+      const mcpServers = await prepareMcpServers(options);
+      if (mcpServers !== undefined) options = { ...options, mcpServers };
     } catch (error) {
       if (!options?.abortSignal?.aborted) throw error;
       const sessionId = resumeSessionId ?? generateSessionId();
