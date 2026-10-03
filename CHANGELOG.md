@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.4] - 2026-10-02
+
 ### Fixed
 
 - Managed browser proof timeouts name the last reported browser step without
@@ -804,7 +806,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.33.3...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.33.4...HEAD
+[0.33.4]: https://github.com/sublang-ai/cligent/compare/v0.33.3...v0.33.4
 [0.33.3]: https://github.com/sublang-ai/cligent/compare/v0.33.2...v0.33.3
 [0.33.2]: https://github.com/sublang-ai/cligent/compare/v0.33.1...v0.33.2
 [0.33.1]: https://github.com/sublang-ai/cligent/compare/v0.33.0...v0.33.1
