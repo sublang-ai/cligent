@@ -4178,8 +4178,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         throw new Error('OpenCode run aborted before SDK loading');
       }
 
-      const mcpServers = await prepareMcpServers(options);
-
+      // attachments-2: attachments are accepted before MCP preparation,
+      // which may download and launch the managed browser.
       const attachmentParts: FilePartInput[] = [];
       if (options?.attachments !== undefined) {
         const attachments = await prepareAttachments(
@@ -4204,6 +4204,8 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           throw new Error('OpenCode run aborted while reading attachments');
         }
       }
+
+      const mcpServers = await prepareMcpServers(options);
 
       const sdkLoadOutcome = await Promise.race([
         Promise.resolve()

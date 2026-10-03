@@ -381,6 +381,33 @@ describe('per-run MCP native boundaries', () => {
     expect(browserPreparation).not.toHaveBeenCalled();
   });
 
+  it.each(['codex', 'opencode'] as const)(
+    '%s rejects an invalid attachment before browser preparation (attachments-2)',
+    async (agent) => {
+      const cwd = await temp();
+      const loadSdk = vi.fn();
+      const spawnProcess = vi.fn();
+      const adapter =
+        agent === 'codex'
+          ? new CodexAdapter({ loadSdk })
+          : new OpenCodeAdapter({}, { loadSdk, spawnProcess });
+      await expect(
+        collect(
+          adapter.run('browser', {
+            cwd,
+            browser: true,
+            attachments: [{ path: 'capture.unknown' }],
+          }),
+        ),
+      ).rejects.toThrow(
+        `attachments[0] for adapter "${agent}".mimeType is required for an unknown file extension`,
+      );
+      expect(browserPreparation).not.toHaveBeenCalled();
+      expect(loadSdk).not.toHaveBeenCalled();
+      expect(spawnProcess).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects Gemini browser when native sandbox or the home workspace prevents delivery (gemini-49)', async () => {
     const cwd = await temp();
     const home = join(cwd, 'home');
