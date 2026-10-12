@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codex and OpenCode validate attachments before preparing caller MCP servers
   or the managed browser, so an invalid attachment list is rejected without
   first downloading or launching Chromium, matching Claude, Gemini, and Kimi.
+- Claude Code no longer offers the model `AskUserQuestion`, the structured
+  user-question tool the adapter cannot answer: it joins the SDK denylist
+  unless an explicit `allowedTools` names it, so an agent asks in its reply
+  instead of first meeting a refused tool call. The approval handler's
+  refusal remains as the backstop.
 
 ## [0.33.3] - 2026-10-02
 

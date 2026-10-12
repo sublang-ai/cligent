@@ -866,7 +866,7 @@ describe('ClaudeCodeAdapter', () => {
       resume: 'session-abc',
       tools: ['Bash', 'Write'],
       allowedTools: ['Bash', 'Write'],
-      disallowedTools: ['WebFetch'],
+      disallowedTools: ['WebFetch', 'AskUserQuestion'],
       strictMcpConfig: true,
       permissionMode: 'default',
     });
@@ -902,6 +902,77 @@ describe('ClaudeCodeAdapter', () => {
     expect(native.allowedTools).toBeUndefined();
     expect(native.settingSources).toBeUndefined();
     expect(native.strictMcpConfig).toBe(true);
+  });
+
+  // claude-code-229: the SDK denylist withholds the structured user-question
+  // tool the adapter cannot serve unless an explicit allowlist names it
+  // (claude-code-22).
+  it('withholds AskUserQuestion unless the allowlist names it', async () => {
+    const cases: Array<{
+      input: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>;
+      tools: string[] | undefined;
+      disallowedTools: string[] | undefined;
+    }> = [
+      { input: {}, tools: undefined, disallowedTools: ['AskUserQuestion'] },
+      {
+        input: { allowedTools: [] },
+        tools: [],
+        disallowedTools: ['AskUserQuestion'],
+      },
+      {
+        input: { allowedTools: ['Read'] },
+        tools: ['Read'],
+        disallowedTools: ['AskUserQuestion'],
+      },
+      {
+        input: { disallowedTools: ['WebFetch'] },
+        tools: undefined,
+        disallowedTools: ['WebFetch', 'AskUserQuestion'],
+      },
+      {
+        input: { disallowedTools: ['AskUserQuestion', 'WebFetch'] },
+        tools: undefined,
+        disallowedTools: ['AskUserQuestion', 'WebFetch'],
+      },
+      {
+        input: { allowedTools: ['Read', 'AskUserQuestion'] },
+        tools: ['Read', 'AskUserQuestion'],
+        disallowedTools: undefined,
+      },
+      {
+        input: {
+          allowedTools: ['AskUserQuestion'],
+          disallowedTools: ['WebFetch'],
+        },
+        tools: ['AskUserQuestion'],
+        disallowedTools: ['WebFetch'],
+      },
+    ];
+
+    for (const { input, tools, disallowedTools } of cases) {
+      let captured: (MockSdkInnerOptions & { prompt: string }) | undefined;
+      const adapter = new ClaudeCodeAdapter({
+        loadSdk: makeLoader(
+          [
+            {
+              type: 'result',
+              status: 'success',
+              usage: { input_tokens: 0, output_tokens: 0 },
+            },
+          ],
+          (options) => {
+            captured = options;
+          },
+        ),
+      });
+
+      await collect(adapter.run('prompt', input));
+
+      expect(captured).toBeDefined();
+      expect(captured?.tools).toEqual(tools);
+      expect(captured?.allowedTools).toEqual(input.allowedTools);
+      expect(captured?.disallowedTools).toEqual(disallowedTools);
+    }
   });
 
   // claude-code-71: every run sees only the MCP servers the query passes —

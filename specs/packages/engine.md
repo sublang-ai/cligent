@@ -185,7 +185,7 @@ When an adapter maps portable tool restrictions, it shall select this outcome pe
 
 | Input and adapter surface | Outcome |
 | --- | --- |
-| both lists omitted | preserve the adapter's native tool surface |
+| both lists omitted | preserve the adapter's native tool surface, less any tool the adapter withholds as one it cannot serve |
 | non-empty `allowedTools` | restrict available tools to those exact identifiers |
 | empty `allowedTools` | make no tools available |
 | `disallowedTools` also present | remove its exact identifiers from the allowed set |

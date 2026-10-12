@@ -1167,6 +1167,29 @@ export function composeClaudeSystemPrompt(
   return { type: 'custom', prompt: parts.join('\n\n'), snapshot: false };
 }
 
+// claude-code-79: the structured user-question tool, which needs answers
+// rather than a permission bit, so this adapter cannot serve it.
+const STRUCTURED_QUESTION_TOOL = 'AskUserQuestion';
+
+/**
+ * claude-code-22: the caller's denylist, withholding the structured
+ * user-question tool unless an explicit allowlist names it.
+ */
+function claudeDisallowedTools(
+  options:
+    | AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>
+    | undefined,
+): string[] | undefined {
+  const denied = options?.disallowedTools;
+  if (
+    options?.allowedTools?.includes(STRUCTURED_QUESTION_TOOL) ||
+    denied?.includes(STRUCTURED_QUESTION_TOOL)
+  ) {
+    return denied;
+  }
+  return [...(denied ?? []), STRUCTURED_QUESTION_TOOL];
+}
+
 export function mapAgentOptionsToClaudeQueryOptions(
   options:
     | AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>
@@ -1284,7 +1307,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
           : undefined,
       allowedTools:
         mcpToolGrants.length > 0 ? mcpToolGrants : options?.allowedTools,
-      disallowedTools: options?.disallowedTools,
+      disallowedTools: claudeDisallowedTools(options),
       settingSources: toolFreeIsolation ? [] : undefined,
       strictMcpConfig: true,
       ...(sdkMcpServers === undefined ? {} : { mcpServers: sdkMcpServers }),
@@ -1535,7 +1558,7 @@ export class ClaudeCodeAdapter implements AgentAdapter<
       const policy = normalizePermissionPolicy(options.permissions);
       queryOptions.canUseTool = async (toolName, input, context) => {
         // This structured interaction requires answers, not a permission bit.
-        if (toolName === 'AskUserQuestion') {
+        if (toolName === STRUCTURED_QUESTION_TOOL) {
           return {
             behavior: 'deny',
             message:
