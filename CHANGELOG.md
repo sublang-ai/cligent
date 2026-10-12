@@ -10,7 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.4] - 2026-10-11
+
 ### Fixed
+- The published dependency graph takes the MCP SDK audit fix: `@modelcontextprotocol/sdk`
+  moves from 1.30.0 to 1.32.1 (GHSA-6qxp-vccf-f47h) and the lockfiles take the patched
+  `proxy-addr` and `source-map-js`, so the distributable verification's npm audit
+  reports no vulnerabilities.
 
 - Managed browser proof timeouts name the last reported browser step without
   exposing arbitrary child output. A child-reported proof deadline also reaps
@@ -809,7 +815,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.33.3...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.33.4...HEAD
+[0.33.4]: https://github.com/sublang-ai/cligent/compare/v0.33.3...v0.33.4
 [0.33.3]: https://github.com/sublang-ai/cligent/compare/v0.33.2...v0.33.3
 [0.33.2]: https://github.com/sublang-ai/cligent/compare/v0.33.1...v0.33.2
 [0.33.1]: https://github.com/sublang-ai/cligent/compare/v0.33.0...v0.33.1
