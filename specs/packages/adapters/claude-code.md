@@ -257,7 +257,12 @@ When the first native initialization reports MCP connection states for the selec
 
 ### claude-code-22
 
-When the adapter maps `AgentOptions.disallowedTools`, it shall pass the raw list through when present and leave the SDK value `undefined` otherwise, preserving deny precedence over `allowedTools` per [[engine-17](../engine.md#engine-17)].
+When the adapter maps `AgentOptions.disallowedTools`, it shall produce the SDK `disallowedTools` this matrix selects, withholding `AskUserQuestion`, the structured user-question tool it cannot serve [[claude-code-79](#claude-code-79)], and preserving deny precedence over `allowedTools` per [[engine-17](../engine.md#engine-17)]:
+
+| Caller input | SDK `disallowedTools` |
+| --- | --- |
+| an explicit `allowedTools` names `AskUserQuestion` | the raw list when present, otherwise `undefined` |
+| any other | the raw list with `AskUserQuestion` appended unless already present, or `['AskUserQuestion']` when the list is omitted |
 
 ### claude-code-8
 
@@ -660,10 +665,11 @@ Given every allowlist and denylist presence case, when the adapter maps a run, t
 
 | Tool-list input | Observable SDK options |
 | --- | --- |
-| neither list supplied | allowlist controls and `disallowedTools` are `undefined` |
+| neither list supplied | allowlist controls are `undefined` and `disallowedTools` is `['AskUserQuestion']` |
 | explicit empty `allowedTools` | `tools: []`, `allowedTools: []`, and `settingSources: []` |
 | non-empty `allowedTools` | raw list in `tools` and `allowedTools`, and `settingSources: undefined` |
-| `disallowedTools` supplied with or without an allowlist | raw denylist passed through with deny precedence |
+| `disallowedTools` supplied with or without an allowlist | raw denylist passed through with deny precedence and `AskUserQuestion` appended once |
+| `allowedTools` naming `AskUserQuestion`, with and without `disallowedTools` | `AskUserQuestion` in `tools` and `allowedTools`, and `disallowedTools` the raw denylist or `undefined` |
 
 ### claude-code-71
 

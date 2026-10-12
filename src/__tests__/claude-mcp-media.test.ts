@@ -245,7 +245,7 @@ describe('Claude MCP and media through the installed SDK', () => {
       'mcp__browser__*,mcp__remote__*',
     );
     expect(args[args.indexOf('--disallowedTools') + 1]).toBe(
-      'mcp__browser__delete_profile',
+      'mcp__browser__delete_profile,AskUserQuestion',
     );
     expect(JSON.parse(args[args.indexOf('--settings') + 1]!)).toMatchObject({
       disableClaudeAiConnectors: true,
