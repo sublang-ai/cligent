@@ -230,6 +230,18 @@ When the adapter maps a run to SDK query options, it shall confine the run's MCP
 
 - `settingSources` is untouched, so filesystem settings and `CLAUDE.md` still load as [[claude-code-9](#claude-code-9)] maps them.
 
+### claude-code-83
+
+When the adapter maps a run to SDK query options, it shall run the agent with Claude Code's own attribution off, whatever the run's other options, by setting `settings.attribution` to `{ commit: '', pr: '', sessionUrl: false }` in the same settings object as the effort and fast-mode keys, so a commit or pull request the agent makes carries only the trailers and text the agent writes, per [[7]]:
+
+| `settings.attribution` member | Claude Code attribution it removes |
+| --- | --- |
+| `commit: ''` | the trailer Claude Code appends to a commit message |
+| `pr: ''` | the line Claude Code appends to a pull-request description |
+| `sessionUrl: false` | the session link Claude Code appends to both in a web or Remote Control session |
+
+- The object is the documented equivalent of `attribution: false`, in the form runtimes that reject a boolean there also accept.
+
 ### claude-code-74
 
 When a run prepares caller MCP servers or a managed browser, the adapter shall admit the validated configuration [[mcp-1](../mcp.md#mcp-1)], [[mcp-2](../mcp.md#mcp-2)] and resolved browser server [[mcp-3](../mcp.md#mcp-3)] through this SDK mapping, per [DR-032](../../decisions/032-browser-tools-and-media-output.md) and [[11]]:
@@ -752,6 +764,10 @@ When a real adapter runs against an SDK peer that blocks a native tool on `canUs
 ### claude-code-82
 
 Where fresh, resumed, and explicitly reset `Cligent` turns run through the installed Claude SDK and a recording CLI fixture, when the adapter runs each turn, integration verification shall assert the SDK initialization carries the exact fresh-session title and matching UUID, resumes omit fresh naming controls and preserve the backend token, and a reset receives another generated UUID with its matching title [[claude-code-81](#claude-code-81)], [[claude-code-7](#claude-code-7)], [[claude-code-25](#claude-code-25)].
+
+### claude-code-84
+
+Where `Cligent` runs on the adapter through the installed Claude SDK and a recording CLI fixture, with `allowedTools` omitted, empty, and non-empty, each crossed with effort and fast mode omitted and with `ultracode` and fast mode `true`, when each `Cligent` runs a fresh turn and then its resumed turn, integration verification shall assert that every native command line's `--settings` JSON carries `attribution` exactly `{ commit: '', pr: '', sessionUrl: false }` beside the connector gate and the effort and fast-mode keys [[claude-code-83](#claude-code-83)].
 
 ## References
 

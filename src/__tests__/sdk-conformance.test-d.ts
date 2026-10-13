@@ -164,6 +164,7 @@ type CurrentClaudeSettings = Exclude<
 const currentClaudeUltracodeSettings: CurrentClaudeSettings = {
   ultracode: true,
   disableClaudeAiConnectors: true,
+  attribution: { commit: '', pr: '', sessionUrl: false },
 };
 const unsupportedClaudeOptionKeys: Record<
   Exclude<keyof MappedClaudeOptions, keyof CurrentClaudeOptions>,

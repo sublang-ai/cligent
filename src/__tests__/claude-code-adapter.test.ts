@@ -67,6 +67,7 @@ interface MockSdkInnerOptions {
     fastMode?: boolean;
     fastModePerSessionOptIn?: boolean;
     disableClaudeAiConnectors?: boolean;
+    attribution?: { commit: string; pr: string; sessionUrl: boolean };
   };
   mcpServers?: Record<string, unknown>;
   agents?: Record<
@@ -91,6 +92,10 @@ interface MockSdkOptions {
   prompt: string;
   options?: MockSdkInnerOptions;
 }
+
+// claude-code-83: every run's settings object turns Claude Code's own
+// commit and pull-request attribution off.
+const NO_ATTRIBUTION = { commit: '', pr: '', sessionUrl: false };
 
 // 'allow' resolves to a pass-through allow; 'ask' and 'deny' both resolve to a
 // headless deny with a message per claude-code-21.
@@ -1020,6 +1025,7 @@ describe('ClaudeCodeAdapter', () => {
           // and fast-mode keys rather than replacing them.
           expect(captured?.settings).toEqual({
             disableClaudeAiConnectors: true,
+            attribution: NO_ATTRIBUTION,
             ...(effort === 'ultracode' ? { ultracode: true } : {}),
             ...(fastMode !== undefined ? { fastMode } : {}),
           });
@@ -2637,9 +2643,11 @@ describe('ClaudeCodeAdapter', () => {
       if (input === undefined) {
         expect(mapped.queryOptions).not.toHaveProperty('effort');
         // claude-code-8 omits the `ultracode` key; the settings object itself
-        // always carries claude-code-70's connector gate.
+        // always carries claude-code-70's connector gate and claude-code-83's
+        // attribution off.
         expect(mapped.queryOptions.settings).toEqual({
           disableClaudeAiConnectors: true,
+          attribution: NO_ATTRIBUTION,
         });
       } else {
         expect(mapped.queryOptions.effort).toBe(expectedEffort);
@@ -2688,6 +2696,7 @@ describe('ClaudeCodeAdapter', () => {
         expect(captured?.effort).toBe(expectedEffort);
         const expectedSettings = {
           disableClaudeAiConnectors: true,
+          attribution: NO_ATTRIBUTION,
           ...(ultracode !== undefined ? { ultracode } : {}),
           ...(fastMode !== undefined ? { fastMode } : {}),
         };
@@ -2885,6 +2894,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(captured?.effort).toBe('xhigh');
     expect(captured?.settings).toEqual({
       disableClaudeAiConnectors: true,
+      attribution: NO_ATTRIBUTION,
       ultracode: true,
     });
   });
@@ -2964,6 +2974,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(captured?.effort).toBe('xhigh');
     expect(captured?.settings).toEqual({
       disableClaudeAiConnectors: true,
+      attribution: NO_ATTRIBUTION,
       ultracode: true,
     });
     expect(events.map((event) => event.type)).toEqual(['error', 'done']);

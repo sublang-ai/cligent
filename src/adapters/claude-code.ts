@@ -68,10 +68,18 @@ type ClaudePermissionMode =
 
 type ClaudeSdkEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
+interface ClaudeAttributionSettings {
+  commit: string;
+  pr: string;
+  sessionUrl: boolean;
+  [key: string]: unknown;
+}
+
 interface ClaudeSettings {
   ultracode?: boolean;
   fastMode?: boolean;
   disableClaudeAiConnectors?: boolean;
+  attribution?: ClaudeAttributionSettings;
   [key: string]: unknown;
 }
 
@@ -1239,8 +1247,13 @@ export function mapAgentOptionsToClaudeQueryOptions(
   // never the account's auto-fetched claude.ai connectors, whose
   // "connectors need authorizing" reminder otherwise reaches the transcript.
   // `strictMcpConfig` below removes the other ambient MCP sources.
+  // claude-code-83: Claude Code adds none of its own attribution, so a
+  // commit or pull request the agent makes carries only what it writes. The
+  // object is `attribution: false` in the form runtimes that reject a
+  // boolean there also accept.
   const settings: ClaudeSettings = {
     disableClaudeAiConnectors: true,
+    attribution: { commit: '', pr: '', sessionUrl: false },
     ...effortOptions.settings,
     ...(options?.fastMode !== undefined ? { fastMode: options.fastMode } : {}),
   };

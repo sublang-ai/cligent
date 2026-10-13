@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Claude Code runs with its own commit and pull-request attribution off, so an agent's commits carry only the trailers it writes.
+
 ## [0.33.4] - 2026-10-11
 
 ### Fixed
