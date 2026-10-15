@@ -4,9 +4,23 @@
 import { describeCapabilities, CapabilityError } from '../capabilities.js';
 import { nodeChildEnvironment, quoteShellArgument } from '../node-child.js';
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import {
+  existsSync,
+  readFileSync,
+  statSync,
+  type Dirent,
+  type Stats,
+} from 'node:fs';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { createEvent, generateSessionId } from '../events.js';
@@ -24,6 +38,17 @@ import {
   assertBuiltInSubagentModelOption,
 } from '../subagent-model.js';
 import { mapWritablePathsPermission } from '../permissions.js';
+import {
+  carrierName,
+  carrierSuffix,
+  formatRemovalFailures,
+  isStaleCarrierName,
+  materializeSkills,
+  prepareSkills,
+  removeCarrierPaths,
+  type PreparedSkill,
+  type RemovalFailure,
+} from '../skills.js';
 import type {
   AgentAdapter,
   AgentEvent,
@@ -1315,6 +1340,148 @@ export async function createCodexConfigOverrideWrapper(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Skills (codex-75, codex-78): a run-private plugin in the Codex home's plugin
+// cache, enabled for the run by one configuration override. The cache entry
+// is a run-scoped artifact, not configuration: nothing reaches config.toml or
+// the workspace.
+
+const CODEX_SKILL_PLUGIN = 'cligent';
+const CODEX_SKILL_PLUGIN_VERSION = '1.0.0';
+const CODEX_SKILL_PLUGIN_MANIFEST = JSON.stringify({
+  name: CODEX_SKILL_PLUGIN,
+  version: CODEX_SKILL_PLUGIN_VERSION,
+  skills: './skills/',
+});
+
+/**
+ * The Codex home as the native runtime resolves it: a non-empty CODEX_HOME,
+ * otherwise ~/.codex. The runtime refuses a CODEX_HOME naming no existing
+ * directory rather than creating it, so this run refuses it too, with the
+ * runtime's own message and before any write; only the ~/.codex fallback is
+ * created where absent, as the runtime creates it.
+ */
+async function resolveCodexHome(): Promise<string> {
+  const configured = process.env.CODEX_HOME;
+  if (!configured) return join(homedir(), '.codex');
+  const quoted = JSON.stringify(configured);
+  let stats: Stats;
+  try {
+    stats = await stat(configured);
+  } catch (error) {
+    throw new Error(
+      (error as NodeJS.ErrnoException).code === 'ENOENT'
+        ? `CODEX_HOME points to ${quoted}, but that path does not exist`
+        : `failed to read CODEX_HOME ${quoted}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!stats.isDirectory()) {
+    throw new Error(
+      `CODEX_HOME points to ${quoted}, but that path is not a directory`,
+    );
+  }
+  return resolve(configured);
+}
+
+interface CodexSkillCarrier {
+  readonly marketplaceDir: string;
+  readonly pluginRoot: string;
+  /** The run's one plugin enable override; Codex splits an override key at every `.`, and the marketplace name holds none. */
+  readonly override: string;
+  /** Remove the plugin root, its marketplace directory, and each parent the run created while empty. */
+  readonly remove: () => Promise<RemovalFailure[]>;
+}
+
+/**
+ * Remove marketplaces a dead process of this host left behind. Another
+ * process's sweep may remove one first, and one whose removal fails stays
+ * for a later run; neither fails this run.
+ */
+async function sweepStaleCodexMarketplaces(cache: string): Promise<void> {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(cache, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !isStaleCarrierName(entry.name)) continue;
+    try {
+      await rm(join(cache, entry.name), { recursive: true, force: true });
+    } catch {
+      // Left for a later sweep.
+    }
+  }
+}
+
+/** The directories above `path` that `mkdir(path, { recursive: true })` created, deepest first. */
+function createdAncestors(path: string, firstCreated: string | undefined) {
+  const created: string[] = [];
+  if (firstCreated === undefined) return created;
+  for (let current = path; current !== firstCreated;) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    created.push(parent);
+    current = parent;
+  }
+  return created;
+}
+
+async function openCodexSkillCarrier(): Promise<CodexSkillCarrier> {
+  const cache = join(await resolveCodexHome(), 'plugins', 'cache');
+  await sweepStaleCodexMarketplaces(cache);
+  const marketplace = carrierName(carrierSuffix());
+  const marketplaceDir = join(cache, marketplace);
+  const parents = createdAncestors(
+    marketplaceDir,
+    await mkdir(marketplaceDir, { recursive: true }),
+  );
+  const pluginRoot = join(
+    marketplaceDir,
+    CODEX_SKILL_PLUGIN,
+    CODEX_SKILL_PLUGIN_VERSION,
+  );
+  return {
+    marketplaceDir,
+    pluginRoot,
+    override: `plugins.${CODEX_SKILL_PLUGIN}@${marketplace}.enabled=true`,
+    remove: () => removeCarrierPaths([pluginRoot, marketplaceDir], parents),
+  };
+}
+
+async function populateCodexSkillCarrier(
+  carrier: CodexSkillCarrier,
+  skills: readonly PreparedSkill[],
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  const manifestDir = join(carrier.pluginRoot, '.codex-plugin');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'plugin.json'),
+    CODEX_SKILL_PLUGIN_MANIFEST,
+    'utf8',
+  );
+  // Staging stays outside the plugin's skills root, which Codex scans.
+  await materializeSkills(skills, {
+    root: join(carrier.pluginRoot, 'skills'),
+    staging: join(carrier.marketplaceDir, '.staging'),
+    signal,
+  });
+}
+
+/** skills-4: a rejection keeps its own outcome, naming each unremoved carrier path. */
+function withUnremovedCarrierPaths(
+  error: unknown,
+  failures: readonly RemovalFailure[],
+): unknown {
+  const note = ` (skill carrier cleanup failed: ${formatRemovalFailures(failures)})`;
+  if (error instanceof Error) {
+    error.message += note;
+    return error;
+  }
+  return new Error(`${String(error)}${note}`);
+}
+
 export async function loadCodexSdk(): Promise<CodexSdk> {
   const mod = (await import('@openai/codex-sdk')) as {
     Codex?: unknown;
@@ -1528,9 +1695,31 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     assertCodexToolRestrictionsSupported(options);
     mapPermissionsToCodexOptions(options?.permissions);
     const resumeSessionId = asString(options?.resume);
-    const attachmentPreparationStart = Date.now();
+    const preparationStart = Date.now();
+    // codex-69: cancelled attachment or skill preparation ends the run
+    // without invoking the SDK.
+    const preparationInterrupted = (): AgentEvent => {
+      const sessionId = resumeSessionId ?? generateSessionId();
+      return createEvent(
+        'done',
+        AGENT,
+        {
+          status: 'interrupted',
+          ...doneResumeTokenPayload(
+            'interrupted',
+            false,
+            sessionId,
+            resumeSessionId,
+          ),
+          usage: { ...DEFAULT_DONE_USAGE },
+          durationMs: Date.now() - preparationStart,
+        },
+        sessionId,
+      );
+    };
     let sdkPrompt: Parameters<NonNullable<CodexThread['runStreamed']>>[0] =
       prompt;
+    let skills: PreparedSkill[] = [];
     try {
       // attachments-2: the cheap attachment check precedes MCP preparation,
       // which may download and launch the managed browser.
@@ -1550,27 +1739,18 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
                 path: attachment.path,
               })),
             ];
+      // skills-2: the skill list is validated before MCP preparation too.
+      skills = await prepareSkills(
+        AGENT,
+        options?.skills,
+        options?.cwd,
+        options?.abortSignal,
+      );
       const mcpServers = await prepareMcpServers(options);
       if (mcpServers !== undefined) options = { ...options, mcpServers };
     } catch (error) {
       if (!options?.abortSignal?.aborted) throw error;
-      const sessionId = resumeSessionId ?? generateSessionId();
-      yield createEvent(
-        'done',
-        AGENT,
-        {
-          status: 'interrupted',
-          ...doneResumeTokenPayload(
-            'interrupted',
-            false,
-            sessionId,
-            resumeSessionId,
-          ),
-          usage: { ...DEFAULT_DONE_USAGE },
-          durationMs: Date.now() - attachmentPreparationStart,
-        },
-        sessionId,
-      );
+      yield preparationInterrupted();
       return;
     }
 
@@ -1594,14 +1774,76 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       throw codexExecutableRefusal(executable);
     }
 
+    // codex-75: every option check that can reject the run (codex-7's effort
+    // vocabulary, codex-70's MCP map) runs before the skill carrier opens, so
+    // a run bound to be rejected does no work in the Codex home.
+    const mapped = mapAgentOptionsToCodexOptions(options);
     const {
       codexOptions,
       codexCliExecArgs,
-      codexCliConfigOverrides,
       threadOptions,
       runOptions,
       cleanupAbort,
-    } = mapAgentOptionsToCodexOptions(options);
+    } = mapped;
+
+    // codex-75: the run-private plugin exists before the SDK starts. codex-78
+    // removes it once: before a rejection or preparation terminal while the
+    // SDK never started, and otherwise after terminal `done` once the SDK
+    // event iterator has settled, the only exit evidence the SDK gives: its
+    // exec generator kills the child without awaiting that child's exit.
+    let skillCarrier: CodexSkillCarrier | undefined;
+    const removeSkillCarrier = async (): Promise<RemovalFailure[]> => {
+      const carrier = skillCarrier;
+      skillCarrier = undefined;
+      return carrier ? await carrier.remove() : [];
+    };
+    // skills-4: a rejection keeps its outcome and names each unremoved path,
+    // unless the caller signal fired, when a failure is suppressed.
+    const rejectRun = async (error: unknown): Promise<unknown> => {
+      const failures = await removeSkillCarrier();
+      return failures.length === 0 || options?.abortSignal?.aborted
+        ? error
+        : withUnremovedCarrierPaths(error, failures);
+    };
+    // codex-78: carrier removal follows the run's other cleanup even when
+    // that cleanup fails, and the rejection keeps the run's own error.
+    const rejectRunAfter = async (
+      cleanup: () => Promise<void>,
+      error: unknown,
+    ): Promise<unknown> => {
+      try {
+        await cleanup();
+      } catch {
+        // The run's own error is the outcome; a wrapper left behind is a
+        // temporary directory, not Codex configuration.
+      }
+      return await rejectRun(error);
+    };
+    if (skills.length > 0) {
+      try {
+        options?.abortSignal?.throwIfAborted();
+        skillCarrier = await openCodexSkillCarrier();
+        await populateCodexSkillCarrier(
+          skillCarrier,
+          skills,
+          options?.abortSignal,
+        );
+      } catch (error) {
+        // The run ends here, so release its abort registration as codex-40
+        // does for the other pre-start failures.
+        cleanupAbort();
+        if (!options?.abortSignal?.aborted) throw await rejectRun(error);
+        await removeSkillCarrier();
+        yield preparationInterrupted();
+        return;
+      }
+    }
+
+    // codex-75: the enable override travels beside codex-70's MCP entries.
+    const codexCliConfigOverrides = [
+      ...(mapped.codexCliConfigOverrides ?? []),
+      ...(skillCarrier ? [skillCarrier.override] : []),
+    ];
 
     let codexConfigWrapper: CodexConfigOverrideWrapper | undefined;
     try {
@@ -1613,7 +1855,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       // Executable resolution and wrapper setup run before any event, so
       // release the abort listener registered for this run before rethrowing.
       cleanupAbort();
-      throw err;
+      throw await rejectRun(err);
     }
     // The SDK's spawn path remains virtual when its JS is inside an ASAR.
     // Use the same SDK-owned native binary the readiness probe resolved in
@@ -1623,13 +1865,11 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
         ? executable.path
         : undefined;
     const effectiveCodexOptions =
-      codexConfigWrapper ||
-      codexCliConfigOverrides?.length ||
-      packagedExecutable
+      codexConfigWrapper || codexCliConfigOverrides.length || packagedExecutable
         ? {
             ...codexOptions,
-            ...(codexCliConfigOverrides?.length
-              ? { configOverrides: [...codexCliConfigOverrides] }
+            ...(codexCliConfigOverrides.length
+              ? { configOverrides: codexCliConfigOverrides }
               : {}),
             ...(codexConfigWrapper
               ? { codexPathOverride: codexConfigWrapper.path }
@@ -1650,9 +1890,11 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     try {
       codex = new sdk.Codex(effectiveCodexOptions);
     } catch (err) {
-      await cleanupCodexRun();
-      throw new Error(
-        `CodexAdapter failed to initialize: ${err instanceof Error ? err.message : String(err)}`,
+      throw await rejectRunAfter(
+        cleanupCodexRun,
+        new Error(
+          `CodexAdapter failed to initialize: ${err instanceof Error ? err.message : String(err)}`,
+        ),
       );
     }
 
@@ -1691,17 +1933,16 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       if (streamRequested && resumeSessionId) {
         this.threadUsageBaselines.delete(resumeSessionId);
       }
-      await finishCodexRun();
-      throw err;
+      throw await rejectRunAfter(finishCodexRun, err);
     }
 
     if (!streamResult) {
       if (streamRequested && resumeSessionId) {
         this.threadUsageBaselines.delete(resumeSessionId);
       }
-      await finishCodexRun();
-      throw new Error(
-        'Codex SDK does not support runStreamed() in this version',
+      throw await rejectRunAfter(
+        finishCodexRun,
+        new Error('Codex SDK does not support runStreamed() in this version'),
       );
     }
 
@@ -2127,7 +2368,14 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
           : resumeSessionId;
         if (usageThreadId) this.threadUsageBaselines.delete(usageThreadId);
       }
-      await finishCodexRun();
+      try {
+        await finishCodexRun();
+      } finally {
+        // codex-78: the SDK event iterator has settled and every terminal
+        // this stream selects precedes this point, so skills-4 suppresses a
+        // removal failure here, as Codex has no cleanup reporter.
+        await removeSkillCarrier();
+      }
     }
   }
 }

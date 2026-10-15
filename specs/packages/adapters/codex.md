@@ -411,7 +411,9 @@ When a run supplies skills, the adapter shall deliver the prepared list [[skills
 
 | State or entry | Outcome |
 | --- | --- |
-| Codex home | the caller's non-empty `CODEX_HOME`, otherwise `~/.codex`, as the native runtime resolves it |
+| Codex home | the caller's non-empty `CODEX_HOME`, otherwise `~/.codex`, as the native runtime resolves it, the adapter creating only the `~/.codex` fallback where absent, as the runtime creates it |
+| non-empty `CODEX_HOME` naming a missing path, a non-directory, or a path whose inspection fails otherwise | reject before any write in the Codex home with the runtime's own message form, `CODEX_HOME points to "<value>", but that path does not exist`, `CODEX_HOME points to "<value>", but that path is not a directory`, or `failed to read CODEX_HOME "<value>": <cause>`, respectively, `<value>` being the caller's string and `<cause>` the inspection error's message |
+| run that option mapping rejects, such as [[codex-7](#codex-7)]'s unsupported effort | reject before any sweep or write in the Codex home |
 | plugin root | `<Codex home>/plugins/cache/<marketplace>/cligent/1.0.0`, `<marketplace>` being `cligent-<host>-<pid>-<suffix>` with `<host>` the operating-system host name with each character outside ASCII letters, digits, and `-` replaced by `-`, `<pid>` the decimal process identifier, and `<suffix>` a random 20-lowercase-hex-character value unique to this run, holding `.codex-plugin/plugin.json` with content `{"name":"cligent","version":"1.0.0","skills":"./skills/"}` and a `skills` directory materialized under [[skills-3](../skills.md#skills-3)] |
 | stale marketplace | a cache directory whose name parses from the right as `cligent-<host>-<pid>-<suffix>` with this host's segment and a process identifier the operating system reports as not running on this host, removed before materializing; one that disappears concurrently or whose removal fails is left without failing the run |
 | enable override | one native `plugins.cligent@<marketplace>.enabled=true` override, its key unquoted because the runtime splits an override key at every `.` and the marketplace name holds none, through the SDK constructor's raw `configOverrides` array, as [[codex-70](#codex-70)] carries MCP entries, leaving every other `plugins` entry as configuration loading selects it |
@@ -421,7 +423,7 @@ When a run supplies skills, the adapter shall deliver the prepared list [[skills
 
 ### codex-78
 
-When a run with skills [[codex-75](#codex-75)] ends, the adapter shall remove the plugin root, its marketplace directory, and each parent the run created while empty, through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after terminal `done` once the SDK event iterator has settled wherever `runStreamed()` was invoked, including the [[codex-25](#codex-25)], [[codex-26](#codex-26)], and [[codex-27](#codex-27)] paths, and otherwise before its terminal or rejection leaves the adapter.
+When a run with skills [[codex-75](#codex-75)] ends, the adapter shall remove the plugin root, its marketplace directory, and each parent the run created while empty, through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after terminal `done` once the SDK event iterator has settled, the point at which the SDK stops exposing its child and the only evidence of that child's exit the SDK gives, wherever `runStreamed()` was invoked, including the [[codex-24](#codex-24)], [[codex-25](#codex-25)], [[codex-26](#codex-26)], and [[codex-27](#codex-27)] paths, and otherwise before its terminal or rejection leaves the adapter, even where the run's executable-wrapper cleanup fails first, the rejection then keeping the run's own error.
 
 ## Internal Behavior
 
@@ -765,11 +767,25 @@ Given temporary image files and absent, empty, invalid, unsupported, and valid a
 
 ### codex-76
 
-When skill fixtures run with the installed Codex SDK recorded into a fixture subprocess and a throwaway `CODEX_HOME`, set and unset, across fresh and resumed threads, a stale marketplace directory, one whose removal fails, a live same-host one, and a foreign-host one, SDK failure and abort paths, and cancellation during preparation, the integration check shall verify the exact plugin root layout and manifest, the single unquoted `plugins` override argument, unchanged skill filters and isolation arguments, the `~/.codex` fallback, the stale-marketplace sweep leaving the live and foreign entries and tolerating the failed removal, and an unchanged workspace and `config.toml` [[codex-75](#codex-75)], through the installed executable's offline prompt-input rendering that the catalog lists `cligent:<name>` from the plugin root under the same override [[codex-75](#codex-75)], the interrupted terminal on cancellation [[codex-69](#codex-69)], and removal of the plugin root and marketplace directory after normal completion, an SDK failure, an abort, and cancellation [[codex-78](#codex-78)].
+When skill fixtures run with the installed Codex SDK recorded into a fixture subprocess and a throwaway Codex home, the integration check shall verify each case of this matrix:
+
+| Case | Assertions |
+| --- | --- |
+| fresh and resumed threads under a set `CODEX_HOME` holding a stale marketplace directory, one whose removal fails, a live same-host one, and a foreign-host one | the exact plugin root layout and manifest, the single unquoted `plugins` override argument, unchanged skill filters and isolation arguments, the stale-marketplace sweep leaving the live and foreign entries and tolerating the failed removal, and an unchanged workspace and `config.toml` [[codex-75](#codex-75)]; through the installed executable's offline prompt-input rendering, a catalog listing `cligent:<name>` from the plugin root under the same override and not without it [[codex-75](#codex-75)]; and removal of each run's plugin root and marketplace directory after normal completion [[codex-78](#codex-78)] |
+| unset `CODEX_HOME` | the `~/.codex` fallback [[codex-75](#codex-75)] and removal of the parents the run created [[codex-78](#codex-78)] |
+| `CODEX_HOME` naming a missing path, then a regular file | each runtime message as the rejection, no SDK construction, and nothing created [[codex-75](#codex-75)] |
+| unsupported effort beside a stale marketplace directory | the effort rejection with the stale entry unswept, no SDK construction, and nothing written in the Codex home [[codex-75](#codex-75)] |
+| fixture exiting non-zero after `thread.started` | the `SDK_STREAM_ERROR` error and `done` with `status: 'error'` [[codex-26](#codex-26)], then a removed marketplace directory [[codex-78](#codex-78)] |
+| fixture exiting zero after `thread.started` | the `MISSING_TURN_DONE` error and `done` with `status: 'error'` [[codex-25](#codex-25)], then a removed marketplace directory [[codex-78](#codex-78)] |
+| fixture emitting `turn.failed`, then exiting non-zero | the turn's error and `done` with `status: 'error'` [[codex-24](#codex-24)], then a removed marketplace directory [[codex-78](#codex-78)] |
+| caller abort while the fixture hangs | `done` with `status: 'interrupted'` [[codex-27](#codex-27)], then a removed marketplace directory [[codex-78](#codex-78)] |
+| cancellation before and during skill preparation | the interrupted terminal without SDK construction [[codex-69](#codex-69)] and removal of everything the run materialized [[codex-78](#codex-78)] |
+| SDK construction failure, then thread-start failure, each with a forced executable-wrapper cleanup failure | the run's own error as the rejection and a removed marketplace directory [[codex-78](#codex-78)] |
+| forced plugin-root and marketplace removal failures after a successful run, then before a construction-failure rejection | no error event after `done`, then the unremoved path appended to the rejection's message [[codex-78](#codex-78)] |
 
 ### codex-77
 
-Where [[codex-219](#codex-219)]'s credential, retry, and skip preconditions hold, when a run supplies a fixture skill whose body directs a unique token reply and the prompt mentions `$cligent:<name>`, the acceptance check shall verify against the real runtime that the reply carries the token [[codex-75](#codex-75)] and that the plugin cache entry is gone once the event stream completes [[codex-78](#codex-78)].
+Where [[codex-219](#codex-219)]'s credential, retry, and skip preconditions hold, when a run supplies a fixture skill whose body directs a unique token reply and the prompt mentions `$cligent:<name>`, the acceptance check shall verify against the real runtime that the reply carries the token [[codex-75](#codex-75)] and that the plugin cache entry is gone once the adapter's own event stream completes [[codex-78](#codex-78)].
 
 ## References
 
