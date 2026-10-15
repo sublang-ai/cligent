@@ -365,6 +365,8 @@ export interface AgentOptions<
   mcpServers?: McpServers;
   /** Prepare an isolated browser so ordinary prompts can inspect and capture pages. */
   browser?: boolean;
+  /** Skill directories, or their SKILL.md files, delivered to the runtime for this run per DR-036; a per-call list replaces the instance list. */
+  skills?: readonly string[];
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;
@@ -404,6 +406,8 @@ export interface CligentOptions<
   mcpServers?: McpServers;
   /** Prepare an isolated browser so ordinary prompts can inspect and capture pages. */
   browser?: boolean;
+  /** Skill directories, or their SKILL.md files, delivered to the runtime per DR-036; a per-call list replaces this one. */
+  skills?: readonly string[];
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;

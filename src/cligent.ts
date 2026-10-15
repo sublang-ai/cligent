@@ -129,6 +129,7 @@ function mergeOptions<
         : defaults.mcpServers,
     browser:
       overrides.browser !== undefined ? overrides.browser : defaults.browser,
+    skills: overrides.skills !== undefined ? overrides.skills : defaults.skills,
     abortSignal: overrides.abortSignal,
     resume: overrides.resume,
   };
@@ -302,6 +303,7 @@ export class Cligent<
       approvalHandler: overrides?.approvalHandler,
       mcpServers: merged.mcpServers,
       browser: merged.browser,
+      skills: merged.skills,
       abortSignal: merged.abortSignal,
       resume,
     };

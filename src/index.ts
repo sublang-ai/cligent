@@ -64,6 +64,13 @@ export { ATTACHMENT_SUPPORT, getAttachmentSupport } from './attachments.js';
 export type { Attachment, AttachmentSupport } from './attachments.js';
 
 export {
+  SKILL_SUPPORT,
+  SKILL_CARRIER_CLEANUP_FAILED,
+  getSkillSupport,
+} from './skills.js';
+export type { SkillCarrier, SkillSupport } from './skills.js';
+
+export {
   FAST_MODE_SUPPORT,
   getFastModeSupport,
   isFastModeSupported,
