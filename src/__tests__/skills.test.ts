@@ -999,3 +999,74 @@ describe('amended skills-2 rows and per-entry cancellation', () => {
     await rm(base, { recursive: true, force: true });
   });
 });
+
+describe('read-only directories and aliased sources (skills-3)', () => {
+  it('copies a read-only directory tree, keeps file modes, makes directories removable, and re-expresses a link written through the physical alias', async () => {
+    const {
+      mkdtemp,
+      mkdir,
+      writeFile,
+      symlink,
+      chmod,
+      stat,
+      readlink,
+      readFile,
+      rm,
+    } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join, dirname, resolve } = await import('node:path');
+    const { prepareSkills, materializeSkills, removeCarrierPaths } =
+      await import('../skills.js');
+    const base = await mkdtemp(join(tmpdir(), 'cligent-skills-ro-'));
+    // The accepted path is an alias whose physical basename differs.
+    const store = join(base, 'store', 'version123');
+    await mkdir(join(store, 'assets'), { recursive: true });
+    await mkdir(join(store, 'nested'), { recursive: true });
+    await writeFile(
+      join(store, 'SKILL.md'),
+      '---\nname: foo\ndescription: d\n---\n',
+    );
+    await writeFile(join(store, 'assets', 'a.txt'), 'A');
+    await writeFile(join(store, 'nested', 'n.txt'), 'N', { mode: 0o444 });
+    // A relative link that reaches its target through the physical parent name.
+    await symlink(
+      join('..', 'version123', 'assets'),
+      join(store, 'assets-link'),
+    );
+    await symlink(store, join(base, 'foo'));
+    await chmod(join(store, 'nested'), 0o555);
+    await chmod(store, 0o555);
+    try {
+      const prepared = await prepareSkills('kimi', [join(base, 'foo')]);
+      const root = join(base, 'carrier');
+      const created = await materializeSkills(prepared, {
+        root,
+        staging: join(base, '.staging'),
+      });
+      const copy = join(root, 'foo');
+      expect(created).toEqual([copy]);
+      expect((await stat(join(copy, 'nested', 'n.txt'))).mode & 0o777).toBe(
+        0o444,
+      );
+      expect((await stat(join(copy, 'nested'))).mode & 0o700).toBe(0o700);
+      expect((await stat(copy)).mode & 0o700).toBe(0o700);
+      expect(await readlink(join(copy, 'assets-link'))).toBe('assets');
+      expect(
+        await readFile(
+          resolve(
+            dirname(join(copy, 'assets-link')),
+            await readlink(join(copy, 'assets-link')),
+            'a.txt',
+          ),
+          'utf8',
+        ),
+      ).toBe('A');
+      expect(await removeCarrierPaths(created, [root])).toEqual([]);
+      await expect(stat(root)).rejects.toThrow();
+    } finally {
+      await chmod(store, 0o755).catch(() => undefined);
+      await chmod(join(store, 'nested'), 0o755).catch(() => undefined);
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+});

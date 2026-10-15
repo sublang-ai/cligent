@@ -522,7 +522,7 @@ describe('Kimi skills carrier (kimi-51)', () => {
   });
 
   it.skipIf(runsAsRoot)(
-    'sweeps stale carriers of this host, keeps live and foreign ones, and tolerates a failed removal',
+    'sweeps stale carriers of this host, keeps same-process, live and foreign ones, and tolerates a failed removal',
     async () => {
       const project = gitProject();
       const skillsDir = join(project, '.kimi-code', 'skills');
@@ -562,9 +562,12 @@ describe('Kimi skills carrier (kimi-51)', () => {
       );
 
       expect(eventOf(events, 'done').payload.status).toBe('success');
+      // A carrier of this process's own identifier is never swept: it may
+      // belong to a worker thread of this process.
       expect(during).toEqual(
         [
           carrierName(processCarrierSuffix()),
+          names.ownOther,
           names.live,
           names.foreign,
           names.locked,
@@ -573,7 +576,13 @@ describe('Kimi skills carrier (kimi-51)', () => {
       );
       // The pre-existing parent and its entries outlive the carrier.
       expect(readdirSync(skillsDir).sort()).toEqual(
-        [names.live, names.foreign, names.locked, names.project].sort(),
+        [
+          names.ownOther,
+          names.live,
+          names.foreign,
+          names.locked,
+          names.project,
+        ].sort(),
       );
       expect(
         readFileSync(join(skillsDir, 'alpha', 'nested', 'file.txt'), 'utf8'),

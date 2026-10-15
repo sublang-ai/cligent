@@ -67,7 +67,7 @@ export const SKILL_SUPPORT = Object.freeze({
   kimi: Object.freeze({
     carrier: 'workspace',
     notes:
-      "A process-shared directory under the project root's .kimi-code/skills, visible to version control, to every concurrent Kimi run of the process whatever its own list, and to other Kimi processes, held until the process's last Kimi run with skills under any project root whose .kimi-code/skills resolves to that directory ends, checked through the ACP command list. Rejects a project root that is the operating-system home, a .kimi-code/skills resolving into the user's skill roots, a run skill containing that directory, and a run supplying another directory under a present entry's name, while a .kimi-code/skills aliasing a configured extra skill directory goes undetected. A same-named skill registered earlier under .kimi-code/skills shadows a run skill, which that check catches only when the descriptions differ. A resumed session keeps its creation-time model listing.",
+      "A process-shared directory under the project root's .kimi-code/skills, visible to version control, to every concurrent Kimi run of the process whatever its own list, and to other Kimi processes, held until the process's last Kimi run with skills under any project root whose .kimi-code/skills resolves to that directory ends, checked through the ACP command list. Rejects a project root that is the operating-system home, a .kimi-code/skills resolving into the user's skill roots, a run skill containing that directory, and a run supplying another directory under a present entry's name, while a .kimi-code/skills aliasing a configured extra skill directory goes undetected; a worker thread of the process holds its own carrier, which the sweep leaves alone. A same-named skill registered earlier under .kimi-code/skills shadows a run skill, which that check catches only when the descriptions differ. A resumed session keeps its creation-time model listing.",
   }),
   opencode: Object.freeze({
     carrier: 'run-private',
@@ -364,20 +364,16 @@ export function isProcessRunning(pid: number): boolean {
 }
 
 /**
- * Whether a carrier name carries this host's token and names a dead process,
- * or, where `ownSuffix` is given, this process with another suffix.
+ * Whether a carrier name carries this host's token and names a process the
+ * operating system reports as not running. A carrier of this process's own
+ * identifier is never stale: worker threads share the identifier but not
+ * this module's state, so another thread's live carrier looks like one of
+ * this process with another suffix.
  */
-export function isStaleCarrierName(
-  name: string,
-  options?: { ownSuffix?: string },
-): boolean {
+export function isStaleCarrierName(name: string): boolean {
   const parsed = parseCarrierName(name);
   if (!parsed || parsed.host !== carrierHostToken()) return false;
-  if (parsed.pid === process.pid) {
-    return (
-      options?.ownSuffix !== undefined && parsed.suffix !== options.ownSuffix
-    );
-  }
+  if (parsed.pid === process.pid) return false;
   return !isProcessRunning(parsed.pid);
 }
 
@@ -400,7 +396,10 @@ async function copyTree(
   signal?: AbortSignal,
 ) {
   const sourceStats = await lstat(source);
-  await mkdir(target, { mode: sourceStats.mode & 0o777 });
+  // Populate first: a read-only source directory would otherwise refuse its
+  // own children. Owner read, write, and search stay set on the copy so the
+  // snapshot remains removable.
+  await mkdir(target);
   const entries = await readdir(source, { withFileTypes: true });
   for (const entry of entries) {
     signal?.throwIfAborted();
@@ -417,6 +416,7 @@ async function copyTree(
       await chmod(to, stats.mode & 0o777);
     }
   }
+  await chmod(target, (sourceStats.mode & 0o777) | 0o700);
 }
 
 async function copyLink(
@@ -426,17 +426,15 @@ async function copyLink(
   signal?: AbortSignal,
 ) {
   const raw = await readlink(from);
-  // Relative links stay as written; an absolute link to a target inside the
-  // skill becomes relative to the copied location so the copy stays a
-  // snapshot. skills-2 already rejected targets outside the skill.
-  let link = raw;
-  if (isAbsolute(raw)) {
-    // Both sides as real paths: the skill may be reached through a linked
-    // ancestor (macOS /var is /private/var), and a lexical difference there
-    // would make the relative link climb out of the copy.
-    const target = await realpath(resolve(dirname(from), raw));
-    link = relative(await realpath(dirname(from)), target) || '.';
-  }
+  // Every link is re-expressed relative to its copied location through its
+  // resolved target, on real paths for both sides: the skill may be reached
+  // through a linked ancestor (macOS /var is /private/var) or through an
+  // alias whose physical name differs, and a link written against either
+  // spelling would otherwise climb out of the copy or miss inside it.
+  // skills-2 already rejected targets outside the skill.
+  const realDir = await realpath(dirname(from));
+  const target = await realpath(resolve(realDir, raw));
+  const link = relative(realDir, target) || '.';
   try {
     await symlink(link, to);
     return;
@@ -444,8 +442,7 @@ async function copyLink(
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== 'EPERM' && code !== 'ENOSYS' && code !== 'EACCES') throw error;
   }
-  // The host cannot create a link: copy the target's content instead.
-  const target = resolve(dirname(from), raw);
+  // The host cannot create a link: copy the resolved target's content instead.
   const targetStats = await stat(target);
   if (targetStats.isDirectory()) {
     await copyTree(target, to, skillRoot, signal);

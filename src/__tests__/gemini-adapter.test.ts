@@ -2152,8 +2152,13 @@ describe('GeminiAdapter', () => {
         writeEventsAndClose(child, [successResult()], 0, null);
       });
 
+      // A test cannot create the root-owned system files the runtime admits,
+      // so admission is injected; gemini-skills.test.ts runs the real check.
       await collect(
-        new GeminiAdapter({ spawnProcess }).run('prompt', {
+        new GeminiAdapter({
+          spawnProcess,
+          admitsSystemSettingsFile: async () => true,
+        }).run('prompt', {
           model: 'gemini-3-pro',
           effort: 'medium',
           cwd,

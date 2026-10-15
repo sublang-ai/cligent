@@ -954,10 +954,9 @@ async function sweepStaleKimiCarriers(destination: string): Promise<void> {
   } catch {
     return;
   }
-  const ownSuffix = processCarrierSuffix();
   await Promise.all(
     names
-      .filter((name) => isStaleCarrierName(name, { ownSuffix }))
+      .filter((name) => isStaleCarrierName(name))
       .map((name) =>
         rm(join(destination, name), { recursive: true, force: true }).catch(
           () => undefined,
