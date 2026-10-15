@@ -51,7 +51,7 @@ export const SKILL_SUPPORT = Object.freeze({
     carrier: 'run-private',
     namespace: 'cligent',
     notes:
-      "Per-run local plugin checked at initialization. The Skill tool must stay in any explicit allowlist and out of disallowedTools; the model lists cligent:<name> and resolves the bare name while it is unique. A run skill's allowed-tools widens the run's permissions while it is active. Under a managed allowManagedPermissionRulesOnly the run's grants are ignored, so a skill setting allowed-tools, disallowed-tools, or hooks asks and is denied unless the permission mode or an approver admits the ask; a managed disableSideloadFlags makes the run fail at start. Another enabled plugin named cligent collides.",
+      "Per-run local plugin checked at initialization. The Skill tool must stay in any explicit allowlist and out of disallowedTools, as must a Skill(cligent:<name>) or Skill(cligent:*) deny rule; the model lists cligent:<name> and resolves the bare name while it is unique. A run skill's allowed-tools widens the run's permissions while it is active. Under a managed allowManagedPermissionRulesOnly the run's grants are ignored, so a skill setting allowed-tools, disallowed-tools, or hooks asks and is denied unless the permission mode or an approver admits the ask; a managed disableSideloadFlags makes the run fail at start. Another enabled plugin named cligent collides.",
   }),
   codex: Object.freeze({
     carrier: 'run-private',
@@ -67,7 +67,7 @@ export const SKILL_SUPPORT = Object.freeze({
   kimi: Object.freeze({
     carrier: 'workspace',
     notes:
-      "A process-shared directory under the project root's .kimi-code/skills, visible to version control, to every concurrent Kimi run of the process whatever its own list, and to other Kimi processes, held until the process's last Kimi run with skills under that root ends, checked through the ACP command list. Rejects a project root that is the operating-system home, a .kimi-code/skills resolving into the user's skill roots, a run skill containing that directory, and a run supplying another directory under a present entry's name, while a .kimi-code/skills aliasing a configured extra skill directory goes undetected. A same-named skill registered earlier under .kimi-code/skills shadows a run skill, which that check catches only when the descriptions differ. A resumed session keeps its creation-time model listing.",
+      "A process-shared directory under the project root's .kimi-code/skills, visible to version control, to every concurrent Kimi run of the process whatever its own list, and to other Kimi processes, held until the process's last Kimi run with skills under any project root whose .kimi-code/skills resolves to that directory ends, checked through the ACP command list. Rejects a project root that is the operating-system home, a .kimi-code/skills resolving into the user's skill roots, a run skill containing that directory, and a run supplying another directory under a present entry's name, while a .kimi-code/skills aliasing a configured extra skill directory goes undetected. A same-named skill registered earlier under .kimi-code/skills shadows a run skill, which that check catches only when the descriptions differ. A resumed session keeps its creation-time model listing.",
   }),
   opencode: Object.freeze({
     carrier: 'run-private',
@@ -159,7 +159,7 @@ function isWithin(parent: string, child: string): boolean {
  */
 async function inspectTree(
   directory: string,
-): Promise<{ nested?: string; escaping?: string }> {
+): Promise<{ nested?: string; escaping?: string; special?: string }> {
   const root = (await realpathOrUndefined(directory)) ?? directory;
   const seen = new Set<string>([root]);
   const queue: string[] = [directory];
@@ -197,11 +197,10 @@ async function inspectTree(
           seen.add(real);
           queue.push(path);
         }
-      } else if (
-        entry.name === SKILL_FILE &&
-        current !== directory &&
-        entry.isFile()
-      ) {
+      } else if (!entry.isFile()) {
+        // A FIFO, socket, or device would block or fail the copy.
+        return { special: path };
+      } else if (entry.name === SKILL_FILE && current !== directory) {
         return { nested: path };
       }
     }
@@ -279,14 +278,20 @@ export async function prepareSkills(
       );
     }
     signal?.throwIfAborted();
-    const { nested, escaping } = await inspectTree(directory);
+    const { nested, escaping, special } = await inspectTree(directory);
     if (nested) {
       fail(field, `holds another ${SKILL_FILE} below the skill: ${nested}`);
     }
     if (escaping) {
       fail(
         field,
-        `holds a link whose target lies outside the skill: ${escaping}`,
+        `holds a link whose target does not resolve or lies outside the skill: ${escaping}`,
+      );
+    }
+    if (special) {
+      fail(
+        field,
+        `holds an entry that is neither a regular file, a directory, nor a symbolic link: ${special}`,
       );
     }
     const earlier = byName.get(name);
@@ -319,12 +324,16 @@ export function carrierSuffix(): string {
   return randomBytes(SUFFIX_BYTES).toString('hex');
 }
 
-let processSuffix: string | undefined;
+// Kept on globalThis so two copies of this module loaded into one process
+// (two installed versions of the package) share one suffix, or each copy's
+// stale sweep would take the other's live carrier for a dead one's.
+const PROCESS_SUFFIX_KEY = Symbol.for('@sublang/cligent.processCarrierSuffix');
 
 /** The suffix chosen once per process, for carriers a process shares between its runs. */
 export function processCarrierSuffix(): string {
-  processSuffix ??= carrierSuffix();
-  return processSuffix;
+  const holder = globalThis as { [PROCESS_SUFFIX_KEY]?: string };
+  holder[PROCESS_SUFFIX_KEY] ??= carrierSuffix();
+  return holder[PROCESS_SUFFIX_KEY];
 }
 
 export function carrierName(suffix: string): string {
@@ -384,18 +393,24 @@ export function isOwnedCarrierRoot(path: string): boolean {
 // ---------------------------------------------------------------------------
 // Snapshot (skills-3)
 
-async function copyTree(source: string, target: string, skillRoot: string) {
+async function copyTree(
+  source: string,
+  target: string,
+  skillRoot: string,
+  signal?: AbortSignal,
+) {
   const sourceStats = await lstat(source);
   await mkdir(target, { mode: sourceStats.mode & 0o777 });
   const entries = await readdir(source, { withFileTypes: true });
   for (const entry of entries) {
+    signal?.throwIfAborted();
     const from = join(source, entry.name);
     const to = join(target, entry.name);
     if (entry.isSymbolicLink()) {
-      await copyLink(from, to, skillRoot);
+      await copyLink(from, to, skillRoot, signal);
     } else if (entry.isDirectory()) {
       if (isOwnedCarrierRoot(from)) continue;
-      await copyTree(from, to, skillRoot);
+      await copyTree(from, to, skillRoot, signal);
     } else {
       const stats = await lstat(from);
       await copyFile(from, to);
@@ -404,15 +419,23 @@ async function copyTree(source: string, target: string, skillRoot: string) {
   }
 }
 
-async function copyLink(from: string, to: string, skillRoot: string) {
+async function copyLink(
+  from: string,
+  to: string,
+  skillRoot: string,
+  signal?: AbortSignal,
+) {
   const raw = await readlink(from);
   // Relative links stay as written; an absolute link to a target inside the
   // skill becomes relative to the copied location so the copy stays a
   // snapshot. skills-2 already rejected targets outside the skill.
   let link = raw;
   if (isAbsolute(raw)) {
-    const target = resolve(dirname(from), raw);
-    link = relative(dirname(from), target) || '.';
+    // Both sides as real paths: the skill may be reached through a linked
+    // ancestor (macOS /var is /private/var), and a lexical difference there
+    // would make the relative link climb out of the copy.
+    const target = await realpath(resolve(dirname(from), raw));
+    link = relative(await realpath(dirname(from)), target) || '.';
   }
   try {
     await symlink(link, to);
@@ -425,7 +448,7 @@ async function copyLink(from: string, to: string, skillRoot: string) {
   const target = resolve(dirname(from), raw);
   const targetStats = await stat(target);
   if (targetStats.isDirectory()) {
-    await copyTree(target, to, skillRoot);
+    await copyTree(target, to, skillRoot, signal);
   } else {
     await copyFile(target, to);
     await chmod(to, targetStats.mode & 0o777);
@@ -464,7 +487,12 @@ export async function materializeSkills(
         options.staging,
         `${skill.name}-${carrierSuffix()}`,
       );
-      await copyTree(skill.directory, temporary, skill.directory);
+      await copyTree(
+        skill.directory,
+        temporary,
+        skill.directory,
+        options.signal,
+      );
       await rename(temporary, target);
       created.push(target);
     }
