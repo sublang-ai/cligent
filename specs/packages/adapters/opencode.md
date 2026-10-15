@@ -581,8 +581,8 @@ When a run supplies skills, the adapter shall deliver the prepared list [[skills
 | State or entry | Outcome |
 | --- | --- |
 | external-server mode with a non-empty list | reject before browser preparation because the server's configuration and skill discovery cache are fixed outside the run |
-| carrier root | a new private temporary directory materialized under [[skills-3](../skills.md#skills-3)] |
-| child environment | the parent environment with `OPENCODE_CONFIG_CONTENT` set to the caller's `OPENCODE_CONFIG_CONTENT`, an empty value treated as absent and any other parsed as JSONC into an object, with the run's `<carrier root>/<name>` paths appended to the caller's `skills` array where it is one and otherwise to `skills.paths`, every caller entry kept ahead of the run's and otherwise unchanged, placeholders included, because the runtime substitutes variables in that text before it parses and classifies a `skills` array [[29]][[30]]; a non-empty caller value whose parse is not an object is a setup failure before spawn naming that variable |
+| carrier root | a `skills` directory, materialized under [[skills-3](../skills.md#skills-3)], inside a new private (`0700`) temporary directory whose `staging` sibling holds the temporary-name writes of [[skills-3](../skills.md#skills-3)], both removed with that directory [[opencode-71](#opencode-71)] |
+| child environment | the parent environment with `OPENCODE_CONFIG_CONTENT` set to the caller's `OPENCODE_CONFIG_CONTENT`, an empty value treated as absent and any other parsed as JSONC into an object, with the run's `<carrier root>/<name>` paths appended to the caller's `skills` array where it is one and otherwise to `skills.paths`, every caller entry kept ahead of the run's and otherwise unchanged, placeholders included, because the runtime substitutes variables in that text before it parses and classifies a `skills` array [[29]][[30]]; a non-empty caller value whose parse is not an object, or whose present `skills` is neither an array nor an object with an absent or array `paths`, is a setup failure before spawn naming that variable, because the run's paths would otherwise replace a caller entry |
 | configured `skills.paths` in the user's or project's configuration files | replaced for the run, because inline configuration replaces arrays [[25]] |
 | listed name | `<name>`; a same-named skill the server discovers elsewhere wins or loses nondeterministically [[26]], which [[opencode-69](#opencode-69)] detects |
 | `skill` permission | unchanged, because [[opencode-7](#opencode-7)] emits no rule for it, so the native default allow applies [[27]] and a user `permission.skill` rule retains native authority |
@@ -595,11 +595,11 @@ Where a managed run supplies skills [[opencode-67](#opencode-67)], when the serv
 | --- | --- |
 | every run skill listed with `location` `<carrier root>/<name>/SKILL.md` | continue to session creation |
 | a run skill missing or listed at another location | setup failure before session or prompt work, naming each missing or displaced skill, never silently proceeding |
-| listing request rejected, malformed, or unsettled within five seconds | setup failure before session or prompt work, naming the listing failure |
+| client without the listing route, or listing request rejected, malformed by not being an array of entries each with a string `name` and `location`, unsettled within five seconds, or ended by the server's exit | setup failure before session or prompt work, naming the skill listing and its failure |
 
 ### opencode-71
 
-When a run with skills [[opencode-67](#opencode-67)] ends, the adapter shall remove the carrier root through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after [[opencode-36](#opencode-36)]'s teardown completes where the server was spawned, and otherwise before its terminal or rejection leaves the adapter.
+When a run with skills [[opencode-67](#opencode-67)] ends, the adapter shall remove the carrier root, its `staging` sibling, and their temporary directory through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after [[opencode-36](#opencode-36)]'s teardown completes where the server was spawned, and otherwise before its terminal or rejection leaves the adapter.
 
 ## Internal Behavior
 
@@ -1132,11 +1132,23 @@ When an adapter invocation encounters native structured questions through instal
 
 ### opencode-68
 
-When the installed SDK and a recording `opencode serve` fixture receive skill fixtures across managed and external modes, a caller `OPENCODE_CONFIG_CONTENT` with and without `skills.paths`, in array form holding a `{env:…}` placeholder that resolves to an HTTPS URL, and one that is not an object, a server listing every skill, one displacing a skill by location, one omitting a skill, a listing request that rejects, one returning a malformed body, and one unsettled past five seconds, and cancellation during preparation, the integration check shall verify the exact merged environment value with the placeholder untouched, carrier layout, the external-mode rejection, the pre-spawn setup failure, and no generated `skill` permission rule [[opencode-67](#opencode-67)], no child, client, session, or prompt work and no child signal on cancellation during skill preparation [[opencode-9](#opencode-9)], every listing outcome before session creation, including rejected, malformed, and timed-out listings [[opencode-69](#opencode-69)], and carrier removal after teardown and after cancellation [[opencode-71](#opencode-71)].
+When the installed SDK and a recording `opencode serve` fixture, which closes 50 ms after `SIGTERM`, receive skill fixtures, the integration check shall verify this case matrix:
+
+| Case | Assertions |
+| --- | --- |
+| managed run with the caller `OPENCODE_CONFIG_CONTENT` absent or empty | exact merged environment, carrier layout, and no generated `skill` permission rule [[opencode-67](#opencode-67)]; listing for the run directory before session creation [[opencode-69](#opencode-69)]; carrier present when the server closes and gone once the stream completes [[opencode-71](#opencode-71)] |
+| caller value in JSONC object form with `skills.paths`, with a `skills` object holding only `urls`, in array form holding a `{env:…}` placeholder that resolves to an HTTPS URL, and without `skills` | the exact merged value, every caller entry ahead of the run's paths and the placeholder untouched [[opencode-67](#opencode-67)] |
+| caller value that is not an object, does not parse, holds a comma after no value (`{,}`, `{"skills":[,]}`), or whose `skills` is a string, `null`, or an object with a string `paths` | setup failure naming the variable, with no child or server request [[opencode-67](#opencode-67)], and no carrier when the error and terminal arrive [[opencode-71](#opencode-71)] |
+| listing that displaces a skill, omits one, rejects, returns a non-array or an entry without `location`, stays unsettled past five seconds, or ends with the server's exit, and a client without the listing route | one error naming the listing failure and no session or prompt request [[opencode-69](#opencode-69)]; carrier present when the server closes and gone once the stream completes [[opencode-71](#opencode-71)] |
+| external mode with a non-empty list | rejection before SDK loading, browser preparation, and any server request [[opencode-67](#opencode-67)] |
+| managed run with an invalid skill and `browser: true` | rejection naming the skill before SDK loading, browser preparation, and spawn [[opencode-67](#opencode-67)] |
+| caller abort once the first file of a many-file skill lands | no further copy, the second skill never copied, no child, client, session, or prompt work, no child signal, and one interrupted `done` [[opencode-9](#opencode-9)], with no carrier when it arrives [[opencode-71](#opencode-71)] |
+| spawn failure | no carrier when the error and terminal arrive [[opencode-71](#opencode-71)] |
+| unremovable carrier after a spawn failure, after a spawn failure under caller abort, and after a spawned successful run's teardown | one error ending with a `SKILL_CARRIER_CLEANUP_FAILED` note naming the carrier root; an interrupted `done` and no note; an unchanged success terminal and no error [[opencode-71](#opencode-71)] |
 
 ### opencode-70
 
-Where [[opencode-219](#opencode-219)]'s credential, retry, and skip preconditions hold in managed mode, when a run supplies a fixture skill whose body directs a unique token reply and the prompt names the skill, the acceptance check shall verify against the real server that its skill list carries the skill at the carrier location [[opencode-69](#opencode-69)], that the reply carries the token [[opencode-67](#opencode-67)], and that the carrier root is gone once the event stream completes [[opencode-71](#opencode-71)].
+Where [[opencode-219](#opencode-219)]'s credential, retry, and skip preconditions hold in managed mode, when a run supplies a fixture skill whose body directs a unique token reply and the prompt names the skill, the acceptance check shall verify against the real server that its skill list carries the skill at the carrier location [[opencode-69](#opencode-69)], that the reply carries the token [[opencode-67](#opencode-67)], and that the carrier root is gone once the adapter's own event stream completes [[opencode-71](#opencode-71)].
 
 ## References
 

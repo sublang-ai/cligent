@@ -10,7 +10,9 @@ import type {
 } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { randomBytes } from 'node:crypto';
-import { basename } from 'node:path';
+import { mkdtemp, realpath } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { isDeepStrictEqual, promisify } from 'node:util';
 
 import { prepareAttachments, readAttachment } from '../attachments.js';
@@ -30,6 +32,15 @@ import {
   assertBuiltInSubagentModelOption,
 } from '../subagent-model.js';
 import { mapWritablePathsPermission } from '../permissions.js';
+import {
+  formatRemovalFailures,
+  materializeSkills,
+  prepareSkills,
+  removeCarrierPaths,
+  SKILL_CARRIER_CLEANUP_FAILED,
+  type PreparedSkill,
+  type RemovalFailure,
+} from '../skills.js';
 import type {
   FilePartInput,
   PermissionRuleset,
@@ -82,6 +93,8 @@ const DEFAULT_MANAGED_SERVER_TERM_GRACE_MS = 1_500;
 const DEFAULT_MANAGED_SERVER_KILL_GRACE_MS = 500;
 const PERMISSION_REPLY_TIMEOUT_MS = 5_000;
 const STREAM_CONNECT_GRACE_MS = 250;
+const SKILL_LISTING_TIMEOUT_MS = 5_000;
+const OPENCODE_CONFIG_CONTENT = 'OPENCODE_CONFIG_CONTENT';
 const CLIGENT_SESSION_TITLE = 'Cligent run';
 let lastPromptTimestamp = 0;
 let promptIdCounter = 0;
@@ -322,6 +335,14 @@ interface OpenCodeClient {
     cwd?: string;
     signal?: AbortSignal;
   }) => Promise<readonly string[] | undefined>;
+  /**
+   * The server's registered skills for `cwd`, as the native listing returns
+   * them; rejects when the listing request fails (opencode-69).
+   */
+  listSkills?: (options: {
+    cwd?: string;
+    signal?: AbortSignal;
+  }) => Promise<unknown>;
   close?: () => Promise<void> | void;
   shutdown?: () => Promise<void> | void;
   /** Remote workspace teardown; only an adapter-owned server may be disposed. */
@@ -1082,6 +1103,200 @@ function createManagedServerArgs(serverUrl: string): string[] {
   return ['serve', '--hostname', host, '--port', port];
 }
 
+/** The private directory a managed run's skills live in (opencode-67). */
+interface OpenCodeSkillCarrier {
+  /** The private temporary directory holding the root and its staging sibling. */
+  readonly base: string;
+  /** The carrier root: one entry per skill, named by the skill. */
+  readonly root: string;
+  /** Temporary-name writes, outside every directory OpenCode scans. */
+  readonly staging: string;
+}
+
+async function createOpenCodeSkillCarrier(): Promise<OpenCodeSkillCarrier> {
+  // The canonical temporary directory keeps the paths OpenCode reports as
+  // skill locations equal to the ones this run injects.
+  const base = await mkdtemp(
+    join(await realpath(tmpdir()), 'cligent-opencode-skills-'),
+  );
+  return { base, root: join(base, 'skills'), staging: join(base, 'staging') };
+}
+
+function copyJsonString(text: string, start: number): number {
+  let index = start + 1;
+  while (index < text.length && text[index] !== '"') {
+    if (text[index] === '\\') index++;
+    index++;
+  }
+  return Math.min(index + 1, text.length);
+}
+
+/** The last character of a JSON value: a string, number, literal, object, or array. */
+const JSON_VALUE_END = /["}\]0-9A-Za-z]/;
+
+/**
+ * Parse JSONC as OpenCode reads configuration text: line and block comments
+ * are allowed outside strings, and so is one comma after a value before its
+ * closing bracket; anything else must be JSON, so a comma that follows no
+ * value stays for JSON.parse to reject.
+ */
+function parseJsonc(text: string): unknown {
+  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  let uncommented = '';
+  for (let index = 0; index < source.length;) {
+    const char = source[index]!;
+    if (char === '"') {
+      const end = copyJsonString(source, index);
+      uncommented += source.slice(index, end);
+      index = end;
+    } else if (char === '/' && source[index + 1] === '/') {
+      while (
+        index < source.length &&
+        source[index] !== '\n' &&
+        source[index] !== '\r'
+      )
+        index++;
+    } else if (char === '/' && source[index + 1] === '*') {
+      const end = source.indexOf('*/', index + 2);
+      if (end === -1) throw new SyntaxError('Unterminated block comment');
+      uncommented += ' ';
+      index = end + 2;
+    } else {
+      uncommented += char;
+      index++;
+    }
+  }
+  let json = '';
+  // The last non-whitespace character kept, which tells a trailing comma
+  // after a value from one after `{`, `[`, another comma, or nothing.
+  let previous: string | undefined;
+  for (let index = 0; index < uncommented.length;) {
+    const char = uncommented[index]!;
+    if (char === '"') {
+      const end = copyJsonString(uncommented, index);
+      json += uncommented.slice(index, end);
+      previous = '"';
+      index = end;
+      continue;
+    }
+    if (
+      char === ',' &&
+      previous !== undefined &&
+      JSON_VALUE_END.test(previous)
+    ) {
+      let next = index + 1;
+      while (next < uncommented.length && /\s/.test(uncommented[next]!)) next++;
+      if (uncommented[next] === '}' || uncommented[next] === ']') {
+        index++;
+        continue;
+      }
+    }
+    json += char;
+    if (!/\s/.test(char)) previous = char;
+    index++;
+  }
+  return JSON.parse(json);
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function describeJsonValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return typeof value === 'object' ? 'an object' : `a ${typeof value}`;
+}
+
+/**
+ * Read the caller's inline OpenCode configuration once, before any carrier
+ * write, and return how the run's skill paths join it (opencode-67): after
+ * the caller's own `skills` array where it is one, otherwise after
+ * `skills.paths`, keeping every caller entry, placeholders included, for the
+ * runtime's own substitution and classification.
+ */
+function prepareOpenCodeSkillConfig(
+  value: string | undefined,
+): (paths: readonly string[]) => string {
+  let config: Record<string, unknown> = {};
+  if (value !== undefined && value !== '') {
+    let parsed: unknown;
+    try {
+      parsed = parseJsonc(value);
+    } catch (error) {
+      throw new Error(
+        `OpenCode skills cannot extend ${OPENCODE_CONFIG_CONTENT}: it does not parse as JSONC (${
+          error instanceof Error ? error.message : String(error)
+        })`,
+      );
+    }
+    if (!isJsonObject(parsed)) {
+      throw new Error(
+        `OpenCode skills cannot extend ${OPENCODE_CONFIG_CONTENT}: it parses to ${describeJsonValue(parsed)}, not an object`,
+      );
+    }
+    config = parsed;
+  }
+  const skills = config.skills;
+  let place: (paths: readonly string[]) => unknown;
+  if (skills === undefined) {
+    place = (paths) => ({ paths: [...paths] });
+  } else if (Array.isArray(skills)) {
+    place = (paths) => [...(skills as unknown[]), ...paths];
+  } else if (!isJsonObject(skills)) {
+    throw new Error(
+      `OpenCode skills cannot extend ${OPENCODE_CONFIG_CONTENT}: its skills is ${describeJsonValue(skills)} rather than an array or an object`,
+    );
+  } else if (skills.paths === undefined || Array.isArray(skills.paths)) {
+    const existing = (skills.paths as unknown[] | undefined) ?? [];
+    place = (paths) => ({ ...skills, paths: [...existing, ...paths] });
+  } else {
+    throw new Error(
+      `OpenCode skills cannot extend ${OPENCODE_CONFIG_CONTENT}: its skills.paths is ${describeJsonValue(skills.paths)} rather than an array`,
+    );
+  }
+  return (paths) => JSON.stringify({ ...config, skills: place(paths) });
+}
+
+/**
+ * opencode-69: the server's listing must carry every run skill at its
+ * carrier location. Returns the failure to report, or undefined.
+ */
+function checkOpenCodeSkillListing(
+  listing: unknown,
+  skills: readonly PreparedSkill[],
+  root: string,
+): string | undefined {
+  if (
+    !Array.isArray(listing) ||
+    !listing.every(
+      (entry) =>
+        isJsonObject(entry) &&
+        typeof entry.name === 'string' &&
+        typeof entry.location === 'string',
+    )
+  ) {
+    return 'OpenCode skill listing is malformed: expected an array of skills with string name and location';
+  }
+  const entries = listing as Array<{ name: string; location: string }>;
+  const problems: string[] = [];
+  for (const skill of skills) {
+    const expected = join(root, skill.name, 'SKILL.md');
+    const listed = entries.filter((entry) => entry.name === skill.name);
+    const displaced = listed.find((entry) => entry.location !== expected);
+    if (listed.length === 0) {
+      problems.push(`${skill.name} is missing`);
+    } else if (displaced) {
+      problems.push(
+        `${skill.name} is listed at ${displaced.location} instead of ${expected}`,
+      );
+    }
+  }
+  return problems.length > 0
+    ? `OpenCode did not deliver the run's skills: ${problems.join('; ')}`
+    : undefined;
+}
+
 function createClientFromSdk(
   sdk: OpenCodeSdk,
   baseUrl: string,
@@ -1517,6 +1732,14 @@ export function wrapOpencodeClient(
           args: unknown,
         ) => Promise<unknown>)
       : undefined;
+  const appService = real.app as Record<string, unknown> | undefined;
+  const appSkills =
+    appService && typeof appService.skills === 'function'
+      ? (appService.skills.bind(appService) as (
+          args?: unknown,
+          requestOptions?: unknown,
+        ) => Promise<unknown>)
+      : undefined;
   const configProviders =
     configService && typeof configService.providers === 'function'
       ? (configService.providers.bind(configService) as (
@@ -1648,6 +1871,32 @@ export function wrapOpencodeClient(
               unwrapSdkData(result),
               options.model,
             );
+          },
+        }
+      : {}),
+    ...(appSkills
+      ? {
+          async listSkills(options: {
+            cwd?: string;
+            signal?: AbortSignal;
+          }): Promise<unknown> {
+            const result = await appSkills(
+              apiVersion === 'v2'
+                ? options.cwd
+                  ? { directory: options.cwd }
+                  : undefined
+                : {
+                    ...(options.cwd
+                      ? { query: { directory: options.cwd } }
+                      : {}),
+                    ...(options.signal ? { signal: options.signal } : {}),
+                  },
+              apiVersion === 'v2' && options.signal
+                ? { signal: options.signal }
+                : undefined,
+            );
+            throwIfSdkResultError(result, 'OpenCode app.skills failed');
+            return unwrapSdkData(result);
           },
         }
       : {}),
@@ -2682,6 +2931,16 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     );
     assertOpenCodeToolRestrictionsUnsupported(options);
     assertOpenCodeTurnLimitUnsupported(options);
+    // opencode-67: an external server's configuration and skill discovery
+    // cache are fixed outside the run, so it cannot take the run's skills.
+    if (
+      this.mode === 'external' &&
+      Array.isArray(options?.skills) &&
+      options.skills.length > 0
+    )
+      throw new Error(
+        "OpenCode skills require managed mode; an external server's configuration and skill discovery cache are fixed outside the run",
+      );
     if (
       options?.browser === true ||
       Object.keys(normalizeMcpServers(options?.mcpServers) ?? {}).length > 0
@@ -2702,6 +2961,19 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
 
     let actualServerUrl = this.serverUrl;
     let serverProcess: ChildProcessWithoutNullStreams | undefined;
+    let skills: PreparedSkill[] = [];
+    let skillCarrier: OpenCodeSkillCarrier | undefined;
+    // opencode-71: the shared removal reports its failures; each caller
+    // selects the skills-4 outcome its phase requires.
+    const removeSkillCarrier = async (): Promise<RemovalFailure[]> => {
+      const carrier = skillCarrier;
+      if (!carrier) return [];
+      skillCarrier = undefined;
+      return removeCarrierPaths(
+        [carrier.root, carrier.staging],
+        [carrier.base],
+      );
+    };
     let serverClosed = false;
     let serverLifecyclePromise: Promise<ServerLifecycleResult> | undefined;
     let serverLifecycleResult: ServerLifecycleResult | undefined;
@@ -4205,6 +4477,14 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
       }
 
+      // skills-2: the whole list is validated before browser preparation.
+      skills = await prepareSkills(
+        AGENT,
+        options?.skills,
+        options?.cwd,
+        eventStreamController.signal,
+      );
+
       const mcpServers = await prepareMcpServers(options);
 
       const sdkLoadOutcome = await Promise.race([
@@ -4256,9 +4536,35 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           `npm install -g ${AGENT_RUNTIME_TARGETS.opencode[1]!.repairSpec}`,
         );
         const managedArgs = createManagedServerArgs(this.serverUrl);
+        let managedEnv: NodeJS.ProcessEnv | undefined;
+        if (skills.length > 0) {
+          // opencode-67: the caller's inline configuration is read before
+          // any carrier write, so a value the run cannot extend fails here.
+          const composeConfig = prepareOpenCodeSkillConfig(
+            process.env[OPENCODE_CONFIG_CONTENT],
+          );
+          const carrier = await createOpenCodeSkillCarrier();
+          skillCarrier = carrier;
+          await materializeSkills(skills, {
+            root: carrier.root,
+            staging: carrier.staging,
+            signal: eventStreamController.signal,
+          });
+          if (abortRequested || options?.abortSignal?.aborted) {
+            onAbort();
+            throw new Error('OpenCode run aborted during skill preparation');
+          }
+          managedEnv = {
+            ...process.env,
+            [OPENCODE_CONFIG_CONTENT]: composeConfig(
+              skills.map((skill) => join(carrier.root, skill.name)),
+            ),
+          };
+        }
         serverProcess = this.spawnProcess('opencode', managedArgs, {
           cwd: options?.cwd,
           stdio: 'pipe',
+          ...(managedEnv ? { env: managedEnv } : {}),
         });
 
         serverLifecyclePromise = waitForProcessLifecycle(serverProcess).then(
@@ -4308,6 +4614,83 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       }
 
       client = createClientFromSdk(sdk, actualServerUrl);
+
+      const deliveredCarrier = skillCarrier;
+      if (deliveredCarrier) {
+        // opencode-69: before any session work, the server must list every
+        // run skill at its carrier location.
+        const listSkills = client.listSkills;
+        if (!listSkills) {
+          throw new Error(
+            "OpenCode SDK client cannot list skills to verify the run's skills",
+          );
+        }
+        const listingClient = client;
+        const listingController = new AbortController();
+        let listingTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const listingOutcome = await Promise.race([
+            Promise.resolve()
+              .then(() =>
+                listSkills.call(listingClient, {
+                  ...(options?.cwd ? { cwd: options.cwd } : {}),
+                  signal: listingController.signal,
+                }),
+              )
+              .then(
+                (listing) => ({ kind: 'listed' as const, listing }),
+                (error: unknown) => ({ kind: 'failure' as const, error }),
+              ),
+            new Promise<{ kind: 'timeout' }>((resolve) => {
+              listingTimer = setTimeout(
+                () => resolve({ kind: 'timeout' }),
+                SKILL_LISTING_TIMEOUT_MS,
+              );
+            }),
+            callerAbortPromise.then(() => ({ kind: 'caller_abort' as const })),
+            ...(serverLifecyclePromise
+              ? [serverLifecyclePromise.then(toServerWaitResult)]
+              : []),
+          ]);
+          if (listingOutcome.kind === 'caller_abort') {
+            throw new Error('OpenCode run aborted during skill listing');
+          }
+          // A server that ends before the listing settles is a listing
+          // failure: the run never reached session work.
+          if (listingOutcome.kind === 'server_exit') {
+            throw new Error(
+              `OpenCode skill listing failed: ${formatOpenCodeServerExit(listingOutcome.exit)}`,
+            );
+          }
+          if (listingOutcome.kind === 'server_error') {
+            throw new Error(
+              `OpenCode skill listing failed: ${listingOutcome.error.message}`,
+            );
+          }
+          if (listingOutcome.kind === 'timeout') {
+            throw new Error(
+              `OpenCode skill listing did not settle within ${SKILL_LISTING_TIMEOUT_MS} ms`,
+            );
+          }
+          if (listingOutcome.kind === 'failure') {
+            const error = listingOutcome.error;
+            throw new Error(
+              `OpenCode skill listing failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+          const problem = checkOpenCodeSkillListing(
+            listingOutcome.listing,
+            skills,
+            deliveredCarrier.root,
+          );
+          if (problem) throw new Error(problem);
+        } finally {
+          if (listingTimer) clearTimeout(listingTimer);
+          listingController.abort();
+        }
+      }
 
       if (Object.keys(mcpServers ?? {}).length > 0) {
         if (!client.addMcpServers)
@@ -6357,12 +6740,28 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         }
       }
     } catch (error) {
+      // opencode-71: where no server was spawned, the carrier goes before
+      // the terminal or rejection leaves the adapter. Under skills-4, an
+      // unremoved path joins a failing outcome's message; after the caller
+      // signal fired, it is suppressed, as this adapter has no reporter.
+      const carrierFailures = serverProcess ? [] : await removeSkillCarrier();
+      const carrierFailureNote =
+        carrierFailures.length > 0 &&
+        !abortRequested &&
+        !options?.abortSignal?.aborted
+          ? `; ${SKILL_CARRIER_CLEANUP_FAILED}: ${formatRemovalFailures(carrierFailures)}`
+          : '';
       if (
         !normalizeRunFailure &&
         !abortRequested &&
         !options?.abortSignal?.aborted
       ) {
-        throw error;
+        if (!carrierFailureNote) throw error;
+        if (error instanceof Error) {
+          error.message += carrierFailureNote;
+          throw error;
+        }
+        throw new Error(`${String(error)}${carrierFailureNote}`);
       }
 
       if (!initYielded) {
@@ -6423,11 +6822,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
                   : readinessServerExit
                     ? 'OPENCODE_SERVER_EXIT'
                     : 'OPENCODE_STREAM_ERROR',
-              message: readinessServerExit
-                ? formatOpenCodeServerExit(readinessServerExit)
-                : error instanceof Error
-                  ? error.message
-                  : 'OpenCode adapter failed during stream',
+              message:
+                (readinessServerExit
+                  ? formatOpenCodeServerExit(readinessServerExit)
+                  : error instanceof Error
+                    ? error.message
+                    : 'OpenCode adapter failed during stream') +
+                carrierFailureNote,
               recoverable: error instanceof SessionResumeRejectedError,
             },
             sessionId,
@@ -6533,6 +6934,11 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
         }
       }
+
+      // opencode-71: a spawned server's carrier goes only after
+      // opencode-36's teardown. That follows the terminal, so under skills-4
+      // a removal failure is suppressed, as this adapter has no reporter.
+      await removeSkillCarrier();
     }
   }
 }
