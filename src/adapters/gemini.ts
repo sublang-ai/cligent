@@ -8,9 +8,24 @@ import type {
   ChildProcessWithoutNullStreams,
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import {
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 import { promisify } from 'node:util';
 
 import { createEvent, generateSessionId } from '../events.js';
@@ -44,7 +59,8 @@ import type {
   UsageRecord,
   WritablePathsPermissionMapping,
 } from '../types.js';
-import { createGeminiHomeOverlay } from './gemini-home.js';
+import { createGeminiHomeOverlay, foldGeminiSkillName } from './gemini-home.js';
+import { prepareSkills, type PreparedSkill } from '../skills.js';
 import { parseNDJSON } from './ndjson.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { ordinaryErrorCode } from './session-resume.js';
@@ -95,6 +111,7 @@ interface GeminiAdapterDeps {
   ) => Promise<GeminiSettingsOverride>;
   createPolicyOverride?: (
     toolConfig: GeminiToolConfig,
+    runtimePolicySources?: readonly string[],
   ) => Promise<GeminiPolicyOverride>;
   createTelemetryCapture?: () => Promise<GeminiTelemetryCapture>;
 }
@@ -111,6 +128,9 @@ const POLICY_PRIORITY = {
   explicitAllowCatchAll: 998,
   capability: 997,
 } as const;
+
+/** The tool through which Gemini loads a skill's instructions (gemini-52). */
+const ACTIVATE_SKILL_TOOL = 'activate_skill';
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
@@ -625,6 +645,11 @@ export interface GeminiToolConfig {
   policyRules?: GeminiPolicyRule[];
   approvalMode?: GeminiApprovalMode;
   writablePaths?: WritablePathsPermissionMapping;
+  /**
+   * gemini-55: `true` when the policy holds only the skills `activate_skill`
+   * allow, so the runtime's own policy sources follow it.
+   */
+  skillsOnlyPolicy?: boolean;
 }
 
 export type GeminiPolicyDecision = 'allow' | 'ask_user' | 'deny';
@@ -653,6 +678,8 @@ export interface GeminiSettingsConfig {
   toolConfig: GeminiToolConfig;
   modelAlias?: GeminiModelAliasConfig;
   mcpServers?: McpServers;
+  /** gemini-51: the run's prepared skills. */
+  skills?: readonly PreparedSkill[];
 }
 
 interface GeminiSettingsOverride {
@@ -663,6 +690,7 @@ interface GeminiSettingsOverride {
    */
   deliversAlias?: boolean;
   deliversMcp?: boolean;
+  deliversSkills?: boolean;
   cleanup: () => Promise<void>;
 }
 
@@ -671,6 +699,8 @@ interface GeminiSettingsOverrideContext {
   cwd: string;
   /** The environment the child inherits before any override applies. */
   env: NodeJS.ProcessEnv;
+  /** Cancels settings setup, including skill materialization. */
+  signal?: AbortSignal;
 }
 
 interface GeminiPolicyOverride {
@@ -1206,11 +1236,277 @@ async function geminiSandboxRequested(
   return false;
 }
 
+/** Gemini's `$VAR`, `${VAR}`, and `${VAR:-default}` expansion of settings strings. */
+function expandGeminiSettingsString(
+  value: string,
+  env: NodeJS.ProcessEnv,
+): string {
+  return value.replace(
+    /\$(?:(\w+)|{([^}]+?)(?::-([^}]*))?})/g,
+    (
+      match: string,
+      bare: string | undefined,
+      braced: string | undefined,
+      fallback: string | undefined,
+    ) => {
+      const name = bare || braced || '';
+      if (!name) return match;
+      const found = env[name];
+      if (typeof found === 'string') return found;
+      return fallback ?? match;
+    },
+  );
+}
+
+/** Gemini's path normalization for case-insensitive platforms. */
+function geminiComparablePath(path: string): string {
+  const absolute = resolve(path);
+  return process.platform === 'win32' || process.platform === 'darwin'
+    ? absolute.toLowerCase()
+    : absolute;
+}
+
+function realPathOrSelf(path: string): Promise<string> {
+  return realpath(path).catch(() => path);
+}
+
+function isGeminiSubpath(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+/**
+ * gemini-55: whether a Gemini child would trust the workspace, as its
+ * environment, folder-trust setting, and trusted-folders file decide, and so
+ * merge the workspace settings.
+ */
+async function geminiWorkspaceTrusted(
+  cwd: string,
+  realHome: string,
+  env: NodeJS.ProcessEnv,
+  trustLayers: readonly Record<string, unknown>[],
+): Promise<boolean> {
+  if (
+    env.GEMINI_RESTRICTED_MODE === 'true' ||
+    env.GEMINI_CLI_TRUST_WORKSPACE === 'false'
+  ) {
+    return false;
+  }
+  if (env.GEMINI_CLI_TRUST_WORKSPACE === 'true') return true;
+
+  let folderTrust: unknown = true;
+  for (const layer of trustLayers) {
+    const enabled = asRecord(asRecord(layer.security).folderTrust).enabled;
+    if (enabled !== undefined) folderTrust = enabled;
+  }
+  if (!folderTrust) return true;
+
+  let rules: Record<string, unknown>;
+  try {
+    rules = await readGeminiSettingsFile(
+      env.GEMINI_CLI_TRUSTED_FOLDERS_PATH ||
+        join(realHome, '.gemini', 'trustedFolders.json'),
+      'trusted folders',
+    );
+  } catch {
+    // Gemini refuses to start on an unreadable trusted-folders file.
+    return false;
+  }
+  const location = geminiComparablePath(await realPathOrSelf(cwd));
+  let longest = -1;
+  let level: unknown;
+  for (const [rulePath, trustLevel] of Object.entries(rules)) {
+    if (
+      trustLevel !== 'TRUST_FOLDER' &&
+      trustLevel !== 'TRUST_PARENT' &&
+      trustLevel !== 'DO_NOT_TRUST'
+    ) {
+      return false;
+    }
+    const normalized = geminiComparablePath(rulePath);
+    const effective =
+      trustLevel === 'TRUST_PARENT' ? dirname(normalized) : normalized;
+    const comparable = geminiComparablePath(await realPathOrSelf(effective));
+    if (isGeminiSubpath(comparable, location) && normalized.length > longest) {
+      longest = normalized.length;
+      level = trustLevel;
+    }
+  }
+  return level === 'TRUST_FOLDER' || level === 'TRUST_PARENT';
+}
+
+/**
+ * gemini-55: the user-tier policy sources a Gemini child loads when no
+ * `--policy` is given, which a `--policy` value replaces: the `policyPaths`
+ * it merges across system defaults, user, trusted workspace, and system
+ * settings, expanded and resolved as it resolves them, or else the real
+ * home's policy directory where it exists.
+ */
+async function geminiRuntimePolicySources(
+  context: GeminiSettingsOverrideContext,
+): Promise<string[]> {
+  const realHome = geminiRealHome(context);
+  const env: NodeJS.ProcessEnv = {
+    ...context.env,
+    GEMINI_CLI_TRUST_WORKSPACE:
+      context.env.GEMINI_CLI_TRUST_WORKSPACE ?? 'true',
+  };
+  const optional = (path: string): Promise<Record<string, unknown>> =>
+    readGeminiSettingsFile(path, 'settings').catch(() => ({}));
+  const system = await optional(systemSettingsPath(context.env));
+  const systemDefaults = await optional(systemDefaultsPath(context.env));
+  const user = await optional(join(realHome, '.gemini', 'settings.json'));
+  const workspace = await optional(
+    join(context.cwd, '.gemini', 'settings.json'),
+  );
+  const trusted = await geminiWorkspaceTrusted(context.cwd, realHome, env, [
+    systemDefaults,
+    user,
+    system,
+  ]);
+
+  // Gemini unions `policyPaths` in merge order, a lone value counting as a
+  // one-entry list.
+  const merged = new Set<unknown>();
+  for (const layer of [
+    systemDefaults,
+    user,
+    trusted ? workspace : {},
+    system,
+  ]) {
+    const value = layer.policyPaths;
+    if (value === undefined) continue;
+    for (const entry of Array.isArray(value) ? value : [value]) {
+      merged.add(
+        typeof entry === 'string'
+          ? expandGeminiSettingsString(entry, env)
+          : entry,
+      );
+    }
+  }
+
+  if (merged.size > 0) {
+    const sources: string[] = [];
+    for (const entry of merged) {
+      if (typeof entry !== 'string' || entry.length === 0) continue;
+      let expanded = entry;
+      if (entry.toLowerCase().startsWith('%userprofile%')) {
+        expanded = realHome + entry.slice('%userprofile%'.length);
+      } else if (entry === '~' || entry.startsWith('~/')) {
+        expanded = realHome + entry.slice(1);
+      }
+      sources.push(resolve(context.cwd, normalize(expanded)));
+    }
+    return sources;
+  }
+
+  const userPolicies = join(realHome, '.gemini', 'policies');
+  try {
+    await stat(userPolicies);
+    return [userPolicies];
+  } catch {
+    return [];
+  }
+}
+
+const POLICY_ARG_PREFIX = '--policy=';
+
+/**
+ * gemini-55: Gemini splits every `--policy` value on commas and trims each
+ * part, which a settings path or the default policy directory never
+ * undergoes, so a path that change would alter cannot be passed.
+ */
+function assertGeminiPolicyArgs(args: readonly string[]): void {
+  for (const arg of args) {
+    if (!arg.startsWith(POLICY_ARG_PREFIX)) continue;
+    const path = arg.slice(POLICY_ARG_PREFIX.length);
+    if (path.includes(',') || path !== path.trim()) {
+      throw new Error(
+        `Gemini policy path ${JSON.stringify(path)} cannot be passed through --policy, which splits each value on commas and trims every part`,
+      );
+    }
+  }
+}
+
 const UNDELIVERED_ALIAS_OVERRIDE: GeminiSettingsOverride = {
   env: {},
   deliversAlias: false,
   cleanup: async () => {},
 };
+
+const SKILLS_HOME_REFUSAL = `skills for adapter "${AGENT}" require a working directory different from its user home`;
+const SKILLS_SANDBOX_REFUSAL = `skills for adapter "${AGENT}" cannot be delivered while its native sandbox is enabled`;
+
+/**
+ * gemini-51: user settings that turn skills off reject a skills run, because
+ * turning them on for the run would also load the user's other skill sources.
+ */
+function assertGeminiSkillsEnabled(
+  userSettings: Record<string, unknown>,
+  path: string,
+): void {
+  const skills = userSettings.skills;
+  if (
+    typeof skills === 'object' &&
+    skills !== null &&
+    (skills as { enabled?: unknown }).enabled === false
+  ) {
+    throw new Error(
+      `skills for adapter "${AGENT}" cannot be delivered while the Gemini user settings at ${path} set skills.enabled to false`,
+    );
+  }
+}
+
+/**
+ * gemini-51: the run's skills cannot be delivered from a working directory
+ * that is the real home, under the native sandbox, or with skills disabled.
+ */
+async function assertGeminiSkillsContext(
+  context: GeminiSettingsOverrideContext,
+): Promise<void> {
+  const realHome = geminiRealHome(context);
+  if (
+    (await comparablePath(context.cwd)) === (await comparablePath(realHome))
+  ) {
+    throw new CapabilityError('workspace-is-home', SKILLS_HOME_REFUSAL);
+  }
+  const settingsPath = join(realHome, '.gemini', 'settings.json');
+  const userSettings = await readGeminiSettingsFile(
+    settingsPath,
+    'user settings',
+  );
+  if (await geminiSandboxRequested(context, userSettings)) {
+    throw new CapabilityError('native-sandbox', SKILLS_SANDBOX_REFUSAL);
+  }
+  assertGeminiSkillsEnabled(userSettings, settingsPath);
+}
+
+/**
+ * gemini-51: drops each user-scope `skills.disabled` entry naming a run skill
+ * as Gemini compares skill names, keeping every other parsed value.
+ */
+function enableRunSkills(
+  settings: Record<string, unknown>,
+  skills: readonly PreparedSkill[],
+): Record<string, unknown> {
+  const section = settings.skills;
+  if (typeof section !== 'object' || section === null || Array.isArray(section))
+    return settings;
+  const names = new Set(skills.map((skill) => skill.name));
+  const namesRunSkill = (entry: unknown): boolean =>
+    typeof entry === 'string' && names.has(foldGeminiSkillName(entry));
+  const rewritten: Record<string, unknown> = { ...section };
+  const disabled = rewritten.disabled;
+  if (Array.isArray(disabled)) {
+    rewritten.disabled = disabled.filter((entry) => !namesRunSkill(entry));
+  } else if (namesRunSkill(disabled)) {
+    // Gemini reads a lone string as a one-entry list.
+    delete rewritten.disabled;
+  } else {
+    return settings;
+  }
+  return { ...settings, skills: rewritten };
+}
 
 /**
  * gemini-34: delivers an effort alias through a per-run user-settings home,
@@ -1226,7 +1522,9 @@ async function defaultCreateSettingsOverride(
 ): Promise<GeminiSettingsOverride> {
   const servers = normalizeMcpServers(settingsConfig.mcpServers);
   const hasMcpServers = Object.keys(servers ?? {}).length > 0;
-  if (!settingsConfig.modelAlias && !hasMcpServers) {
+  const skills = settingsConfig.skills ?? [];
+  const hasSkills = skills.length > 0;
+  if (!settingsConfig.modelAlias && !hasMcpServers && !hasSkills) {
     return NOOP_SETTINGS_OVERRIDE;
   }
 
@@ -1240,6 +1538,7 @@ async function defaultCreateSettingsOverride(
       throw new Error(
         'Gemini per-run MCP servers require a working directory different from its user home',
       );
+    if (hasSkills) throw new Error(SKILLS_HOME_REFUSAL);
     return UNDELIVERED_ALIAS_OVERRIDE;
   }
 
@@ -1253,10 +1552,12 @@ async function defaultCreateSettingsOverride(
       throw new Error(
         'Gemini per-run MCP servers cannot be delivered while its native sandbox is enabled',
       );
+    if (hasSkills) throw new Error(SKILLS_SANDBOX_REFUSAL);
     return UNDELIVERED_ALIAS_OVERRIDE;
   }
+  if (hasSkills) assertGeminiSkillsEnabled(userSettings, settingsPath);
 
-  const settings = settingsConfig.modelAlias
+  let settings = settingsConfig.modelAlias
     ? mergeGeminiModelAlias(
         userSettings,
         settingsConfig.modelAlias,
@@ -1289,20 +1590,24 @@ async function defaultCreateSettingsOverride(
       ),
     };
   }
+  if (hasSkills) settings = enableRunSkills(settings, skills);
   const overlay = await createGeminiHomeOverlay(
     realHome,
     `${JSON.stringify(settings, null, 2)}\n`,
+    { skills, signal: context.signal },
   );
 
   return {
     env: { GEMINI_CLI_HOME: overlay.home },
     ...(hasMcpServers ? { deliversMcp: true } : {}),
+    ...(hasSkills ? { deliversSkills: true } : {}),
     cleanup: overlay.close,
   };
 }
 
 async function defaultCreatePolicyOverride(
   toolConfig: GeminiToolConfig,
+  runtimePolicySources: readonly string[] = [],
 ): Promise<GeminiPolicyOverride> {
   const policy = buildGeminiPolicyToml(toolConfig.policyRules ?? []);
   if (!policy) return NOOP_POLICY_OVERRIDE;
@@ -1318,7 +1623,12 @@ async function defaultCreatePolicyOverride(
   }
 
   return {
-    args: [`--policy=${filePath}`],
+    // gemini-55: `--policy` is an array flag; the runtime's own sources
+    // follow the per-run file.
+    args: [
+      `${POLICY_ARG_PREFIX}${filePath}`,
+      ...runtimePolicySources.map((source) => `${POLICY_ARG_PREFIX}${source}`),
+    ],
     cleanup: async () => {
       await rm(dir, { recursive: true, force: true });
     },
@@ -1327,13 +1637,32 @@ async function defaultCreatePolicyOverride(
 
 export function mapPermissionsToGeminiToolConfig(
   policy: PermissionPolicy | undefined,
-  options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools'>,
+  options?: Pick<AgentOptions, 'allowedTools' | 'disallowedTools' | 'skills'>,
 ): GeminiToolConfig & { policyRules: GeminiPolicyRule[] } {
   const writablePaths = mapWritablePathsPermission(policy, 'ambient');
   validateGeminiToolNames('allowedTools', options?.allowedTools);
   validateGeminiToolNames('disallowedTools', options?.disallowedTools);
 
   const allowedListProvided = options?.allowedTools !== undefined;
+  // gemini-52: skills need `activate_skill`, which an explicit restriction
+  // never gives up for them.
+  const skillsRequested =
+    Array.isArray(options?.skills) && options.skills.length > 0;
+  if (skillsRequested) {
+    if (options?.disallowedTools?.includes(ACTIVATE_SKILL_TOOL)) {
+      throw new Error(
+        `skills for adapter "${AGENT}" cannot be delivered while disallowedTools names ${ACTIVATE_SKILL_TOOL}`,
+      );
+    }
+    if (
+      allowedListProvided &&
+      !options.allowedTools!.includes(ACTIVATE_SKILL_TOOL)
+    ) {
+      throw new Error(
+        `skills for adapter "${AGENT}" require allowedTools to name ${ACTIVATE_SKILL_TOOL}`,
+      );
+    }
+  }
   const capabilityPolicyApplies =
     policy !== undefined && policy.mode === undefined;
   const normalized = capabilityPolicyApplies
@@ -1372,6 +1701,17 @@ export function mapPermissionsToGeminiToolConfig(
   for (const toolName of explicitAllowed) {
     policyRules.push({
       toolName,
+      decision: 'allow',
+      priority: POLICY_PRIORITY.explicitAllow,
+      interactive: false,
+    });
+  }
+
+  // gemini-52: an explicit allowlist naming `activate_skill` already allows it.
+  const skillRule = skillsRequested && !allowedListProvided;
+  if (skillRule) {
+    policyRules.push({
+      toolName: ACTIVATE_SKILL_TOOL,
       decision: 'allow',
       priority: POLICY_PRIORITY.explicitAllow,
       interactive: false,
@@ -1421,6 +1761,9 @@ export function mapPermissionsToGeminiToolConfig(
       ? { approvalMode: 'yolo' as const }
       : {}),
     ...(writablePaths ? { writablePaths } : {}),
+    ...(skillRule && policyRules.length === 1
+      ? { skillsOnlyPolicy: true }
+      : {}),
   };
 }
 
@@ -1446,6 +1789,7 @@ export function mapAgentOptionsToGeminiCommand(
   const toolConfig = mapPermissionsToGeminiToolConfig(options?.permissions, {
     allowedTools: options?.allowedTools,
     disallowedTools: options?.disallowedTools,
+    skills: options?.skills,
   });
 
   const args = ['--output-format', 'stream-json'] as string[];
@@ -1581,6 +1925,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
 
   private readonly createPolicyOverride: (
     toolConfig: GeminiToolConfig,
+    runtimePolicySources?: readonly string[],
   ) => Promise<GeminiPolicyOverride>;
 
   private readonly createTelemetryCapture: () => Promise<GeminiTelemetryCapture>;
@@ -1715,6 +2060,23 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     }
 
     try {
+      const context: GeminiSettingsOverrideContext = {
+        cwd: resolve(mapped.spawnOptions.cwd?.toString() ?? process.cwd()),
+        env: process.env,
+        ...(options?.abortSignal ? { signal: options.abortSignal } : {}),
+      };
+      // skills-2, gemini-51: the whole list and its delivery context are
+      // checked before attachments are staged or the browser is prepared.
+      const skills = await prepareSkills(
+        AGENT,
+        options?.skills,
+        context.cwd,
+        options?.abortSignal,
+      );
+      if (abortRequested || options?.abortSignal?.aborted) {
+        throw new Error('Gemini run aborted during skill preparation');
+      }
+      if (skills.length > 0) await assertGeminiSkillsContext(context);
       const attachmentStage = await prepareGeminiAttachments(
         prompt,
         options?.attachments,
@@ -1731,10 +2093,6 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         `--prompt=${attachmentStage.prompt}`,
       );
       const requestedMcp = normalizeMcpServers(options?.mcpServers);
-      const context = {
-        cwd: resolve(mapped.spawnOptions.cwd?.toString() ?? process.cwd()),
-        env: process.env,
-      };
       if (
         options?.browser === true ||
         Object.keys(requestedMcp ?? {}).length > 0
@@ -1747,6 +2105,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       }
       if (mcpServers !== undefined)
         mapped.settingsConfig.mcpServers = mcpServers;
+      if (skills.length > 0) mapped.settingsConfig.skills = skills;
       settingsOverride = await this.createSettingsOverride(
         mapped.settingsConfig,
         context,
@@ -1757,6 +2116,11 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       ) {
         throw new Error(
           'Gemini settings override cannot deliver the requested MCP servers',
+        );
+      }
+      if (skills.length > 0 && settingsOverride.deliversSkills !== true) {
+        throw new Error(
+          'Gemini settings override cannot deliver the requested skills',
         );
       }
       // gemini-7: an alias the override cannot deliver would name no model,
@@ -1770,7 +2134,17 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
                 : arg,
             )
           : mapped.args;
-      policyOverride = await this.createPolicyOverride(mapped.toolConfig);
+      policyOverride = await this.createPolicyOverride(
+        mapped.toolConfig,
+        mapped.toolConfig.skillsOnlyPolicy
+          ? await geminiRuntimePolicySources(context)
+          : [],
+      );
+      // gemini-55: the per-run file and the runtime's own sources must reach
+      // Gemini as the paths they name.
+      if (mapped.toolConfig.skillsOnlyPolicy) {
+        assertGeminiPolicyArgs(policyOverride.args);
+      }
       try {
         telemetryCapture = await this.createTelemetryCapture();
       } catch {

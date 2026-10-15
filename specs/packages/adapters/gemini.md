@@ -44,7 +44,7 @@ When `run()` starts Gemini CLI, the adapter shall execute one headless stream in
 
 ### gemini-19
 
-While no native `result` has selected a terminal and the run is not aborted, when settings or policy setup rejects, spawn throws synchronously, the child exposes no stdout, the child reports an asynchronous launch error, or stdout iteration throws, the adapter shall emit `init` first if needed, then a non-recoverable `error` with code `GEMINI_STREAM_ERROR` and the thrown `Error` message or `Gemini adapter failed while reading stream`, followed by terminal `done` with `status: 'error'`, the normal-terminal resume selection in [[gemini-9](#gemini-9)], elapsed duration, usage containing only [[gemini-27](#gemini-27)]'s tool count, and no result.
+While no native `result` has selected a terminal and the run is not aborted, when skill preparation [[skills-2](../skills.md#skills-2)] or the skills delivery-context checks of [[gemini-51](#gemini-51)] reject, settings or policy setup rejects, spawn throws synchronously, the child exposes no stdout, the child reports an asynchronous launch error, or stdout iteration throws, the adapter shall emit `init` first if needed, then a non-recoverable `error` with code `GEMINI_STREAM_ERROR` and the thrown `Error` message or `Gemini adapter failed while reading stream`, followed by terminal `done` with `status: 'error'`, the normal-terminal resume selection in [[gemini-9](#gemini-9)], elapsed duration, usage containing only [[gemini-27](#gemini-27)]'s tool count, and no result.
 
 ### gemini-5
 
@@ -408,8 +408,8 @@ When a run supplies skills, the adapter shall deliver the prepared list [[skills
 | --- | --- |
 | effective cwd is the real home, or the native sandbox would be enabled | reject before browser preparation rather than silently omit the skills, as [[gemini-48](#gemini-48)] rejects MCP servers |
 | user settings set `skills.enabled` to `false` | reject before browser preparation, naming `skills` and that setting, because enabling discovery for the run would also load the user's `.agents/skills`, extension, workspace, and built-in skills |
-| overlay `.gemini/skills` | a real directory in place of the link [[gemini-34](#gemini-34)] would create, holding the run's skills materialized first under [[skills-3](../skills.md#skills-3)], then one overlay link per entry of the real `.gemini/skills` whose entry name and runtime skill name, the frontmatter `name` with each of `:\/<>*?"|` replaced by `-` or the entry name where none parses, both differ ignoring ASCII case from every run skill's name [[24]] |
-| overlay `settings.json` | every user-scope `skills.disabled` entry equal to a run skill's name ignoring ASCII case removed, with every other parsed value retained as [[gemini-34](#gemini-34)] copies them |
+| overlay `.gemini/skills` | a real directory in place of the link [[gemini-34](#gemini-34)] would create, holding the run's skills materialized under [[skills-3](../skills.md#skills-3)] and one overlay link per entry of the real `.gemini/skills` whose entry name and runtime skill name, the frontmatter `name` with each of `:\/<>*?"|` replaced by `-` or the entry name where none parses, both differ from every run skill's name once lowercased, as the runtime compares skill names [[24]] |
+| overlay `settings.json` | every user-scope `skills.disabled` entry equal to a run skill's name once lowercased removed, a lone string counting as a one-entry list, with every other parsed value retained as [[gemini-34](#gemini-34)] copies them |
 | workspace trust | unchanged, because user-tier skills load before the trust gate [[24]] |
 | abort during skill preparation or settings setup | interrupted terminal and no child spawn, as [[gemini-48](#gemini-48)] selects for MCP servers |
 
@@ -421,11 +421,18 @@ When a run supplies skills [[gemini-51](#gemini-51)], the adapter shall open `ac
 | --- | --- |
 | `allowedTools` absent and no `disallowedTools` naming `activate_skill` | one `interactive = false` rule allowing `activate_skill` at priority 999 in the per-run policy delivered by [[gemini-14](#gemini-14)], generated even where no permission or tool-list rule exists |
 | `allowedTools` naming `activate_skill` and no `disallowedTools` naming it | no additional rule, because the [[gemini-29](#gemini-29)] allow already covers it |
-| `allowedTools` empty or present without `activate_skill`, or `disallowedTools` naming `activate_skill` | reject before browser preparation, naming `skills` and the conflicting tool option, because an explicit restriction is never weakened [[engine-17](../engine.md#engine-17)] |
+| `allowedTools` empty or present without `activate_skill`, or `disallowedTools` naming `activate_skill` | throw before any event and before browser preparation, naming `skills` and the conflicting tool option, as [[gemini-13](#gemini-13)] rejects an invalid tool name, because an explicit restriction is never weakened [[engine-17](../engine.md#engine-17)] |
 
 ### gemini-55
 
-Where the per-run policy file [[gemini-14](#gemini-14)] holds only [[gemini-52](#gemini-52)]'s `activate_skill` allow, the adapter shall pass the runtime's own policy sources as further `--policy` values after that file, the effective `policyPaths` the runtime merges across its settings scopes, resolved as the runtime resolves them, when non-empty and otherwise the real home's `.gemini/policies` directory [[gemini-34](#gemini-34)] where it exists, because `--policy` paths replace both [[21]].
+Where the per-run policy file [[gemini-14](#gemini-14)] holds only [[gemini-52](#gemini-52)]'s `activate_skill` allow, the adapter shall pass the runtime's own policy sources as further `--policy` values after that file, because `--policy` paths replace them [[21]], selecting them through this matrix:
+
+| Runtime state | Outcome |
+| --- | --- |
+| the effective `policyPaths` the runtime merges across its settings scopes are non-empty | those paths, resolved as the runtime resolves them |
+| no effective `policyPaths`, and the real home's `.gemini/policies` directory [[gemini-34](#gemini-34)] exists | that directory |
+| neither | no further value |
+| a passed source or the per-run file path contains `,` or differs from its trimmed form | reject setup before spawn through [[gemini-19](#gemini-19)], naming that path, because the runtime splits every `--policy` value on commas and trims each part [[25]][[26]] |
 
 ## Internal Behavior
 
@@ -472,7 +479,7 @@ When cleanup reaches a run's settings overlay after its child has closed, the ad
 | --- | --- |
 | the link the adapter created, or a link naming the same real entry in its place, or no entry where that link was | nothing |
 | the overlay's `.gemini/settings.json` | nothing; settings written during the run stay in the overlay |
-| the overlay's `.gemini/skills` directory created by [[gemini-51](#gemini-51)] | nothing for the run's skills and the links it placed; reconcile every other entry Gemini created there through the rows below |
+| the overlay's `.gemini/skills` directory created by [[gemini-51](#gemini-51)] | nothing for the run's skills and the links it placed; reconcile every other entry Gemini created there through the rows below, creating a missing real `.gemini/skills` but never a missing real `.gemini` |
 | a `.gemini` name marking an unfinished or locked write, with a `.tmp` segment or a `.rollback` or `.lock` suffix | nothing |
 | `.gemini/projects.json` | add the project entries the real registry lacks while holding the registry's `.lock` directory, which counts as stale after 10 s untouched; a lock still held after 10 s leaves the registry to Gemini's ownership markers |
 | another non-directory entry | replace the real entry with it atomically, unless the real entry is a directory |
@@ -722,11 +729,25 @@ Under [[gemini-219](#gemini-219)]'s real-target, credential, and sandbox precond
 
 ### gemini-53
 
-When a real fixture subprocess reads its per-run Gemini settings, skills, and policy files for runs with skill fixtures across absent, `activate_skill`-bearing, and excluding tool lists, a permission-bearing policy, a real-home cwd, a requested native sandbox, an untrusted workspace, user settings disabling skills or naming a run skill or its case variant in `skills.disabled`, a real `.gemini/skills` entry with and without a shadowing name, case variant, or same entry name under another skill name, an entry Gemini adds during the run, cancellation during skill preparation, and a user policy directory with and without `policyPaths` in user, system, and trusted-workspace settings, the integration check shall verify the overlay skills directory layout, ordering, and links, the settings rewrite, every rejection, unchanged trust, and the interrupted terminal without spawn [[gemini-51](#gemini-51)], the generated `activate_skill` rule and every tool-list outcome [[gemini-52](#gemini-52)], the merged policy sources appended only beside the skills-only policy [[gemini-55](#gemini-55)], no policy file without skills [[gemini-12](#gemini-12)], reconciliation of the added entry with the run's entries left unreconciled [[gemini-45](#gemini-45)], and overlay removal [[gemini-35](#gemini-35)].
+When a real fixture subprocess reads its per-run Gemini settings, skills, and policy files for runs with skill fixtures, the integration check shall verify this case matrix and the overlay's removal after every case [[gemini-35](#gemini-35)]:
+
+| Case | Assertions |
+| --- | --- |
+| a real `.gemini/skills` entry with and without a shadowing name, case variant, or same entry name under another skill name | the overlay skills directory's layout and links [[gemini-51](#gemini-51)] |
+| user settings naming a run skill or its case variant in a `skills.disabled` list, a lone-string `skills.disabled` naming a run skill's case variant, and a lone string naming no run skill | the settings rewrite, retaining the unmatched lone string, with the real settings file byte-identical [[gemini-51](#gemini-51)] |
+| an untrusted workspace | unchanged trust [[gemini-51](#gemini-51)] |
+| a real-home cwd, a requested native sandbox, user settings disabling skills, and a skill path that fails preparation | each rejection as `init`, a non-recoverable `GEMINI_STREAM_ERROR`, and error `done`, without spawn or browser preparation [[gemini-19](#gemini-19)], [[gemini-51](#gemini-51)] |
+| cancellation during skill preparation and during settings setup | `init` and interrupted `done`, without spawn or a remaining overlay [[gemini-51](#gemini-51)] |
+| absent, `activate_skill`-bearing, denying, and excluding tool lists, and a permission-bearing policy | the generated `activate_skill` rule, a same-priority deny serialized before it, and every tool-list outcome, an excluding list throwing before any event [[gemini-52](#gemini-52)] |
+| a user policy directory with and without `policyPaths` in user, system, and trusted-workspace settings | the merged policy sources appended only beside the skills-only policy [[gemini-55](#gemini-55)] |
+| a comma-bearing or untrimmed `policyPaths` entry, and a comma-bearing temporary directory | a setup rejection before spawn naming the path [[gemini-55](#gemini-55)] |
+| no skills | no policy file [[gemini-12](#gemini-12)] |
+| an entry Gemini adds during the run, beside a present or absent real `.gemini/skills` | reconciliation of the added entry, creating the real skills directory where absent, with the run's entries left unreconciled [[gemini-45](#gemini-45)] |
+| a real `.gemini` removed during the run while Gemini adds entries to the overlay's `.gemini` and skills directory | a cleanup rejection naming each entry, with the real `.gemini` not recreated [[gemini-45](#gemini-45)] |
 
 ### gemini-54
 
-Where [[gemini-219](#gemini-219)]'s executable and credential preconditions hold and no native sandbox is requested, when a run supplies a fixture skill whose body directs a unique token reply and the prompt names the skill, the acceptance check shall verify against the real runtime that the reply carries the token [[gemini-51](#gemini-51)], [[gemini-52](#gemini-52)] and that the overlay is gone after `done` [[gemini-35](#gemini-35)].
+Where [[gemini-219](#gemini-219)]'s executable and credential preconditions hold and no native sandbox is requested, when a run supplies a fixture skill whose body directs a unique token reply and the prompt names the skill, the acceptance check shall verify against the real runtime that the reply carries the token [[gemini-51](#gemini-51)], [[gemini-52](#gemini-52)] and that the overlay is gone once the adapter's own event stream completes [[gemini-35](#gemini-35)].
 
 ## References
 
@@ -752,3 +773,5 @@ Where [[gemini-219](#gemini-219)]'s executable and credential preconditions hold
 [22]: https://geminicli.com/docs/cli/skills/ "Gemini CLI Agent Skills and their discovery tiers"
 [23]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/core/src/policy/policies/write.toml#L96-L108 "Gemini CLI 0.61.0 headless activate_skill denial"
 [24]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/core/src/skills/skillManager.ts#L54-L114 "Gemini CLI 0.61.0 skill discovery order and user-tier loading before the trust gate"
+[25]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/config/config.ts#L347-L354 "Gemini CLI 0.61.0 --policy option coerced as comma-separated values"
+[26]: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/packages/cli/src/config/config.ts#L115-L128 "Gemini CLI 0.61.0 comma splitting and trimming of each coerced value"
