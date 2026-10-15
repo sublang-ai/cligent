@@ -268,7 +268,7 @@ When `run(prompt, options)` invokes SDK `runStreamed()`, the adapter shall selec
 
 ### codex-69
 
-When attachment preparation is cancelled through the caller's `abortSignal`, the adapter shall yield exactly one terminal `done` with `status: 'interrupted'`, no result or token counts, `usage.toolUses: 0`, elapsed preparation duration, and the inbound non-empty resume token when present, without invoking the SDK [[engine-73](../engine.md#engine-73)].
+When attachment or skill preparation is cancelled through the caller's `abortSignal`, the adapter shall yield exactly one terminal `done` with `status: 'interrupted'`, no result or token counts, `usage.toolUses: 0`, elapsed preparation duration, and the inbound non-empty resume token when present, without invoking the SDK [[engine-73](../engine.md#engine-73)].
 
 ### codex-7
 
@@ -402,6 +402,26 @@ When a run supplies MCP servers or selects the browser preset, the adapter shall
 | cancellation during preparation | interrupted terminal selected by [[codex-27](#codex-27)] without starting the SDK |
 
 > Admission limit: stdio `env` values and HTTP `headers` travel in native `--config mcp_servers.<name>=…` arguments, which local process listings expose, so hosts must not place secrets there.
+
+### Skills
+
+### codex-75
+
+When a run supplies skills, the adapter shall deliver the prepared list [[skills-2](../skills.md#skills-2)] through a run-private Codex plugin and select this matrix before SDK invocation per [DR-036](../../decisions/036-cross-agent-skill-installation.md), [[10]], [[14]], [[15]], and [[16]]:
+
+| State or entry | Outcome |
+| --- | --- |
+| Codex home | the caller's non-empty `CODEX_HOME`, otherwise `~/.codex`, as the native runtime resolves it |
+| plugin root | `<Codex home>/plugins/cache/<marketplace>/cligent/1.0.0`, `<marketplace>` being `cligent-<host>-<pid>-<suffix>` with `<host>` the operating-system host name with each character outside ASCII letters, digits, and `-` replaced by `-`, `<pid>` the decimal process identifier, and `<suffix>` a random 20-lowercase-hex-character value unique to this run, holding `.codex-plugin/plugin.json` with content `{"name":"cligent","version":"1.0.0","skills":"./skills/"}` and a `skills` directory materialized under [[skills-3](../skills.md#skills-3)] |
+| stale marketplace | a cache directory whose name parses from the right as `cligent-<host>-<pid>-<suffix>` with this host's segment and a process identifier the operating system reports as not running on this host, removed before materializing; one that disappears concurrently or whose removal fails is left without failing the run |
+| enable override | one native `plugins.cligent@<marketplace>.enabled=true` override, its key unquoted because the runtime splits an override key at every `.` and the marketplace name holds none, through the SDK constructor's raw `configOverrides` array, as [[codex-70](#codex-70)] carries MCP entries, leaving every other `plugins` entry as configuration loading selects it |
+| listed name | `cligent:<name>`, namespaced by the manifest name [[16]], whose body a `$cligent:<name>` prompt mention injects [[14]] |
+| user-level and project skills, `skills.config` filters, and `--ignore-user-config` | unchanged, because the plugin adds a root beside them |
+| workspace and Codex configuration | no `.codex` or `.agents` workspace entry and no `config.toml` write, the Codex home keeping its authentication and session state as [[codex-31](#codex-31)] preserves them |
+
+### codex-78
+
+When a run with skills [[codex-75](#codex-75)] ends, the adapter shall remove the plugin root, its marketplace directory, and each parent the run created while empty, through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after terminal `done` once the SDK event iterator has settled wherever `runStreamed()` was invoked, including the [[codex-25](#codex-25)], [[codex-26](#codex-26)], and [[codex-27](#codex-27)] paths, and otherwise before its terminal or rejection leaves the adapter.
 
 ## Internal Behavior
 
@@ -743,6 +763,14 @@ Given repeated executable-resolution or wrapper-setup failures on one caller sig
 
 Given temporary image files and absent, empty, invalid, unsupported, and valid attachments, when `Cligent` runs through the adapter and the installed Codex SDK against a recording CLI fixture, verification shall assert [[codex-67](#codex-67)]'s unchanged prompt, ordered repeated `--image` arguments containing absolute paths, resumed transport, and refusal before SDK invocation, and [[codex-69](#codex-69)]'s interrupted terminal before attachment submission.
 
+### codex-76
+
+When skill fixtures run with the installed Codex SDK recorded into a fixture subprocess and a throwaway `CODEX_HOME`, set and unset, across fresh and resumed threads, a stale marketplace directory, one whose removal fails, a live same-host one, and a foreign-host one, SDK failure and abort paths, and cancellation during preparation, the integration check shall verify the exact plugin root layout and manifest, the single unquoted `plugins` override argument, unchanged skill filters and isolation arguments, the `~/.codex` fallback, the stale-marketplace sweep leaving the live and foreign entries and tolerating the failed removal, and an unchanged workspace and `config.toml` [[codex-75](#codex-75)], through the installed executable's offline prompt-input rendering that the catalog lists `cligent:<name>` from the plugin root under the same override [[codex-75](#codex-75)], the interrupted terminal on cancellation [[codex-69](#codex-69)], and removal of the plugin root and marketplace directory after normal completion, an SDK failure, an abort, and cancellation [[codex-78](#codex-78)].
+
+### codex-77
+
+Where [[codex-219](#codex-219)]'s credential, retry, and skip preconditions hold, when a run supplies a fixture skill whose body directs a unique token reply and the prompt mentions `$cligent:<name>`, the acceptance check shall verify against the real runtime that the reply carries the token [[codex-75](#codex-75)] and that the plugin cache entry is gone once the event stream completes [[codex-78](#codex-78)].
+
 ## References
 
 [1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md 'Codex TypeScript SDK'
@@ -759,3 +787,6 @@ Given temporary image files and absent, empty, invalid, unsupported, and valid a
 [12]: https://unpkg.com/@openai/codex-sdk@0.159.0/dist/index.d.ts "Codex SDK 0.159.0 public event declarations"
 
 [13]: https://learn.chatgpt.com/docs/extend/mcp?surface=cli "Codex MCP server configuration and scoped tool approvals"
+[14]: https://learn.chatgpt.com/docs/build-skills "Codex skills, their roots, and skill mentions"
+[15]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/core-plugins/src/store.rs#L85 "Codex 0.159.0 plugin cache under the Codex home"
+[16]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/core-plugins/src/loader.rs#L905 "Codex 0.159.0 plugin skill namespace from the manifest name"

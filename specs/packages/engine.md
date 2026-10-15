@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer drive any registered coding-agent adapter through one role-scoped session object with a uniform event stream, per [DR-001](../decisions/001-unified-cli-agent-interface-architecture.md), [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md), and [DR-003](../decisions/003-role-scoped-session-management.md).
-It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, adapter-scoped fast-mode selection and observation, adapter-scoped subagent-model and subagent-effort selection, runtime readiness, provider model discovery, runtime-reported model identity, and the shape of an authentic usage report — not how any one adapter executes a prompt.
+It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, adapter-scoped fast-mode selection and observation, adapter-scoped subagent-model and subagent-effort selection, `skills` option merging and forwarding, runtime readiness, provider model discovery, runtime-reported model identity, and the shape of an authentic usage report — not how any one adapter executes a prompt.
 Its requirements are stated in this project's `Cligent`, `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, and `DonePayload` vocabulary, the surface it defines and every adapter implements, and in the installed `@sublang/cligent` tree from which an adapter's peer runtime is resolved.
 
 ## External Behavior
@@ -20,7 +20,7 @@ Per [DR-003](../decisions/003-role-scoped-session-management.md), the `Cligent` 
 | Input | Contract |
 | --- | --- |
 | `AgentAdapter` | required adapter |
-| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `subagentModel`, `subagentEffort`, `mcpServers`, `browser`, `allowedTools`, and `disallowedTools` |
+| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `subagentModel`, `subagentEffort`, `mcpServers`, `browser`, `skills`, `allowedTools`, and `disallowedTools` |
 | `abortSignal`, `resume`, `attachments`, and the live `approvalHandler` | excluded from instance defaults and available only per invocation in `RunOptions` [[approvals-1](approvals.md#approvals-1)] |
 
 ### engine-2
@@ -36,6 +36,7 @@ When `Cligent.run()` resolves instance defaults and per-call overrides, it shall
 | `permissions` object | merge by member, with a provided per-call member taking precedence |
 | `permissions.writablePaths` | replace the instance array with a provided per-call array rather than merging elements |
 | `mcpServers` | replace the instance map with a provided per-call map, including an empty one |
+| `skills` | replace the instance array with a provided per-call array, including an empty one |
 | `allowedTools` or `disallowedTools` | replace the instance array with a provided per-call array, including an empty one |
 | `fastMode`, `subagentModel`, `subagentEffort`, or another scalar shared by both option types | use the per-call value when provided, including `false`, otherwise the instance default |
 | `abortSignal`, `resume`, `attachments`, or `approvalHandler` | accept only the per-call value because these fields do not exist in instance defaults, including the live handler [[approvals-1](approvals.md#approvals-1)] |
@@ -59,7 +60,21 @@ When `AgentAdapter.run()`, `Cligent.run()`, `runAgent()`, `runParallel()`, or `C
 
 ### engine-124
 
-When an engine entrypoint selects options for its adapter, it shall pass the effective caller MCP server map [[mcp-1](mcp.md#mcp-1)] and browser selection [[mcp-3](mcp.md#mcp-3)] unchanged, allowing custom adapters to implement their own admission and leaving built-in native configuration to each adapter.
+When an engine entrypoint selects options for its adapter, it shall pass the effective caller MCP server map [[mcp-1](mcp.md#mcp-1)], browser selection [[mcp-3](mcp.md#mcp-3)], and skill list [[skills-1](skills.md#skills-1)] unchanged, allowing custom adapters to implement their own admission and leaving built-in native configuration to each adapter.
+
+### Skills
+
+### engine-130
+
+When a `skills` option reaches a typed or dynamic adapter path, Cligent shall select this outcome per [DR-036](../decisions/036-cross-agent-skill-installation.md):
+
+| Input and adapter | Outcome |
+| --- | --- |
+| omitted, or empty on a built-in adapter | add no Cligent skill configuration, leaving the runtime's own skill discovery in force |
+| non-empty list on a built-in adapter | pass the list unchanged to the adapter, which prepares it [[skills-2](skills.md#skills-2)], snapshots it [[skills-3](skills.md#skills-3)], and delivers the snapshot through its native carrier for the run [[claude-code-85](adapters/claude-code.md#claude-code-85)], [[codex-75](adapters/codex.md#codex-75)], [[gemini-51](adapters/gemini.md#gemini-51)], [[kimi-49](adapters/kimi.md#kimi-49)], [[opencode-67](adapters/opencode.md#opencode-67)], with the carrier's kind, namespace, and limits disclosed by [[skills-5](skills.md#skills-5)] and without promising model selection or runtime-policy admission |
+| non-empty list on a built-in adapter whose carrier rejects the run [[claude-code-85](adapters/claude-code.md#claude-code-85)], [[gemini-51](adapters/gemini.md#gemini-51)], [[gemini-52](adapters/gemini.md#gemini-52)], [[kimi-49](adapters/kimi.md#kimi-49)], [[opencode-67](adapters/opencode.md#opencode-67)] | reject before backend invocation with that carrier's error |
+| any other defined value on a built-in adapter | reject through the adapter's preparation [[skills-2](skills.md#skills-2)] |
+| any defined value on a dynamically registered custom adapter | pass it unchanged, leaving admission to that adapter |
 
 ### Session Continuity
 
@@ -744,7 +759,7 @@ When `run()` is called while a previous `run()` generator is still active on the
 
 ### engine-103
 
-Where instance defaults and per-call overrides are supplied, when `run()` invokes the adapter, the check shall assert every [[engine-3](#engine-3)] field-selection row, including per-call replacement of `permissions.writablePaths`, `allowedTools`, and `disallowedTools` arrays plus both `fastMode` boolean override directions.
+Where instance defaults and per-call overrides are supplied, when `run()` invokes the adapter, the check shall assert every [[engine-3](#engine-3)] field-selection row, including per-call replacement of `permissions.writablePaths`, `allowedTools`, `disallowedTools`, and `skills` arrays plus both `fastMode` boolean override directions.
 
 ### engine-104
 
@@ -973,3 +988,7 @@ When a consumer uses instance discovery and setup with built-in and custom adapt
 ### engine-129
 
 When two real adapters in a raw parallel pool wait on native permission callbacks and one task is cancelled, integration checks shall verify both callbacks abort, both tools remain denied, both response audits precede interrupted completion, and cleanup is bounded [[engine-128](#engine-128)].
+
+### engine-131
+
+Where `skills` is supplied across direct adapter, instance-default, per-run, parallel, and legacy-registry paths, when built-in and custom adapters run, the check shall assert [[engine-130](#engine-130)] omitted, empty, forwarded, rejection, malformed-value, and custom-adapter outcomes, [[engine-124](#engine-124)] unchanged forwarding, and [[engine-1](#engine-1)] constructor-option placement.

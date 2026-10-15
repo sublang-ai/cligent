@@ -75,10 +75,11 @@ When the loader resolves the top-level configuration, it shall admit this surfac
 | `theme` | optional field per [[tmux-play-60](#tmux-play-60)] |
 | `layout` | optional field per [[tmux-play-64](#tmux-play-64)] |
 | `notifications` | optional field per [[tmux-play-76](#tmux-play-76)] |
+| `skills` | optional field per [[tmux-play-226](#tmux-play-226)] |
 
 ### tmux-play-6
 
-The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`, `kimi`), and may include `model`, `instruction`, a `permissions` object per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], `fastMode` per [[tmux-play-206](#tmux-play-206)], `subagentModel` per [[tmux-play-211](#tmux-play-211)], `subagentEffort` per [[tmux-play-216](#tmux-play-216)], `browser` per [[tmux-play-219](#tmux-play-219)], and an opaque `options` value forwarded verbatim to the Captain factory.
+The `captain` object shall require `from` (local path or package specifier), `adapter` (one of `claude`, `codex`, `gemini`, `opencode`, `kimi`), and may include `model`, `instruction`, a `permissions` object per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], `fastMode` per [[tmux-play-206](#tmux-play-206)], `subagentModel` per [[tmux-play-211](#tmux-play-211)], `subagentEffort` per [[tmux-play-216](#tmux-play-216)], `browser` per [[tmux-play-219](#tmux-play-219)], `skills` per [[tmux-play-226](#tmux-play-226)], and an opaque `options` value forwarded verbatim to the Captain factory.
 
 ### tmux-play-60
 
@@ -149,7 +150,7 @@ When the loader resolves an entry in `players`, it shall apply this matrix:
 | Field or roster condition | Outcome |
 | --- | --- |
 | `id` and `adapter` | require both; accept only adapters `claude`, `codex`, `gemini`, `opencode`, and `kimi` |
-| optional fields | accept `model`, `instruction`, `permissions` per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], `fastMode` per [[tmux-play-206](#tmux-play-206)], `subagentModel` per [[tmux-play-211](#tmux-play-211)], `subagentEffort` per [[tmux-play-216](#tmux-play-216)], and `browser` per [[tmux-play-219](#tmux-play-219)] |
+| optional fields | accept `model`, `instruction`, `permissions` per [[tmux-play-52](#tmux-play-52)], `effort` per [[tmux-play-56](#tmux-play-56)], `fastMode` per [[tmux-play-206](#tmux-play-206)], `subagentModel` per [[tmux-play-211](#tmux-play-211)], `subagentEffort` per [[tmux-play-216](#tmux-play-216)], `browser` per [[tmux-play-219](#tmux-play-219)], and `skills` per [[tmux-play-226](#tmux-play-226)] |
 | `id` | require a unique non-`captain` value matching `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$` |
 | adapter and model reused by several players | accept the entries |
 
@@ -275,7 +276,7 @@ When fallback discovery loads an existing home YAML, the launcher shall apply th
 | Existing state or source | Outcome |
 | --- | --- |
 | safe default missing | add only `theme: auto`, a `layout` block carrying the default `window` and shipped `multiPlayerColumnWeights` per [[tmux-play-11](#tmux-play-11)], `captain.options: {}`, and [[tmux-play-11](#tmux-play-11)]'s notification defaults |
-| existing user values | preserve them; add no `model`, `instruction`, `permissions`, `effort`, `fastMode`, `subagentModel`, or `subagentEffort` defaults |
+| existing user values | preserve them; add no `model`, `instruction`, `permissions`, `effort`, `fastMode`, `subagentModel`, `subagentEffort`, or `skills` defaults |
 | two-element legacy `layout.columnWeights` | rewrite it as `layout.singlePlayerColumnWeights` and write one final YAML form without the alias |
 | three-element legacy `layout.columnWeights` | rewrite it as `layout.multiPlayerColumnWeights` and write one final YAML form without the alias |
 | alias and matching canonical field both present | do not resolve the conflict; reject per [[tmux-play-64](#tmux-play-64)] |
@@ -635,7 +636,7 @@ When a consumer imports `@sublang/cligent/tmux-play`, the sub-export shall expos
 
 | Surface | Contract |
 | --- | --- |
-| runtime factory input | instantiated `captain`; adapter-discriminated `captainConfig` with optional `model`, `instruction`, `permissions`, [[tmux-play-56](#tmux-play-56)] `effort`, [[tmux-play-206](#tmux-play-206)] `fastMode`, [[tmux-play-211](#tmux-play-211)] `subagentModel`, and [[tmux-play-216](#tmux-play-216)] `subagentEffort`; an adapter-discriminated possibly-empty `players` array per [[tmux-play-7](#tmux-play-7)]; zero or more `observers`; optional `cwd`; optional session-scoped `signal` |
+| runtime factory input | instantiated `captain`; adapter-discriminated `captainConfig` with optional `model`, `instruction`, `permissions`, [[tmux-play-56](#tmux-play-56)] `effort`, [[tmux-play-206](#tmux-play-206)] `fastMode`, [[tmux-play-211](#tmux-play-211)] `subagentModel`, [[tmux-play-216](#tmux-play-216)] `subagentEffort`, and [[tmux-play-226](#tmux-play-226)] `skills`; an adapter-discriminated possibly-empty `players` array per [[tmux-play-7](#tmux-play-7)]; optional top-level `skills` per [[tmux-play-226](#tmux-play-226)]; zero or more `observers`; optional `cwd`; optional session-scoped `signal` |
 | runtime factory output | runtime that drives Boss turns without tmux |
 | record exports | the public record union and constituent record types for every type named by [[tmux-play-20](#tmux-play-20)], including `captain_reply` and `player_view_changed` |
 | observer export | observer-registration contract |
@@ -705,6 +706,7 @@ When the launcher prepares a session, it shall write the resolved YAML configura
 | Input | Snapshot value |
 | --- | --- |
 | local `captain.from` path | absolute `file://` URL |
+| relative `skills` entry | the absolute path resolved per [[tmux-play-226](#tmux-play-226)] |
 | package `captain.from` specifier | unchanged specifier |
 | all other resolved configuration | resolved value |
 
@@ -1244,6 +1246,7 @@ When `callCaptain` resolves session and tool controls, tmux-play shall map them 
 | `allowedTools` | non-empty readonly list | an equal mutable copy |
 | `allowedTools` | empty readonly list | an explicit empty copy retaining [[engine-17](engine.md#engine-17)]'s no-tools meaning |
 | `allowedTools` | omitted | no per-call override, preserving the configured or adapter-native tool surface |
+| `skills` | the call's admitted list under [[tmux-play-93](#tmux-play-93)], configured or supplied, is non-empty, the Captain adapter is `claude` or `gemini`, and the call's `allowedTools` is empty or lacks that adapter's skill tool, `Skill` [[claude-code-85](adapters/claude-code.md#claude-code-85)] or `activate_skill` [[gemini-52](adapters/gemini.md#gemini-52)] | an empty list for that call, preserving the tool restriction |
 
 ### tmux-play-93
 
@@ -1251,12 +1254,12 @@ When tmux-play admits a player or Captain call, it shall resolve complete call s
 
 | Input or state | Admission outcome |
 | --- | --- |
-| `settings` omitted | use the configured model, effort, [[tmux-play-206](#tmux-play-206)] `fastMode`, [[tmux-play-211](#tmux-play-211)] `subagentModel`, [[tmux-play-216](#tmux-play-216)] `subagentEffort`, instruction, permissions, browser selection, and programmatic MCP server map as complete runtime-held defaults; map each supplied policy through [[engine-52](engine.md#engine-52)], omit every unconfigured field so the provider default remains in control, and leave generic `Cligent` merging outside this runtime unchanged per [[engine-3](engine.md#engine-3)] |
-| `settings` supplied | require one closed `AgentCallSettings` object whose `model` and `effort` are `{ kind: 'value', value: <nonempty string> }` or `{ kind: 'provider-default' }`, whose optional `fastMode` is boolean, whose optional `subagentModel` is a string containing a non-whitespace character, whose optional `subagentEffort` is an `Effort` value, and whose optional `browser` is boolean, whose optional `mcpServers` is a server map validated per [[mcp-2](mcp.md#mcp-2)], and whose optional `instruction` and [[engine-21](engine.md#engine-21)] `permissions` are the complete effective values; omitted `fastMode` selects provider default under [[engine-75](engine.md#engine-75)], omitted `subagentModel` selects provider default under [[engine-91](engine.md#engine-91)], omitted `subagentEffort` leaves the effort to the agent under [[engine-97](engine.md#engine-97)], omitted `browser` disables managed browser tools, omitted `mcpServers` selects an empty map, other omission means none, and no member merges with configured defaults |
-| supplied settings admitted | capture the object, selections, fast-mode value, subagent-model and subagent-effort values, browser selection, MCP server data, and permission data as a detached frozen snapshot before asynchronous work |
-| accessor, unknown field, incomplete selection, invalid effort vocabulary, non-boolean or adapter-unsupported fast mode under [[tmux-play-206](#tmux-play-206)], non-string, blank, or adapter-unsupported subagent model under [[tmux-play-211](#tmux-play-211)], subagent effort without a subagent model, outside the adapter's vocabulary, or adapter-unsupported under [[tmux-play-216](#tmux-play-216)], or another unenforceable setting | reject before the prompt record and provider run |
+| `settings` omitted | use the configured model, effort, [[tmux-play-206](#tmux-play-206)] `fastMode`, [[tmux-play-211](#tmux-play-211)] `subagentModel`, [[tmux-play-216](#tmux-play-216)] `subagentEffort`, [[tmux-play-226](#tmux-play-226)] `skills`, instruction, permissions, browser selection, and programmatic MCP server map as complete runtime-held defaults; map each supplied policy through [[engine-52](engine.md#engine-52)], omit every unconfigured field so the provider default remains in control, and leave generic `Cligent` merging outside this runtime unchanged per [[engine-3](engine.md#engine-3)] |
+| `settings` supplied | require one closed `AgentCallSettings` object whose `model` and `effort` are `{ kind: 'value', value: <nonempty string> }` or `{ kind: 'provider-default' }`, whose optional `fastMode` is boolean, whose optional `subagentModel` is a string containing a non-whitespace character, whose optional `subagentEffort` is an `Effort` value, and whose optional `browser` is boolean, whose optional `mcpServers` is a server map validated per [[mcp-2](mcp.md#mcp-2)], whose optional `skills` is an array of non-blank, NUL-free strings [[skills-1](skills.md#skills-1)], [[skills-2](skills.md#skills-2)] whose directory validation follows in the adapter, and whose optional `instruction` and [[engine-21](engine.md#engine-21)] `permissions` are the complete effective values; omitted `fastMode` selects provider default under [[engine-75](engine.md#engine-75)], omitted `subagentModel` selects provider default under [[engine-91](engine.md#engine-91)], omitted `subagentEffort` leaves the effort to the agent under [[engine-97](engine.md#engine-97)], omitted `browser` disables managed browser tools, omitted `mcpServers` selects an empty map, omitted `skills` selects none, other omission means none, and no member merges with configured defaults |
+| supplied settings admitted | capture the object, selections, fast-mode value, subagent-model and subagent-effort values, browser selection, MCP server data, skill paths, and permission data as a detached frozen snapshot before asynchronous work |
+| accessor, unknown field, incomplete selection, invalid effort vocabulary, non-boolean or adapter-unsupported fast mode under [[tmux-play-206](#tmux-play-206)], non-string, blank, or adapter-unsupported subagent model under [[tmux-play-211](#tmux-play-211)], subagent effort without a subagent model, outside the adapter's vocabulary, or adapter-unsupported under [[tmux-play-216](#tmux-play-216)], a non-array `skills` or one holding a non-string, blank, or NUL-containing entry, or another unenforceable setting | reject before the prompt record and provider run |
 | session selection | resolve the explicit token, forced-fresh selection, or stored automatic token exactly once at admission per [[tmux-play-41](#tmux-play-41)] and [[tmux-play-88](#tmux-play-88)], then give the same detached selection to reset preflight and `Cligent.run()` |
-| runtime-owned `Cligent` | carry none of the configured model, effort, `fastMode`, `subagentModel`, `subagentEffort`, instruction, permissions, browser, or MCP server defaults |
+| runtime-owned `Cligent` | carry none of the configured model, effort, `fastMode`, `subagentModel`, `subagentEffort`, instruction, permissions, browser, MCP server, or `skills` defaults |
 | provider-default selection | omit the selected model or effort, and omit `fastMode` under [[engine-75](engine.md#engine-75)], `subagentModel` under [[engine-91](engine.md#engine-91)], or `subagentEffort` under [[engine-97](engine.md#engine-97)] when absent from supplied settings, from `Cligent.run()`; never restore the configured role value |
 | concrete Gemini effort without a [[gemini-11](adapters/gemini.md#gemini-11)] model alias, or concrete OpenCode effort without an [[opencode-12](adapters/opencode.md#opencode-12)] variant | reject instead of silently ignoring the effort |
 | resumed Claude, provider-default model | reject because [[claude-code-6](adapters/claude-code.md#claude-code-6)] omission restores the transcript model |
@@ -1362,6 +1365,20 @@ Where a programmatic runtime supplies `approvalHandler`, when a working invocati
 - only player and visible working Captain calls receive the callback; hidden Captain calls and calls explicitly restricted to no tools receive none;
 - callback closures are runtime options only, absent from YAML, call settings, model prompts and serialized records;
 - native approval request/response events [[approvals-4](approvals.md#approvals-4)] remain ordinary actor events under the existing ordered record lifecycle [[tmux-play-22](#tmux-play-22)].
+
+### tmux-play-226
+
+When the loader or the programmatic runtime factory [[tmux-play-29](#tmux-play-29)] resolves optional `skills` at the top level, on the `captain`, or on a player, it shall select each role's skill list through this matrix per [DR-036](../decisions/036-cross-agent-skill-installation.md):
+
+| Input | Outcome |
+| --- | --- |
+| top-level `skills` | an array of strings, each a skill directory path [[skills-1](skills.md#skills-1)]; the list is the default for the Captain and every player |
+| role `skills` | the same form, replacing the top-level list for that role, an empty array selecting no skills |
+| relative entry from YAML | resolved at load time to an absolute path against the originating config file's directory, as [[tmux-play-13](#tmux-play-13)] anchors a local `captain.from` |
+| relative entry from a programmatic configuration | passed unchanged for [[skills-2](skills.md#skills-2)] to resolve against the effective run `cwd` |
+| non-array value, or a non-string, blank, or NUL-containing entry | reject with an error naming the offending `skills`, `captain.skills`, or `players[i].skills` path, per [[tmux-play-8](#tmux-play-8)] for YAML |
+| two roles on the `kimi` adapter whose lists, each entry resolved against the run's working directory to its skill directory with links followed as [[kimi-49](adapters/kimi.md#kimi-49)] compares them, map one skill name to different directories | reject, naming both paths, because their concurrent runs would dispute the name |
+| resolved role list | the role's configured `skills`, which call admission applies under [[tmux-play-93](#tmux-play-93)] |
 
 ## Verification
 
@@ -2258,7 +2275,7 @@ When configuration loading selects notification or fallback-home behavior, the c
 | notifications omitted | loaded config and snapshot carry `off` for `player_finished`, `turn_finished`, and `turn_aborted` [[tmux-play-76](#tmux-play-76)], [[tmux-play-34](#tmux-play-34)] |
 | unknown key such as `runtime_error` | rejection names the offending `notifications.<key>` path [[tmux-play-76](#tmux-play-76)] |
 | sink outside `off`, `bell`, and `desktop` | rejection names the offending notification path [[tmux-play-76](#tmux-play-76)] |
-| fallback-discovered old home YAML missing safe defaults | update only missing `theme: auto`, resolved layout defaults, `captain.options: {}`, and notification defaults; preserve existing values; synthesize no `model`, `instruction`, `permissions`, `fastMode`, `subagentModel`, `subagentEffort`, or effort when neither effort key exists [[tmux-play-90](#tmux-play-90)] |
+| fallback-discovered old home YAML missing safe defaults | update only missing `theme: auto`, resolved layout defaults, `captain.options: {}`, and notification defaults; preserve existing values; synthesize no `model`, `instruction`, `permissions`, `fastMode`, `subagentModel`, `subagentEffort`, `skills`, or effort when neither effort key exists [[tmux-play-90](#tmux-play-90)] |
 
 ### tmux-play-176
 
@@ -2579,6 +2596,10 @@ Where the packed tarball alone is installed into an out-of-band global-style pre
 ### tmux-play-210
 
 When an integration fixture makes both a player and Captain encounter a definite resume rejection and an ordinary failure, it shall verify that the returned result preserves `errorCode` only for the classified rejection, retains the ordinary message, and performs no fresh call [[tmux-play-33](#tmux-play-33)].
+
+### tmux-play-227
+
+Where YAML and programmatic configurations supply top-level, Captain, player, empty, relative, malformed, and Kimi-disputed `skills` across every built-in adapter, when the launcher and a programmatic runtime admit calls with and without complete call settings and Captain control calls with restricted tools, the check shall assert that each surface admits `skills` [[tmux-play-5](#tmux-play-5)], [[tmux-play-6](#tmux-play-6)], [[tmux-play-7](#tmux-play-7)], [[tmux-play-29](#tmux-play-29)], the anchored and unchanged defaults, per-role replacement, and both rejections [[tmux-play-226](#tmux-play-226)], the snapshot's absolute entries [[tmux-play-34](#tmux-play-34)], that a malformed supplied `skills` raises `AgentCallSettingsError` before the prompt record, that admitted skill paths are a detached frozen copy, that the runtime-owned `Cligent` carries no `skills` default, and that `Cligent.run()` receives exactly the configured or supplied list and never a merged one [[tmux-play-93](#tmux-play-93)], that a restricted Claude or Gemini Captain control call passes an empty list for a configured and for a supplied list, while a skill-tool-bearing allowlist and a restricted Codex Captain keep theirs [[tmux-play-88](#tmux-play-88)], and that home-config migration adds no `skills` default [[tmux-play-90](#tmux-play-90)].
 
 ## References
 

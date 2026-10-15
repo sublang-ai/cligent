@@ -155,6 +155,7 @@ When a Kimi run reaches preflight or terminal selection, the adapter shall selec
 | no higher candidate; child spawn or asynchronous process error, nonzero or unexpected-signal close, required `SIGKILL`, or survival through final grace | `KIMI_ACP_ERROR` and error `done` through [[kimi-29](#kimi-29)], overriding every native stop including `cancelled` | spawn/process failure, close observation, or the decision to escalate beyond `SIGTERM` |
 | no higher candidate; the session's advertised thinking values exclude a requested `off` | `KIMI_EFFORT_UNAVAILABLE` and error `done` through [[kimi-38](#kimi-38)]; no thinking change or prompt | thinking-availability check, before cleanup |
 | no higher candidate; another setup or prompt failure | `KIMI_ACP_ERROR` and error `done` through [[kimi-29](#kimi-29)] | operation rejection, before cleanup |
+| no higher candidate; carrier removal fails after child close [[kimi-53](#kimi-53)] | `SKILL_CARRIER_CLEANUP_FAILED` and error `done` through [[skills-4](../skills.md#skills-4)] | removal failure, after child close |
 | valid native stop after a clean close or adapter-owned cleanup `SIGTERM` | the [[kimi-6](#kimi-6)] mapping | clean close observation or immediately before sending cleanup `SIGTERM` |
 
 ### kimi-6
@@ -357,6 +358,37 @@ When a run supplies MCP servers or selects the browser preset, the adapter shall
 
 Where an active ACP prompt supplies a live handler and an ask is not already authorized through [[kimi-43](#kimi-43)], the adapter shall forward its authentic tool identity and detached parsed input plus native content, locations, kind, and offered-option metadata [[approvals-2](../approvals.md#approvals-2)] to the per-call handler [[approvals-1](../approvals.md#approvals-1)], offering `allow_once` only when exactly one native option offers it and mapping host denial to the sole `reject_once` option or cancellation, with bounded lifecycle [[approvals-3](../approvals.md#approvals-3)] and streamed host events [[approvals-4](../approvals.md#approvals-4)], never selecting an always option [[approvals-6](../approvals.md#approvals-6)].
 
+### Skills
+
+### kimi-49
+
+When a run supplies skills, the adapter shall deliver the prepared list [[skills-2](../skills.md#skills-2)] through the project root the native runtime scans and select this matrix before browser preparation [[kimi-43](#kimi-43)] and spawning per [DR-036](../../decisions/036-cross-agent-skill-installation.md), [[20]], [[21]], and [[23]]:
+
+| State or entry | Outcome |
+| --- | --- |
+| project root | the nearest ancestor of the absolute effective cwd, itself included, holding a `.git` entry of any type, otherwise that cwd |
+| project root equal to the operating-system home, or whose `.kimi-code` directory resolves to the Kimi home (`KIMI_CODE_HOME`, otherwise `~/.kimi-code`) | reject, naming `skills` and the project root, because the carrier would become a user-level skill directory |
+| carrier root | `<project root>/.kimi-code/skills/cligent-<host>-<pid>-<suffix>`, shared by every run of this process under that project root and held by each of its active Kimi runs with skills there, with `<host>` the operating-system host name with each character outside ASCII letters, digits, and `-` replaced by `-`, `<pid>` the decimal process identifier, and `<suffix>` a random 20-lowercase-hex-character value chosen once per process, created with its missing parents on first use, a run starting while that root's removal is in flight waiting for it |
+| stale carrier | an entry whose name parses from the right as `cligent-<host>-<pid>-<suffix>` with this host's segment and a process identifier the operating system reports as not running on this host, or this process's identifier with another suffix, removed before materializing; one that disappears concurrently or whose removal fails is left without failing the run |
+| entry | the skill materialized under [[skills-3](../skills.md#skills-3)] by a run supplying it while no entry of that name is present, its resolved source directory recorded in the process; reused by a later run of the process supplying the same resolved directory while the entry is present, after any in-flight rename; rejected, naming both paths, for a run supplying another directory under a present name, a present entry with no recorded source, or an in-flight materialization that fails |
+| listed name | `<name>`, as a project skill [[23]], confirmed by [[kimi-50](#kimi-50)] |
+| session operations | unchanged [[kimi-4](#kimi-4)] |
+| caller abort during preparation | one interrupted `done` with [[kimi-12](#kimi-12)]'s resume selection and no child spawn, as [[kimi-39](#kimi-39)] selects for attachments |
+
+### kimi-50
+
+Where a run supplies skills [[kimi-49](#kimi-49)], when session setup [[kimi-4](#kimi-4)] completes, the adapter shall take the session's first `available_commands_update` retained by [[kimi-27](#kimi-27)], waiting up to five seconds from setup completion for it, before continuing the run sequence [[kimi-16](#kimi-16)], and select this outcome per [[22]]:
+
+| Observation | Outcome |
+| --- | --- |
+| every run skill listed as `skill:<name>` with its frontmatter `description` | continue the run sequence |
+| a run skill absent, or listed with another description, or the bound elapsing first, including for a resumed session whose list the runtime rebuilt from its creation working directory | setup failure selected by [[kimi-33](#kimi-33)] as another setup failure, naming each missing or shadowed skill and the carrier root, with no prompt |
+| caller abort while waiting | interrupted terminal through [[kimi-33](#kimi-33)] |
+
+### kimi-53
+
+When a run with skills [[kimi-49](#kimi-49)] ends, after its child has exited or before spawning, the adapter shall release its hold on the carrier root and, once no other Kimi run with skills of the process holds it, remove that root with every entry in it and each parent the process created under that project root while empty, through the shared carrier removal [[skills-4](../skills.md#skills-4)].
+
 ## Internal Behavior
 
 ### Protocol Dependency
@@ -378,8 +410,10 @@ When ACP bytes and messages cross the adapter-owned wire boundary, it shall vali
 | inbound value not a JSON-RPC 2.0 object; invalid request, notification, response, error, or id shape; response id not pending | protocol failure |
 | handled initialize, session, configuration, prompt, update, or permission payload missing or invalid in a consumed field, including a `thinking` select's values once [[kimi-38](#kimi-38)] reads them and a supplied image-capability boolean or its containing objects from [[kimi-40](#kimi-40)] | protocol failure |
 | valid object with unknown fields, or `session/update` with an unhandled non-empty case | admit the unknown fields without treating them as malformed; drop an unhandled update before the SDK |
+| `session/update` whose `sessionUpdate` is `available_commands_update`, for a run with skills after its session setup request is sent and until [[kimi-50](#kimi-50)] settles | consume `availableCommands` as an array of objects whose `name` and `description` are strings, admitting other fields; hold one arriving before the setup response until that response, then retain for [[kimi-50](#kimi-50)] the first whose `sessionId` equals the identifier setup selected, any other `sessionId` being a protocol failure |
+| `session/update` whose `sessionUpdate` is `available_commands_update` at any other time | drop it as an unhandled update |
 | malformed optional prompt usage with otherwise valid stop reason | treat usage as absent without changing the terminal status |
-| handled update before a backend session, handled update for another session, or permission request outside the active prompt/session | protocol failure without exposing its private update or request payload as a unified event |
+| handled update before a backend session other than an `available_commands_update` the row above holds, handled update for another session, or permission request outside the active prompt/session | protocol failure without exposing its private update or request payload as a unified event |
 
 ### Session Identity
 
@@ -586,6 +620,14 @@ Given authentic accounting is sought across successful, interrupted, max-turn, r
 
 When a real adapter and ACP peer exchange permission reverse requests, integration checks shall verify that the native tool remains pending until the host answers, exact offered once-only decisions, denial, abort, teardown, timeout and callback failure, with caller-admitted MCP grants unchanged [[kimi-47](#kimi-47)].
 
+### kimi-51
+
+Where a scripted ACP peer and a real git worktree are used, when runs supply skill fixtures with a cwd below the git root, a cwd outside any repository, a home project root, a `.kimi-code` resolving to the Kimi home, two concurrent runs sharing and then disputing a skill name, a later run disputing a present entry, a stale carrier of a dead process beside one of this process with another suffix, a live same-host one, and a foreign-host one, a stale carrier whose removal fails, a forced carrier removal failure after child close, a pre-existing same-named `.kimi-code/skills` entry, cancellation before spawn, an `available_commands_update` arriving before and after setup completes, one listing every skill, one listing a run skill with another description, one omitting a skill, none within the bound, a malformed one while retained and one outside that window, a resumed session whose list omits the run skill, and caller abort while waiting, the integration check shall verify the project-root selection and the home, Kimi-home, and disputed-name rejections, carrier layout, sharing, and names, the stale-carrier sweep leaving the live same-host and foreign-host entries and tolerating the failed removal, preservation of pre-existing entries, and the interrupted terminal [[kimi-49](#kimi-49)], the retained, protocol-failing, and dropped update shapes [[kimi-27](#kimi-27)], every wait outcome [[kimi-50](#kimi-50)], the cleanup-failure terminal [[kimi-33](#kimi-33)], and removal of the shared root, its entries, and created parents only after the last holding Kimi run with skills, a skill-free Kimi run notwithstanding, and after cancellation [[kimi-53](#kimi-53)].
+
+### kimi-52
+
+Where [[kimi-219](#kimi-219)]'s credential, retry, and skip preconditions hold, when a run supplies a fixture skill whose body directs a unique token reply and the prompt names the skill, the acceptance check shall verify against the real runtime that the command list names `skill:<name>` [[kimi-50](#kimi-50)], that the reply carries the token [[kimi-49](#kimi-49)], and that the carrier is gone after `done` [[kimi-53](#kimi-53)].
+
 ## References
 
 [1]: https://github.com/MoonshotAI/kimi-code "MoonshotAI Kimi Code"
@@ -608,3 +650,7 @@ When a real adapter and ACP peer exchange permission reverse requests, integrati
 
 [18]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/mcpCore/tool-naming.ts "Kimi 2.1.1 qualified MCP tool names"
 [19]: https://agentclientprotocol.com/protocol/session-setup "ACP per-session MCP stdio and HTTP server inputs"
+[20]: https://www.kimi.com/code/docs/en/kimi-code-cli/customization/skills "Kimi Code Agent Skills and their discovery roots"
+[21]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/features/skill/catalog/skillRoots.ts "Kimi Code 2.1.1 project skill roots under the nearest .git ancestor"
+[22]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/acp-server/src/slash.ts "Kimi Code 2.1.1 ACP skill commands under the skill: prefix"
+[23]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/features/skill/catalog/fileSkillDiscovery.ts "Kimi Code 2.1.1 skill registration order within a root"

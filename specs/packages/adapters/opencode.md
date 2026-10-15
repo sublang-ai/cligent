@@ -318,6 +318,7 @@ the adapter shall select this phase-specific outcome:
 | --- | --- |
 | already aborted before SDK loading | start no SDK or backend work; yield [[engine-73](../engine.md#engine-73)] `done` with `status: 'interrupted'`; send no child signal |
 | pending SDK loading | preempt the wait; start no managed child, client, session, or prompt work; yield the interrupted `done`; send no child signal |
+| skill preparation before managed spawn | stop preparation; start no managed child, client, session, or prompt work; yield the interrupted `done`; send no child signal |
 | managed readiness after child spawn | abort the run-owned readiness signal and preempt the wait even when it does not settle; start no client, session, or prompt work; yield the interrupted `done`; only afterwards send `SIGTERM` and complete [[opencode-36](#opencode-36)]'s bounded teardown |
 | client, session, prompt, or stream work already active | preempt the active operation or wait; yield the interrupted `done`; only afterwards send `SIGTERM` and complete bounded teardown |
 
@@ -570,6 +571,35 @@ When a live stream exposes `question.asked` or `question.v2.asked`, the adapter 
 | confirmed rejection                                                                                                                                                         | allow the native tool result and ordinary native settlement to establish the outcome; no synthesized successful answer                                                                                                                       |
 | proved-current request with missing request ID, malformed supplied tool message/call identity, or unavailable, malformed, failed, or unconfirmed registry/rejection route                                                     | cancel native I/O, attempt bounded active-session abort, and emit `OPENCODE_QUESTION_REPLY_FAILED` followed by one error terminal, unless caller cancellation requires interruption [[opencode-9](#opencode-9)]                               |
 | lookup and rejection waiting                                                                                                                                                | share one five-second provider-operation budget and the invocation's cancellation signal, with failure cleanup before terminal output                                                                                                         |
+
+### Skills
+
+### opencode-67
+
+When a run supplies skills, the adapter shall deliver the prepared list [[skills-2](../skills.md#skills-2)] only into its managed child server and select this matrix before managed spawn per [DR-036](../../decisions/036-cross-agent-skill-installation.md), [[23]], [[24]], [[25]], [[26]], and [[27]]:
+
+| State or entry | Outcome |
+| --- | --- |
+| external-server mode with a non-empty list | reject before browser preparation because the server's configuration and skill discovery cache are fixed outside the run |
+| carrier root | a new private temporary directory materialized under [[skills-3](../skills.md#skills-3)] |
+| child environment | the parent environment with `OPENCODE_CONFIG_CONTENT` set to the JSON deep merge of the caller's `OPENCODE_CONFIG_CONTENT`, an empty value treated as absent and any other parsed as JSONC into an object, where present, and `{ "skills": { "paths": [<carrier root>/<name>, …] } }`, a caller `skills` array first lowered as the runtime lowers it, HTTP entries to `skills.urls` and the rest to `skills.paths`, and the caller's own `skills.paths` entries kept ahead of the run's; a non-empty caller value whose parse is not an object is a setup failure before spawn naming that variable |
+| configured `skills.paths` in the user's or project's configuration files | replaced for the run, because inline configuration replaces arrays [[25]] |
+| listed name | `<name>`; a same-named skill the server discovers elsewhere wins or loses nondeterministically [[26]], which [[opencode-69](#opencode-69)] detects |
+| `skill` permission | unchanged, because [[opencode-7](#opencode-7)] emits no rule for it, so the native default allow applies [[27]] and a user `permission.skill` rule retains native authority |
+
+### opencode-69
+
+Where a managed run supplies skills [[opencode-67](#opencode-67)], when the server reports readiness, the adapter shall list the server's skills for the effective directory [[28]] before session creation and select this outcome:
+
+| Listing | Outcome |
+| --- | --- |
+| every run skill listed with `location` `<carrier root>/<name>/SKILL.md` | continue to session creation |
+| a run skill missing or listed at another location | setup failure before session or prompt work, naming each missing or displaced skill, never silently proceeding |
+| listing request rejected, malformed, or unsettled within five seconds | setup failure before session or prompt work, naming the listing failure |
+
+### opencode-71
+
+When a run with skills [[opencode-67](#opencode-67)] ends, the adapter shall remove the carrier root through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after [[opencode-36](#opencode-36)]'s teardown completes where the server was spawned, and otherwise before its terminal or rejection leaves the adapter.
 
 ## Internal Behavior
 
@@ -1100,6 +1130,14 @@ When an adapter invocation encounters native structured questions through instal
 | legacy and v2 event/registry routes                                                  | exact SDK request path, scope, request identity, and response interpretation                                                  |
 | missing or malformed route, failed lookup/rejection, timeout, or caller cancellation | bounded failure or interruption, native I/O cancellation, one terminal, and no claim of successful rejection                  |
 
+### opencode-68
+
+When the installed SDK and a recording `opencode serve` fixture receive skill fixtures across managed and external modes, a caller `OPENCODE_CONFIG_CONTENT` with and without `skills.paths`, in array form, and one that is not an object, a server listing every skill, one displacing a skill by location, one omitting a skill, a listing request that rejects, one returning a malformed body, and one unsettled past five seconds, and cancellation during preparation, the integration check shall verify the exact merged environment value, carrier layout, the external-mode rejection, the pre-spawn setup failure, and no generated `skill` permission rule [[opencode-67](#opencode-67)], no child, client, session, or prompt work and no child signal on cancellation during skill preparation [[opencode-9](#opencode-9)], every listing outcome before session creation, including rejected, malformed, and timed-out listings [[opencode-69](#opencode-69)], and carrier removal after teardown and after cancellation [[opencode-71](#opencode-71)].
+
+### opencode-70
+
+Where [[opencode-219](#opencode-219)]'s credential, retry, and skip preconditions hold in managed mode, when a run supplies a fixture skill whose body directs a unique token reply and the prompt names the skill, the acceptance check shall verify against the real server that its skill list carries the skill at the carrier location [[opencode-69](#opencode-69)], that the reply carries the token [[opencode-67](#opencode-67)], and that the carrier root is gone once the event stream completes [[opencode-71](#opencode-71)].
+
 ## References
 
 [1]: https://opencode.ai/docs/models/ 'OpenCode model configuration'
@@ -1124,3 +1162,9 @@ When an adapter invocation encounters native structured questions through instal
 [21]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/mcp/index.ts "OpenCode 1.18.33 dynamic MCP registration and connection status"
 
 [22]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/id/id.ts 'OpenCode 1.18.33 native ascending identifiers'
+[23]: https://opencode.ai/docs/skills/ 'OpenCode Agent Skills and the skill permission'
+[24]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/skill/index.ts#L211 'OpenCode 1.18.33 configured skill paths and duplicate-name loading'
+[25]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/config/config.ts#L40-L52 'OpenCode 1.18.33 array-replacing configuration merge, OPENCODE_CONFIG_CONTENT included'
+[26]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/skill/index.ts#L105-L139 'OpenCode 1.18.33 concurrent skill loading and duplicate names'
+[27]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/agent/agent.ts 'OpenCode 1.18.33 default agent permission ruleset'
+[28]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/sdk/js/src/v2/gen/sdk.gen.ts 'OpenCode 1.18.33 SDK app.skills listing'

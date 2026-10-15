@@ -61,6 +61,7 @@ meta.md       The spec of specs
 | [DR-033](decisions/033-host-capabilities-and-browser-readiness.md) | 033-host-capabilities-and-browser-readiness.md | Contextual host capability facts, browser launch proof, and Electron child invocation |
 | [DR-034](decisions/034-live-host-tool-approvals.md) | 034-live-host-tool-approvals.md | Per-invocation native tool approval handlers, bounded lifecycle and honest transport capabilities |
 | [DR-035](decisions/035-deterministic-claude-session-title.md) | 035-deterministic-claude-session-title.md | Deterministic fresh Claude native titles using the existing session UUID, preserving resumed titles |
+| [DR-036](decisions/036-cross-agent-skill-installation.md) | 036-cross-agent-skill-installation.md | Shared `skills` option, portable validation, run-scoped snapshot carriers per runtime, opened invocation |
 
 ## Packages
 
@@ -83,4 +84,5 @@ meta.md       The spec of specs
 | [opencode.md](packages/adapters/opencode.md) | OpenCode SDK and server adapter |
 | [package.md](packages/package.md) | Distributable package configuration |
 | [release.md](packages/release.md) | Versioning and release workflow |
+| [skills.md](packages/skills.md) | Caller-supplied skills, validation, snapshot, removal, and transport discovery |
 | [tmux-play.md](packages/tmux-play.md) | tmux-play multi-agent application |

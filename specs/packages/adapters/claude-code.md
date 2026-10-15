@@ -190,7 +190,7 @@ When `run(prompt, options)` invokes the SDK query, the adapter shall select its 
 
 ### claude-code-73
 
-When attachment or MCP preparation is cancelled through the caller's `abortSignal`, the adapter shall yield exactly one terminal `done` with `status: 'interrupted'`, no result or token counts, `usage.toolUses: 0`, elapsed preparation duration, and the inbound non-empty resume token when present, without invoking the SDK [[engine-73](../engine.md#engine-73)].
+When attachment, MCP, or skill preparation is cancelled through the caller's `abortSignal`, the adapter shall yield exactly one terminal `done` with `status: 'interrupted'`, no result or token counts, `usage.toolUses: 0`, elapsed preparation duration, and the inbound non-empty resume token when present, without invoking the SDK [[engine-73](../engine.md#engine-73)].
 
 ### claude-code-6
 
@@ -214,9 +214,9 @@ When the adapter maps `AgentOptions.allowedTools` under the portable tool restri
 
 | `allowedTools` input | SDK controls |
 | --- | --- |
-| omitted | leave `tools`, `allowedTools`, and `settingSources` `undefined`, preserving native tool and settings behavior |
+| omitted | leave `tools` and `settingSources` `undefined`, and `allowedTools` `undefined` unless [[claude-code-74](#claude-code-74)] or [[claude-code-85](#claude-code-85)] appends grants, preserving native tool and settings behavior |
 | empty | `tools: []`, `allowedTools: []`, and `settingSources: []` |
-| non-empty | copy the list to `tools`, pass it to `allowedTools`, and leave `settingSources` `undefined` |
+| non-empty | copy the list to `tools`, pass it to `allowedTools` followed by any [[claude-code-85](#claude-code-85)] grants, and leave `settingSources` `undefined` |
 
 ### claude-code-70
 
@@ -491,6 +491,36 @@ Where a call supplies a live host approval handler [[approvals-1](../approvals.m
 ### claude-code-79
 
 When Claude requests `AskUserQuestion` through the permission callback, the adapter shall deny the unsupported structured interaction [[approvals-6](../approvals.md#approvals-6)] without consulting the boolean tool approval handler or synthesizing answers.
+
+### Skills
+
+### claude-code-85
+
+When a run supplies skills, the adapter shall deliver the prepared list [[skills-2](../skills.md#skills-2)] through a run-private local plugin and select this matrix before SDK loading per [DR-036](../../decisions/036-cross-agent-skill-installation.md), [[12]], and [[13]]:
+
+| State or input | Outcome |
+| --- | --- |
+| empty `allowedTools`, a non-empty `allowedTools` without `Skill`, or a `disallowedTools` naming `Skill` | reject before browser preparation or SDK loading, naming `skills` and the conflicting tool option and stating that the `Skill` tool must stay available [[14]], because an explicit restriction is never weakened [[engine-17](../engine.md#engine-17)] |
+| plugin root | a new private temporary directory holding `.claude-plugin/plugin.json` with content `{"name":"cligent"}`, the manifest name the runtime prefixes to each skill as `cligent:<name>` [[13]], and a `skills` directory materialized under [[skills-3](../skills.md#skills-3)] |
+| SDK `plugins` | exactly one entry `{ type: 'local', path: <plugin root>, skipMcpDiscovery: true }` [[7]], keeping [[claude-code-70](#claude-code-70)]'s confinement |
+| SDK `allowedTools` | the entries [[claude-code-9](#claude-code-9)] and [[claude-code-74](#claude-code-74)] select, followed by one `Skill(cligent:<name>)` entry per skill, pre-approving each run skill so a headless run never waits on a `Skill` permission ask |
+| `settingSources`, `tools`, permission mode, and `canUseTool` | unchanged from [[claude-code-9](#claude-code-9)] and [[claude-code-4](#claude-code-4)] |
+
+> A managed `disableSideloadFlags` makes the runtime reject the plugin flag [[15]], so the run fails through [[claude-code-42](#claude-code-42)].
+
+### claude-code-86
+
+When the first native `system` `init` message of a run with skills [[claude-code-85](#claude-code-85)] arrives, the adapter shall select this readiness outcome after the `init` that [[claude-code-15](#claude-code-15)] emits, per [[12]]:
+
+| Native state | Outcome |
+| --- | --- |
+| `plugins` present without an entry whose `path` resolves to the run's plugin root, or `plugin_errors` holding an entry whose `path` resolves to that root or whose message names it [[7]] | stop consuming the SDK stream and select [[claude-code-42](#claude-code-42)]'s failure with the plugin root, each matching error, and guidance to check the skill directories and native plugin policy |
+| `skills` present without `cligent:<name>` for a run skill | the same failure, naming each missing skill |
+| otherwise | preserve normal stream processing, because omitted evidence does not establish failure |
+
+### claude-code-89
+
+When a run with skills [[claude-code-85](#claude-code-85)] ends, the adapter shall remove the plugin root through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after terminal `done` once the SDK query has settled wherever it was invoked, including the [[claude-code-42](#claude-code-42)] and [[claude-code-48](#claude-code-48)] paths, and otherwise before its terminal or rejection leaves the adapter.
 
 ## Internal Behavior
 
@@ -769,6 +799,14 @@ Where fresh, resumed, and explicitly reset `Cligent` turns run through the insta
 
 Where `Cligent` runs on the adapter through the installed Claude SDK and a recording CLI fixture, with `allowedTools` omitted, empty, and non-empty, each crossed with effort and fast mode omitted and with `ultracode` and fast mode `true`, when each `Cligent` runs a fresh turn and then its resumed turn, integration verification shall assert that every native command line's `--settings` JSON carries `attribution` exactly `{ commit: '', pr: '', sessionUrl: false }` beside the connector gate and the effort and fast-mode keys [[claude-code-83](#claude-code-83)].
 
+### claude-code-87
+
+Where skill fixtures with and without tool-declaring frontmatter are supplied, when `Cligent` runs through the adapter and the installed Claude SDK against a recording CLI fixture across omitted, empty, `Skill`-bearing, and `Skill`-free tool lists, a `Skill` denylist, caller MCP servers, fresh and resumed turns, cancellation during preparation, a managed-settings fixture rejecting the plugin flag, and an initialization reporting the plugin, its absence, a plugin error, and a missing skill name, the integration check shall verify the exact plugin root layout, `plugins` entry, unchanged setting sources, tools, permission mode, and `canUseTool`, every pre-SDK rejection, and the start failure under the managed fixture [[claude-code-85](#claude-code-85)], the `Skill(cligent:<name>)` grants following the MCP grants under an omitted list and following the caller's entries under a `Skill`-bearing list, on fresh and resumed turns [[claude-code-9](#claude-code-9)], the interrupted terminal on cancellation [[claude-code-73](#claude-code-73)], plugin-root removal after normal completion, an SDK failure, a readiness failure, a mid-stream abort, and cancellation during preparation [[claude-code-89](#claude-code-89)], and every readiness outcome [[claude-code-86](#claude-code-86)].
+
+### claude-code-88
+
+Where [[claude-code-219](#claude-code-219)]'s credential, retry, and skip preconditions hold, when a run with no permission policy and no approval handler supplies a fixture skill whose frontmatter sets `allowed-tools` and whose body directs a unique token reply, and the prompt names `cligent:<name>`, the acceptance check shall verify through the real SDK that the initialization lists the plugin and the skill [[claude-code-86](#claude-code-86)], that the reply carries the token without a permission denial [[claude-code-85](#claude-code-85)], and that the plugin root is gone once the event stream completes [[claude-code-89](#claude-code-89)].
+
 ## References
 
 [1]: https://platform.claude.com/docs/en/build-with-claude/effort "Claude effort parameter"
@@ -782,3 +820,7 @@ Where `Cligent` runs on the adapter through the installed Claude SDK and a recor
 [9]: https://code.claude.com/docs/en/sub-agents "Claude Code subagents"
 [10]: https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode "Claude Agent SDK streaming input and image attachments"
 [11]: https://code.claude.com/docs/en/agent-sdk/mcp "Claude Agent SDK explicit MCP servers and scoped tool approvals"
+[12]: https://code.claude.com/docs/en/agent-sdk/plugins "Claude Agent SDK local plugins and initialization evidence"
+[13]: https://code.claude.com/docs/en/skills "Claude Code skills, plugin namespacing, and Skill permissions"
+[14]: https://code.claude.com/docs/en/agent-sdk/claude-code-features "Claude Agent SDK: the Skill tool in an explicit tool list"
+[15]: https://code.claude.com/docs/en/settings-reference "Claude Code managed settings disableSideloadFlags and allowManagedPermissionRulesOnly"
