@@ -48,8 +48,11 @@ import {
 import { normalizeWritablePaths } from '../../permissions.js';
 import {
   KNOWN_PLAYER_ADAPTERS,
+  assertKimiSkillsUndisputed,
   isKnownPlayerAdapter,
+  skillRoles,
   validatePlayerConfigs,
+  validateSkillList,
   type PlayerAdapterName,
   type PlayerConfig,
 } from './players.js';
@@ -69,6 +72,8 @@ interface CaptainConfigBase {
   instruction?: string;
   permissions?: PermissionPolicy;
   browser?: boolean;
+  /** tmux-play-226: skill directories replacing the top-level list. */
+  skills?: readonly string[];
   options: JsonValue;
 }
 
@@ -168,6 +173,12 @@ export interface TmuxPlayConfig {
    * never have to re-resolve.
    */
   layout: LayoutConfig;
+  /**
+   * tmux-play-226: skill directories applied to the Captain and every player
+   * without a `skills` list of its own. The loader resolves each relative
+   * YAML entry, here and on every role, against the config file's directory.
+   */
+  skills?: readonly string[];
 }
 
 export interface LoadedTmuxPlayConfig {
@@ -380,8 +391,14 @@ export async function loadTmuxPlayConfig(
       ? migrateHomeConfigSafeDefaults(loadedDocument.document)
       : false;
   const raw = configDocumentValue(loadedDocument.document, configPath);
-  const config = normalizeTmuxPlayConfig(raw);
+  const config = normalizeTmuxPlayConfig(raw, configPath);
   assertJsonSerializable(config, 'config');
+  // tmux-play-226: Kimi roles share one carrier per project root, so two of
+  // them disputing a skill name fail here rather than on a later turn.
+  await assertKimiSkillsUndisputed(
+    skillRoles(config.skills, config.captain, config.players),
+    cwd,
+  );
   const legacyEffortPaths = legacyEffortTargets(loadedDocument.document).map(
     (target) => target.fieldPath,
   );
@@ -414,6 +431,20 @@ export function createTmuxPlayConfigSnapshot(
 ): TmuxPlayConfig {
   const config = structuredCloneJson(loaded.config);
   config.captain.from = normalizeCaptainFrom(config.captain.from, loaded.path);
+  // tmux-play-34: skill entries are absolute in the snapshot; the loader has
+  // already anchored YAML entries, so this only guards a hand-built config.
+  const configDir = dirname(loaded.path);
+  if (config.skills !== undefined) {
+    config.skills = anchorSkillPaths(config.skills, configDir);
+  }
+  if (config.captain.skills !== undefined) {
+    config.captain.skills = anchorSkillPaths(config.captain.skills, configDir);
+  }
+  for (const player of config.players) {
+    if (player.skills !== undefined) {
+      player.skills = anchorSkillPaths(player.skills, configDir);
+    }
+  }
   if (resolvedFlavor !== undefined) {
     // Snapshot always stores a resolved flavor (mocha | latte) so the
     // session subprocess uses it directly without re-running detection.
@@ -556,7 +587,7 @@ function assertSerializedConfigRoundTrip(
     if (document.errors.length > 0) {
       throw document.errors[0];
     }
-    const actual = normalizeTmuxPlayConfig(document.toJS() as unknown);
+    const actual = normalizeTmuxPlayConfig(document.toJS() as unknown, path);
     assertJsonSerializable(actual, 'config');
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
       throw new Error('serialized migration changed the normalized config');
@@ -577,18 +608,24 @@ const ALLOWED_TOP_LEVEL_KEYS = new Set<string>([
   'theme',
   'layout',
   'notifications',
+  'skills',
 ]);
 
-function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
+function normalizeTmuxPlayConfig(
+  value: unknown,
+  configPath: string,
+): TmuxPlayConfig {
   const input = requireObject(value, 'config');
+  const configDir = dirname(configPath);
   // tmux-play-8: reject unknown top-level fields so a typo like `layoutt:`
   // surfaces at load time instead of being silently ignored and falling
   // through to defaults. The peer scopes (`captain`, `players[i]`, the
   // `layout` block) already enforce this; the root scope was the only
   // gap and is closed here.
   rejectUnknownKeys(input, ALLOWED_TOP_LEVEL_KEYS, 'config');
-  const captain = normalizeCaptainConfig(input.captain);
-  const players = normalizePlayerConfigs(input.players);
+  const captain = normalizeCaptainConfig(input.captain, configDir);
+  const players = normalizePlayerConfigs(input.players, configDir);
+  const skills = optionalSkillPaths(input.skills, 'skills', configDir);
   const theme = optionalThemeFlavor(input.theme, 'theme');
   const notifications = normalizeNotificationConfig(
     input.notifications,
@@ -605,7 +642,32 @@ function normalizeTmuxPlayConfig(value: unknown): TmuxPlayConfig {
   );
   const config: TmuxPlayConfig = { captain, players, notifications, layout };
   if (theme !== undefined) config.theme = theme;
+  if (skills !== undefined) config.skills = skills;
   return config;
+}
+
+/**
+ * tmux-play-226: validate a YAML `skills` list and anchor each relative entry
+ * at the config file's directory, as tmux-play-13 anchors `captain.from`.
+ */
+function optionalSkillPaths(
+  value: unknown,
+  path: string,
+  configDir: string,
+): string[] | undefined {
+  const entries = validateSkillList(value, path);
+  return entries === undefined
+    ? undefined
+    : anchorSkillPaths(entries, configDir);
+}
+
+function anchorSkillPaths(
+  entries: readonly string[],
+  configDir: string,
+): string[] {
+  return entries.map((entry) =>
+    isAbsolute(entry) ? entry : resolve(configDir, entry),
+  );
 }
 
 const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
@@ -1190,7 +1252,10 @@ function optionalThemeFlavor(
   return value as CatppuccinFlavorConfig;
 }
 
-function normalizeCaptainConfig(value: unknown): CaptainConfig {
+function normalizeCaptainConfig(
+  value: unknown,
+  configDir: string,
+): CaptainConfig {
   const input = requireObject(value, 'captain');
   const allowed = new Set([
     'from',
@@ -1199,6 +1264,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
     'instruction',
     'permissions',
     'browser',
+    'skills',
     'effort',
     'fastMode',
     'subagentModel',
@@ -1213,6 +1279,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   const model = optionalString(input.model, 'captain.model');
   const instruction = optionalString(input.instruction, 'captain.instruction');
   const browser = optionalBrowser(input, 'captain');
+  const skills = optionalSkillPaths(input.skills, 'captain.skills', configDir);
   const permissions = optionalPermissionPolicy(
     input.permissions,
     'captain.permissions',
@@ -1226,6 +1293,7 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   if (instruction !== undefined) common.instruction = instruction;
   if (permissions !== undefined) common.permissions = permissions;
   if (browser !== undefined) common.browser = browser;
+  if (skills !== undefined) common.skills = skills;
   const configuredEffort = configuredEffortValue(input, 'captain');
   const effort = optionalEffort(
     configuredEffort.value,
@@ -1253,17 +1321,26 @@ function normalizeCaptainConfig(value: unknown): CaptainConfig {
   } as CaptainConfig;
 }
 
-function normalizePlayerConfigs(value: unknown): PlayerConfig[] {
+function normalizePlayerConfigs(
+  value: unknown,
+  configDir: string,
+): PlayerConfig[] {
   if (!Array.isArray(value)) {
     throw new Error('players must be an array');
   }
 
-  const players = value.map((entry, index) => normalizePlayerConfig(entry, index));
+  const players = value.map((entry, index) =>
+    normalizePlayerConfig(entry, index, configDir),
+  );
   validatePlayerConfigs(players);
   return players;
 }
 
-function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
+function normalizePlayerConfig(
+  value: unknown,
+  index: number,
+  configDir: string,
+): PlayerConfig {
   const path = `players[${index}]`;
   const input = requireObject(value, path);
   const allowed = new Set([
@@ -1273,6 +1350,7 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     'instruction',
     'permissions',
     'browser',
+    'skills',
     'effort',
     'fastMode',
     'subagentModel',
@@ -1286,6 +1364,7 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
   const model = optionalString(input.model, `${path}.model`);
   const instruction = optionalString(input.instruction, `${path}.instruction`);
   const browser = optionalBrowser(input, path);
+  const skills = optionalSkillPaths(input.skills, `${path}.skills`, configDir);
   const permissions = optionalPermissionPolicy(
     input.permissions,
     `${path}.permissions`,
@@ -1296,6 +1375,7 @@ function normalizePlayerConfig(value: unknown, index: number): PlayerConfig {
     ...(instruction === undefined ? {} : { instruction }),
     ...(permissions === undefined ? {} : { permissions }),
     ...(browser === undefined ? {} : { browser }),
+    ...(skills === undefined ? {} : { skills }),
   };
   const configuredEffort = configuredEffortValue(input, path);
   const effort = optionalEffort(

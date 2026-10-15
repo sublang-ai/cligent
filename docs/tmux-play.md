@@ -64,8 +64,8 @@ When an older home config is loaded through fallback discovery, `tmux-play`
 adds only missing safe defaults to that home YAML: `theme: auto`, resolved
 layout defaults, `captain.options: {}`, and the notification defaults shown
 below. It preserves existing values and does not add model, instruction,
-permissions, `fastMode`, `subagentModel`, `subagentEffort`, or an `effort`
-default to old files.
+permissions, `fastMode`, `subagentModel`, `subagentEffort`, `skills`, or an
+`effort` default to old files.
 
 Legacy cwd configs named `tmux-play.config.mjs`, `tmux-play.config.js`, or
 `tmux-play.config.json` are ignored; when one is present without a cwd YAML
@@ -137,6 +137,7 @@ Remove the blocks to fall back to each adapter's SDK default; cligent itself shi
 - Adapters: `claude`, `codex`, `gemini`, `kimi`, `opencode`.
 - Player IDs match `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$`, are unique, and may not be `captain`. Dot-delimited IDs such as `dev.coder` provide namespacing. Multiple players may share an adapter or model; `players: []` selects the Boss/Captain-only form.
 - `subagentModel` and `subagentEffort` are accepted only on `claude` Captain and player entries; see [Subagent model and effort](#subagent-model-and-effort).
+- `skills` is accepted at the top level and on the Captain and each player; see [Skills](#skills).
 - `captain.from` is a local path (`./captains/router.mjs`) or a package subpath. The runtime owns every `Cligent`; the Captain just orchestrates.
 - `captain.options` is opaque to the runtime and forwarded to the factory. The built-in `fanout` captain accepts no options — YAML keys under `captain.options` are forwarded but inert. Each player's full `finalText` is included in the summary prompt verbatim; the Captain instruction ("do not copy raw player logs wholesale") is the soft check, and cligent imposes no hard cap on player output length. Workloads that need a cap should wrap the fanout captain or write a custom one.
 
@@ -381,6 +382,60 @@ auto_review` with user config ignored for that managed run, gemini
   grants. Any permission request that reaches the headless ACP client is
   surfaced as an event and rejected.
 
+### Skills
+
+The optional top-level `skills` list names [Agent Skills](https://agentskills.io/specification)
+directories, or the `SKILL.md` file each holds, that the Captain and every
+player receive on each call. A role's own `skills` replaces the top-level list
+for that role, and `skills: []` gives the role none.
+
+```yaml
+skills:
+  - ./skills/review # relative to this config file
+captain:
+  from: '@sublang/cligent/captains/fanout'
+  adapter: claude
+  options: {}
+players:
+  - id: claude
+    adapter: claude # inherits ./skills/review
+  - id: codex
+    adapter: codex
+    skills:
+      - ./skills/review
+      - /opt/team-skills/release/SKILL.md
+  - id: kimi
+    adapter: kimi
+    skills: [] # no skills for this role
+```
+
+- The loader resolves each relative entry against the config file's
+  directory, as it does a local `captain.from`; absolute entries stay as
+  written, and the snapshot stores every entry as an absolute path.
+- Each list must be an array of non-blank strings without NUL; anything else
+  fails loading with the `skills`, `captain.skills`, or `players[i].skills`
+  path.
+- Each call's adapter validates the skills and makes them available for that
+  run, removing its copy afterwards; Codex keeps that copy in the Codex home
+  plugin cache while the run lasts, and Kimi removes it only when the process's
+  last Kimi run with skills ends. `SKILL_SUPPORT` from `@sublang/cligent`
+  describes each adapter's carrier and its limits.
+- Kimi carries a run's skills in the project's `.kimi-code/skills`, shared by
+  every Kimi role of the session, so each Kimi role sees the other Kimi roles'
+  skills while their runs overlap, and two Kimi roles may not map one skill
+  name to different directories: loading fails naming both entries. Entries
+  naming the same directory, through a link or its `SKILL.md`, do not
+  conflict.
+- Claude and Gemini need their skill tool, `Skill` or `activate_skill`, in any
+  explicit tool list. A Captain control call whose `allowedTools` leaves that
+  tool out runs without skills rather than failing.
+- The generated and migrated home configs never add `skills`.
+- `createTmuxPlayRuntime` from `@sublang/cligent/tmux-play` accepts the same
+  top-level `skills` and role `skills`, with the same validation and Kimi
+  check; there a relative entry passes unchanged and resolves against the
+  runtime's `cwd`. The factory copies each list when it is called, so
+  changing those arrays afterwards changes no role's skills.
+
 ## Layout
 
 Boss/Captain occupies the left pane; the visible players fill the right in
@@ -441,8 +496,8 @@ The launcher validates the config and writes
 `os.tmpdir()`, then re-execs itself in session mode with `--work-dir` set.
 Local `captain.from` paths are rewritten to absolute `file://` URLs
 relative to the original config file; package specifiers pass through
-unchanged. The session reads the snapshot, so YAML is not re-parsed inside
-tmux.
+unchanged. `skills` entries are stored as absolute paths. The session reads
+the snapshot, so YAML is not re-parsed inside tmux.
 
 ## Custom Captains
 
@@ -506,14 +561,15 @@ await context.callPlayer('dev.coder', prompt, {
 
 Player IDs may use dot-delimited namespaces such as `dev.coder` and
 `dev.reviewer`. When `settings` is omitted, tmux-play supplies the YAML model,
-effort, fast mode, subagent model and effort, instruction, and permissions as
-runtime-held call defaults. A supplied `settings` object is the entire effective
-call configuration: omitted `fastMode` or `subagentModel` restores
-provider-default selection and omitted `subagentEffort` leaves the effort to the
-agent, rather than merging the YAML value; `subagentModel` and
+effort, fast mode, subagent model and effort, skills, instruction, and
+permissions as runtime-held call defaults. A supplied `settings` object is the
+entire effective call configuration: omitted `fastMode` or `subagentModel`
+restores provider-default selection and omitted `subagentEffort` leaves the
+effort to the agent, rather than merging the YAML value; `subagentModel` and
 `subagentEffort` are accepted only for a Claude role, and `subagentEffort` only
-beside `subagentModel`; omitted `instruction` and `permissions` mean none, and
-neither is merged with YAML defaults. Each `model` and `effort` selector is either a
+beside `subagentModel`; a supplied `skills` array of non-blank strings without
+NUL replaces the role's list for that call; omitted `skills`, `instruction`,
+and `permissions` mean none, and none is merged with YAML defaults. Each `model` and `effort` selector is either a
 concrete value or `provider-default`; the latter omits that option so Codex or
 Gemini chooses its current default even on a resumed call. Claude and OpenCode
 support provider defaults on fresh calls and can use default effort beside a

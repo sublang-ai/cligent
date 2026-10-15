@@ -1,7 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import type { Cligent } from '../../cligent.js';
 import { createEvent } from '../../events.js';
 import { isPermissionPolicyReset } from '../../internal/permission-reset.js';
 import type { AgentAdapter, AgentEvent, AgentOptions } from '../../types.js';
@@ -4404,6 +4414,452 @@ describe('runtime resume rejection results', () => {
           .filter((record) => record.type === 'captain_finished')
           .map((record) => record.visibility),
       ).toEqual(['visible', 'hidden']);
+    },
+  );
+});
+
+// tmux-play-227: programmatic skill lists, their per-role defaults and
+// rejections, call-settings admission, and Captain control-call mapping.
+describe('runtime skills', () => {
+  const providerDefaults = {
+    model: { kind: 'provider-default' as const },
+    effort: { kind: 'provider-default' as const },
+  };
+
+  interface CapturedRun {
+    readonly agent: string;
+    readonly prompt: string;
+    readonly options?: AgentOptions;
+  }
+
+  function recordingImports(captured: CapturedRun[]): PlayerAdapterImports {
+    const script = (agent: string): { agent: string; run: RunScript } => ({
+      agent,
+      async *run(prompt, options) {
+        captured.push({ agent, prompt, options });
+        yield doneEvent(agent, 'done');
+      },
+    });
+    return adapterImports({
+      claude: script('claude-code'),
+      codex: script('codex'),
+      gemini: script('gemini'),
+      kimi: script('kimi'),
+      opencode: script('opencode'),
+    });
+  }
+
+  function writeSkill(directory: string): void {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(
+      join(directory, 'SKILL.md'),
+      '---\nname: review\ndescription: Review changes.\n---\n',
+    );
+  }
+
+  it('applies the top-level list to every role without its own and passes entries unchanged', async () => {
+    const captured: CapturedRun[] = [];
+    const cwd = mkdtempSync(join(tmpdir(), 'tmux-play-skills-'));
+    const shared = ['skills/shared', '/library/audit'];
+    try {
+      const runtime = await createTmuxPlayRuntime({
+        captain: {
+          async handleBossTurn(_turn, context) {
+            for (const player of context.players) {
+              await context.callPlayer(player.id, player.id);
+            }
+            await context.callCaptain('captain');
+          },
+        },
+        captainConfig: { adapter: 'gemini' },
+        players: [
+          { id: 'claude', adapter: 'claude' },
+          { id: 'codex', adapter: 'codex', skills: [] },
+          { id: 'gemini', adapter: 'gemini', skills: ['gemini/review'] },
+          { id: 'kimi', adapter: 'kimi' },
+          { id: 'opencode', adapter: 'opencode', skills: ['/library/audit'] },
+        ],
+        skills: shared,
+        cwd,
+        adapterImports: recordingImports(captured),
+      });
+      try {
+        await runtime.runBossTurn('fan out');
+      } finally {
+        await runtime.dispose();
+      }
+      expect(
+        captured.map(({ agent, options }) => [agent, options?.skills]),
+      ).toEqual([
+        ['claude-code', shared],
+        ['codex', []],
+        ['gemini', ['gemini/review']],
+        ['kimi', shared],
+        ['opencode', ['/library/audit']],
+        ['gemini', shared],
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('passes exactly the configured or supplied list as a detached frozen copy', async () => {
+    const captured: CapturedRun[] = [];
+    const supplied = ['supplied/one', 'supplied/two'];
+    const playerSkills = ['player/configured'];
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          await context.callPlayer('worker', 'configured');
+          await context.callPlayer('worker', 'supplied', {
+            settings: { ...providerDefaults, skills: supplied },
+          });
+          await context.callPlayer('worker', 'omitted', {
+            settings: providerDefaults,
+          });
+          await context.callPlayer('worker', 'configured again');
+          await context.callCaptain('captain configured');
+          await context.callCaptain('captain supplied', {
+            settings: { ...providerDefaults, skills: ['captain/supplied'] },
+          });
+        },
+      },
+      captainConfig: { adapter: 'claude', skills: ['captain/configured'] },
+      players: [{ id: 'worker', adapter: 'codex', skills: playerSkills }],
+      skills: ['top/level'],
+      adapterImports: recordingImports(captured),
+      observers: [
+        {
+          onRecord(record) {
+            if (
+              record.type === 'player_prompt' &&
+              record.prompt === 'supplied'
+            ) {
+              supplied[0] = 'mutated';
+              supplied.push('appended');
+            }
+          },
+        },
+      ],
+    });
+    playerSkills.push('appended after creation');
+    try {
+      await runtime.runBossTurn('settle');
+      // Never merged: a supplied list replaces the configured and top-level
+      // lists, and omission selects none.
+      expect(
+        captured.map(({ prompt, options }) => [prompt, options?.skills]),
+      ).toEqual([
+        ['configured', ['player/configured']],
+        ['supplied', ['supplied/one', 'supplied/two']],
+        ['omitted', []],
+        ['configured again', ['player/configured']],
+        ['captain configured', ['captain/configured']],
+        ['captain supplied', ['captain/supplied']],
+      ]);
+      for (const { options } of captured) {
+        expect(Object.isFrozen(options?.skills)).toBe(true);
+      }
+      expect(captured[1]?.options?.skills).not.toBe(supplied);
+
+      // The runtime-owned Cligent instances carry no skills default: a run
+      // with no per-call list reaches the adapter without one.
+      const runtimeOwned = [
+        Reflect.get(runtime, 'captainCligent') as Cligent,
+        (
+          Reflect.get(runtime, 'playersById') as ReadonlyMap<
+            string,
+            { cligent: Cligent }
+          >
+        ).get('worker')!.cligent,
+      ];
+      for (const cligent of runtimeOwned) {
+        for await (const event of cligent.run('direct')) {
+          void event;
+        }
+      }
+      expect(captured.slice(-2).map(({ options }) => options?.skills)).toEqual([
+        undefined,
+        undefined,
+      ]);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  // tmux-play-226: the factory copies every list before its first await, so
+  // mutating the caller's arrays while it settles changes neither the Kimi
+  // check nor any role's list.
+  it('holds the lists admitted at the factory call however the caller later mutates its arrays', async () => {
+    const captured: CapturedRun[] = [];
+    const cwd = mkdtempSync(join(tmpdir(), 'tmux-play-skills-'));
+    writeSkill(join(cwd, 'first', 'review'));
+    writeSkill(join(cwd, 'second', 'review'));
+    const top = ['top/level'];
+    const captainList = ['first/review'];
+    const playerList = ['first/review'];
+    try {
+      const pending = createTmuxPlayRuntime({
+        captain: {
+          async handleBossTurn(_turn, context) {
+            await context.callPlayer('worker', 'own');
+            await context.callPlayer('inheritor', 'inherited');
+            await context.callCaptain('captain');
+          },
+        },
+        captainConfig: { adapter: 'kimi', skills: captainList },
+        players: [
+          { id: 'worker', adapter: 'kimi', skills: playerList },
+          { id: 'inheritor', adapter: 'codex' },
+        ],
+        skills: top,
+        cwd,
+        adapterImports: recordingImports(captured),
+      });
+      // While the factory settles: a player entry that would now dispute the
+      // Captain's Kimi skill name, an appended Captain entry, and a rewritten
+      // default.
+      playerList[0] = 'second/review';
+      captainList.push('captain/appended');
+      top.splice(0, 1, 'top/mutated');
+      const runtime = await pending;
+      try {
+        await runtime.runBossTurn('settle');
+      } finally {
+        await runtime.dispose();
+      }
+      expect(
+        captured.map(({ prompt, options }) => [prompt, options?.skills]),
+      ).toEqual([
+        ['own', ['first/review']],
+        ['inherited', ['top/level']],
+        ['captain', ['first/review']],
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a malformed supplied list with AgentCallSettingsError before the prompt record', async () => {
+    const getter = vi.fn(() => 'skills/accessor');
+    const run = vi.fn();
+    const records: TmuxPlayRecord[] = [];
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          const malformed: Array<[unknown, string]> = [
+            ['skills/x', 'skills must be an ordinary array'],
+            [{ 0: 'skills/x', length: 1 }, 'skills must be an ordinary array'],
+            [[1], 'skills[0] must be a non-blank'],
+            [[''], 'skills[0] must be a non-blank'],
+            [['ok', '   '], 'skills[1] must be a non-blank'],
+            [['skills/a\0b'], 'skills[0] must be a non-blank'],
+            [Array(1), 'skills must be dense'],
+            [
+              Object.defineProperty([], '0', {
+                enumerable: true,
+                get: getter,
+              }),
+              'skills[0] must not be an accessor',
+            ],
+          ];
+          for (const [skills, diagnostic] of malformed) {
+            await expectAgentCallSettingsRejection(
+              context.callPlayer('worker', 'invalid', {
+                settings: { ...providerDefaults, skills } as never,
+              }),
+              diagnostic,
+            );
+            await expectAgentCallSettingsRejection(
+              context.callCaptain('invalid', {
+                settings: { ...providerDefaults, skills } as never,
+              }),
+              diagnostic,
+            );
+          }
+        },
+      },
+      captainConfig: { adapter: 'claude', skills: ['captain/configured'] },
+      players: [{ id: 'worker', adapter: 'codex' }],
+      adapterImports: adapterImports({
+        claude: { agent: 'test-agent', run },
+        codex: { agent: 'test-agent', run },
+      }),
+      observers: [{ onRecord: (record) => void records.push(record) }],
+    });
+    try {
+      await runtime.runBossTurn('invalid calls');
+      expect(
+        records.some(
+          (record) =>
+            record.type === 'player_prompt' || record.type === 'captain_prompt',
+        ),
+      ).toBe(false);
+      expect(run).not.toHaveBeenCalled();
+      expect(getter).not.toHaveBeenCalled();
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it('rejects malformed programmatic lists naming the path before loading an adapter', async () => {
+    const load = vi.fn(async () =>
+      adapterClass('test-agent', async function* () {}),
+    );
+    const imports = {
+      claude: load,
+      codex: load,
+      gemini: load,
+      kimi: load,
+      opencode: load,
+    } as unknown as PlayerAdapterImports;
+    const base = {
+      captain: { async handleBossTurn() {} },
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'worker', adapter: 'codex' }],
+      adapterImports: imports,
+    };
+    const malformed: Array<[Record<string, unknown>, string]> = [
+      [{ skills: 'skills/x' }, 'skills must be an array'],
+      [{ skills: ['ok', ''] }, 'skills[1] must be a non-blank'],
+      [
+        { captainConfig: { adapter: 'claude', skills: [42] } },
+        'captain.skills[0] must be a non-blank',
+      ],
+      [
+        { captainConfig: { adapter: 'opencode', skills: '/one' } },
+        'captain.skills must be an array',
+      ],
+      [
+        {
+          players: [
+            { id: 'worker', adapter: 'codex' },
+            { id: 'other', adapter: 'kimi', skills: ['a\0b'] },
+          ],
+        },
+        'players[1].skills[0] must be a non-blank',
+      ],
+      [
+        { players: [{ id: 'worker', adapter: 'gemini', skills: {} }] },
+        'players[0].skills must be an array',
+      ],
+    ];
+    for (const [options, diagnostic] of malformed) {
+      await expect(
+        createTmuxPlayRuntime({ ...base, ...options } as never),
+      ).rejects.toThrow(diagnostic);
+    }
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('rejects Kimi roles disputing a skill name, resolving entries against the run cwd', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'tmux-play-skills-'));
+    const first = join(cwd, 'first', 'review');
+    const second = join(cwd, 'second', 'review');
+    writeSkill(first);
+    writeSkill(second);
+    const captain = { async handleBossTurn() {} };
+    try {
+      await expect(
+        createTmuxPlayRuntime({
+          captain,
+          captainConfig: { adapter: 'kimi', skills: ['first/review'] },
+          players: [
+            { id: 'worker', adapter: 'kimi', skills: ['second/review'] },
+          ],
+          cwd,
+          adapterImports: adapterImports({}),
+        }),
+      ).rejects.toThrow(
+        'captain.skills[0] for captain and players[0].skills[0] for players[0] ' +
+          'map skill name "review" to different directories on adapter "kimi": ' +
+          `${realpathSync(first)} and ${realpathSync(second)}`,
+      );
+      await expect(
+        createTmuxPlayRuntime({
+          captain,
+          captainConfig: { adapter: 'kimi' },
+          players: [
+            { id: 'worker', adapter: 'kimi', skills: ['second/review'] },
+          ],
+          skills: ['first/review'],
+          cwd,
+          adapterImports: adapterImports({}),
+        }),
+      ).rejects.toThrow('skills[0] for captain and players[0].skills[0]');
+
+      // One directory named two ways, and a non-Kimi role, dispute nothing.
+      const runtime = await createTmuxPlayRuntime({
+        captain,
+        captainConfig: { adapter: 'kimi', skills: ['first/review'] },
+        players: [
+          { id: 'worker', adapter: 'kimi', skills: ['first/review/SKILL.md'] },
+          { id: 'other', adapter: 'codex', skills: ['second/review'] },
+        ],
+        cwd,
+        adapterImports: adapterImports({}),
+      });
+      await runtime.dispose();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['claude', 'Skill', true],
+    ['gemini', 'activate_skill', true],
+    ['codex', 'Skill', false],
+  ] as const)(
+    'maps a tool-restricted %s Captain control call onto its skills',
+    async (adapter, skillTool, restrictionDropsSkills) => {
+      const captured: CapturedRun[] = [];
+      const supplied = { ...providerDefaults, skills: ['supplied'] };
+      const runtime = await createTmuxPlayRuntime({
+        captain: {
+          async handleBossTurn(_turn, context) {
+            await context.callCaptain('unrestricted');
+            await context.callCaptain('tool-free', { allowedTools: [] });
+            await context.callCaptain('restricted', {
+              allowedTools: ['read_file'],
+            });
+            await context.callCaptain('skill tool', {
+              allowedTools: ['read_file', skillTool],
+            });
+            await context.callCaptain('supplied restricted', {
+              allowedTools: ['read_file'],
+              settings: supplied,
+            });
+            await context.callCaptain('supplied skill tool', {
+              allowedTools: [skillTool],
+              settings: supplied,
+            });
+          },
+        },
+        captainConfig: { adapter, skills: ['configured'] },
+        players: [],
+        adapterImports: recordingImports(captured),
+      });
+      try {
+        await runtime.runBossTurn('control');
+      } finally {
+        await runtime.dispose();
+      }
+      const restricted = (list: readonly string[]) =>
+        restrictionDropsSkills ? [] : list;
+      expect(
+        captured.map(({ prompt, options }) => [
+          prompt,
+          options?.skills,
+          options?.allowedTools,
+        ]),
+      ).toEqual([
+        ['unrestricted', ['configured'], undefined],
+        ['tool-free', restricted(['configured']), []],
+        ['restricted', restricted(['configured']), ['read_file']],
+        ['skill tool', ['configured'], ['read_file', skillTool]],
+        ['supplied restricted', restricted(['supplied']), ['read_file']],
+        ['supplied skill tool', ['supplied'], [skillTool]],
+      ]);
     },
   );
 });

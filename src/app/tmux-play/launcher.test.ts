@@ -367,6 +367,65 @@ describe('launchTmuxPlay', () => {
     expect(attachTmuxSessionMock).not.toHaveBeenCalled();
   });
 
+  // tmux-play-227: the launcher's snapshot carries every YAML skill entry as
+  // the absolute path the loader anchored at the config file's directory.
+  it('snapshots top-level and role skills as absolute paths', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
+    const configDir = join(tempDir, 'configs');
+    mkdirSync(configDir);
+    const configPath = join(configDir, 'tmux-play.config.yaml');
+    const absolute = join(tempDir, 'library', 'audit');
+    writeFileSync(
+      configPath,
+      [
+        'skills:',
+        '  - ./skills/shared',
+        `  - ${absolute}`,
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  skills:',
+        '    - ../lead/SKILL.md',
+        '  options: {}',
+        'players:',
+        '  - id: coder',
+        '    adapter: codex',
+        '    skills: []',
+        '  - id: reviewer',
+        '    adapter: claude',
+        '',
+      ].join('\n'),
+    );
+    const workDir = join(tempDir, 'work');
+
+    const result = await launchTmuxPlay({
+      cwd: tempDir,
+      configPath,
+      sessionId: 'skills',
+      workDir,
+      selfBin: '/tmp/cli.js',
+      attach: false,
+      adapterImports: availableAdapterImports(),
+    });
+
+    const snapshot = JSON.parse(readFileSync(result.snapshotPath, 'utf8')) as {
+      skills?: string[];
+      captain: { skills?: string[] };
+      players: Array<{ id: string; skills?: string[] }>;
+    };
+    expect(snapshot.skills).toEqual([
+      join(configDir, 'skills', 'shared'),
+      absolute,
+    ]);
+    expect(snapshot.captain.skills).toEqual([
+      join(tempDir, 'lead', 'SKILL.md'),
+    ]);
+    expect(snapshot.players).toEqual([
+      expect.objectContaining({ id: 'coder', skills: [] }),
+      expect.not.objectContaining({ skills: expect.anything() }),
+    ]);
+  });
+
   it('authorizes cleanup only for a launcher-created stock work directory', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cligent-launcher-'));
     const configPath = writeConfig(tempDir, []);

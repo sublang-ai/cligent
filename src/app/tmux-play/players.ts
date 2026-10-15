@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { realpath, stat } from 'node:fs/promises';
+import { basename, dirname, resolve } from 'node:path';
 import { Cligent } from '../../cligent.js';
 import type { EffortForAgent } from '../../effort.js';
 import type { FastModeForAgent } from '../../fast-mode.js';
@@ -28,6 +30,8 @@ interface PlayerConfigBase {
   permissions?: PermissionPolicy;
   browser?: boolean;
   mcpServers?: McpServers;
+  /** tmux-play-226: skill directories replacing the top-level list. */
+  skills?: readonly string[];
 }
 
 type PlayerConfigByAdapter = {
@@ -52,6 +56,8 @@ type ResolvedPlayerByAdapter = {
     permissions?: PermissionPolicy;
     browser?: boolean;
     mcpServers?: McpServers;
+    /** The player's own skill list, a detached frozen copy; absent inherits. */
+    skills?: readonly string[];
     effort?: EffortForAgent<A>;
     fastMode?: FastModeForAgent<A>;
     subagentModel?: SubagentModelForAgent<A>;
@@ -81,6 +87,7 @@ export interface CreatePlayerCligentOptions<
   permissions?: PermissionPolicy;
   browser?: boolean;
   mcpServers?: McpServers;
+  skills?: readonly string[];
   effort?: EffortForAgent<A>;
   fastMode?: FastModeForAgent<A>;
   subagentModel?: SubagentModelForAgent<A>;
@@ -190,6 +197,7 @@ async function createPlayerCligentInternal<A extends PlayerAdapterName>(
       ? {
           browser: options.browser,
           mcpServers: normalizeMcpServers(options.mcpServers),
+          skills: options.skills,
           model: options.model,
           permissions: options.permissions,
           effort: options.effort,
@@ -256,6 +264,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
       permissions: config.permissions,
       browser: config.browser,
       mcpServers: config.mcpServers,
+      skills: config.skills,
       effort: config.effort,
       fastMode: config.fastMode,
       subagentModel: config.subagentModel,
@@ -271,10 +280,178 @@ async function resolvePlayer<A extends PlayerAdapterName>(
     permissions: config.permissions,
     browser: config.browser,
     mcpServers: normalizeMcpServers(config.mcpServers),
+    skills: frozenSkillList(config.skills),
     effort: config.effort,
     fastMode: config.fastMode,
     subagentModel: config.subagentModel,
     subagentEffort: config.subagentEffort,
     cligent,
   } as ResolvedPlayer<A>;
+}
+
+// ---------------------------------------------------------------------------
+// Skills (tmux-play-226)
+
+/**
+ * Validate a top-level or role `skills` value's shape, naming `path` and the
+ * offending index. Directory validation is the adapter's (skills-2).
+ */
+export function validateSkillList(
+  value: unknown,
+  path: string,
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error(`${path} must be an array of skill directory paths`);
+  }
+  const entries: string[] = [];
+  for (let index = 0; index < value.length; index++) {
+    const entry: unknown = value[index];
+    if (
+      typeof entry !== 'string' ||
+      entry.trim().length === 0 ||
+      entry.includes('\0')
+    ) {
+      throw new Error(
+        `${path}[${index}] must be a non-blank skill directory path without NUL`,
+      );
+    }
+    entries.push(entry);
+  }
+  return entries;
+}
+
+/**
+ * tmux-play-226: a programmatic `skills` value as a detached frozen copy,
+ * validated after it is taken, so a caller mutating its own array once the
+ * factory has been called cannot change the list the runtime admitted.
+ */
+export function admitSkillList(
+  value: unknown,
+  path: string,
+): readonly string[] | undefined {
+  const copy: unknown = Array.isArray(value)
+    ? Object.freeze([...(value as unknown[])])
+    : value;
+  validateSkillList(copy, path);
+  return copy as readonly string[] | undefined;
+}
+
+/** A detached frozen copy of a skill list, or undefined when absent. */
+export function frozenSkillList(
+  skills: readonly string[] | undefined,
+): readonly string[] | undefined {
+  return skills === undefined ? undefined : Object.freeze([...skills]);
+}
+
+/** One role's effective skill list and the path its entries are named by. */
+export interface SkillRole {
+  /** `captain` or `players[i]`. */
+  readonly role: string;
+  readonly adapter: string;
+  readonly skills?: readonly string[];
+  /** The list's own path: the role's `skills`, or top-level `skills` when inherited. */
+  readonly path: string;
+}
+
+/**
+ * tmux-play-226: each role's effective list, its own `skills` replacing the
+ * top-level default.
+ */
+export function skillRoles(
+  topLevel: readonly string[] | undefined,
+  captain: { readonly adapter: string; readonly skills?: readonly string[] },
+  players: readonly {
+    readonly adapter: string;
+    readonly skills?: readonly string[];
+  }[],
+): SkillRole[] {
+  const role = (
+    label: string,
+    entry: { readonly adapter: string; readonly skills?: readonly string[] },
+  ): SkillRole =>
+    entry.skills !== undefined
+      ? {
+          role: label,
+          adapter: entry.adapter,
+          skills: entry.skills,
+          path: `${label}.skills`,
+        }
+      : {
+          role: label,
+          adapter: entry.adapter,
+          skills: topLevel,
+          path: 'skills',
+        };
+  return [
+    role('captain', captain),
+    ...players.map((player, index) => role(`players[${index}]`, player)),
+  ];
+}
+
+/**
+ * tmux-play-226: reject two Kimi roles whose lists map one skill name to
+ * different directories, because their concurrent runs share one carrier per
+ * project root and kimi-49 rejects the later run. Each entry resolves against
+ * `cwd` to its skill directory, a `SKILL.md` file naming its parent, with
+ * links followed as kimi-49 records a source; the name is the lexical
+ * directory's basename, which skills-2 requires the skill's own name to equal.
+ * An entry that cannot be resolved is left to the adapter's validation.
+ */
+export async function assertKimiSkillsUndisputed(
+  roles: readonly SkillRole[],
+  cwd: string,
+): Promise<void> {
+  const byName = new Map<
+    string,
+    {
+      readonly role: string;
+      readonly entry: string;
+      readonly directory: string;
+    }
+  >();
+  for (const role of roles) {
+    if (role.adapter !== 'kimi' || role.skills === undefined) continue;
+    for (const [index, entry] of role.skills.entries()) {
+      const { name, directory } = await kimiSkillDirectory(entry, cwd);
+      const entryPath = `${role.path}[${index}]`;
+      const earlier = byName.get(name);
+      if (earlier === undefined) {
+        byName.set(name, { role: role.role, entry: entryPath, directory });
+        continue;
+      }
+      if (earlier.role === role.role || earlier.directory === directory) {
+        continue;
+      }
+      throw new Error(
+        `${earlier.entry} for ${earlier.role} and ${entryPath} for ${role.role} ` +
+          `map skill name "${name}" to different directories on adapter "kimi": ` +
+          `${earlier.directory} and ${directory}; their concurrent Kimi runs ` +
+          'would dispute the name',
+      );
+    }
+  }
+}
+
+async function kimiSkillDirectory(
+  entry: string,
+  cwd: string,
+): Promise<{ readonly name: string; readonly directory: string }> {
+  const given = resolve(cwd, entry);
+  let directory = given;
+  try {
+    const stats = await stat(given);
+    if (stats.isFile() && basename(given) === 'SKILL.md') {
+      directory = dirname(given);
+    }
+  } catch {
+    // A missing path keeps its lexical form; the adapter rejects it.
+  }
+  let resolved = directory;
+  try {
+    resolved = await realpath(directory);
+  } catch {
+    // Unresolvable: compare lexically; the adapter rejects it.
+  }
+  return { name: basename(directory), directory: resolved };
 }

@@ -65,8 +65,12 @@ import {
   type RuntimeErrorRecord,
 } from './records.js';
 import {
+  admitSkillList,
+  assertKimiSkillsUndisputed,
   createRuntimePlayerCligent,
+  frozenSkillList,
   resolveRuntimePlayers,
+  skillRoles,
   type ResolvedPlayer,
 } from './players.js';
 
@@ -97,6 +101,7 @@ interface RunCligentCallOptions {
   readonly permissions?: PermissionPolicy;
   readonly browser?: boolean;
   readonly mcpServers?: McpServers;
+  readonly skills?: readonly string[];
   readonly resetPermissionPolicy?: boolean;
   readonly signal: AbortSignal;
   readonly resume?: string | false;
@@ -122,7 +127,16 @@ interface ConfiguredAgentCallSettings {
   readonly permissions?: PermissionPolicy;
   readonly browser?: boolean;
   readonly mcpServers?: McpServers;
+  readonly skills?: readonly string[];
 }
+
+const NO_SKILLS: readonly string[] = Object.freeze([]);
+
+/** tmux-play-88: the tool each adapter's skills need in an explicit allowlist. */
+const SKILL_TOOL_BY_ADAPTER: Readonly<Record<string, string>> = {
+  claude: 'Skill',
+  gemini: 'activate_skill',
+};
 
 interface EffectiveAgentCallSettings extends ConfiguredAgentCallSettings {
   readonly explicit: boolean;
@@ -135,7 +149,11 @@ export class TmuxPlayRuntime {
   private readonly captain: Captain;
   private readonly approvalHandler: TmuxPlayApprovalHandler | undefined;
   private readonly captainCligent: Cligent;
+  private readonly captainAdapter: string;
   private readonly captainSettings: ConfiguredAgentCallSettings;
+  // tmux-play-226: the top-level list, the default of every player without
+  // its own.
+  private readonly defaultSkills: readonly string[] | undefined;
   private readonly playerHandles: readonly PlayerHandle[];
   private readonly playersById: ReadonlyMap<string, ResolvedPlayer>;
   private readonly sessionController = new AbortController();
@@ -161,6 +179,8 @@ export class TmuxPlayRuntime {
     this.captain = options.captain;
     this.approvalHandler = options.approvalHandler;
     this.captainCligent = captainCligent;
+    this.captainAdapter = options.captainConfig.adapter;
+    this.defaultSkills = frozenSkillList(options.skills);
     this.captainSettings = {
       model: options.captainConfig.model,
       effort: options.captainConfig.effort,
@@ -171,6 +191,7 @@ export class TmuxPlayRuntime {
       permissions: options.captainConfig.permissions,
       browser: options.captainConfig.browser,
       mcpServers: snapshotMcpServers(options.captainConfig.mcpServers),
+      skills: frozenSkillList(options.captainConfig.skills ?? options.skills),
     };
     this.playerHandles = players.map((player) => ({
       id: player.id,
@@ -491,6 +512,7 @@ export class TmuxPlayRuntime {
         permissions: player.permissions,
         browser: player.browser,
         mcpServers: player.mcpServers,
+        skills: player.skills ?? this.defaultSkills,
       },
       options?.settings,
       resume,
@@ -519,6 +541,7 @@ export class TmuxPlayRuntime {
         permissions: settings.permissions,
         browser: settings.browser,
         mcpServers: settings.mcpServers,
+        skills: settings.skills,
         resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
         resume,
@@ -572,6 +595,15 @@ export class TmuxPlayRuntime {
       options?.settings,
       resume,
     );
+    const allowedTools =
+      options?.allowedTools !== undefined
+        ? Object.freeze([...options.allowedTools])
+        : undefined;
+    const skills = captainCallSkills(
+      this.captainAdapter,
+      settings.skills,
+      allowedTools,
+    );
 
     const attachments = snapshotAttachments(options?.attachments);
     const release = this.admitCall();
@@ -585,7 +617,7 @@ export class TmuxPlayRuntime {
       const call = await runCligentCall({
         cligent: this.captainCligent,
         approvalHandler:
-          visibility === 'visible' && options?.allowedTools?.length !== 0
+          visibility === 'visible' && allowedTools?.length !== 0
             ? this.approvalForInvocation(turn, 'captain')
             : undefined,
         prompt,
@@ -599,12 +631,11 @@ export class TmuxPlayRuntime {
         permissions: settings.permissions,
         browser: settings.browser,
         mcpServers: settings.mcpServers,
+        skills,
         resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
         resume,
-        ...(options?.allowedTools !== undefined
-          ? { allowedTools: options.allowedTools }
-          : {}),
+        ...(allowedTools !== undefined ? { allowedTools } : {}),
         emitEvent: (event) =>
           this.emit({
             ...makeRecordBase('captain_event', turn.id, event.timestamp),
@@ -948,8 +979,34 @@ function throwFailures(failures: readonly unknown[], context: string): never {
 }
 
 export async function createTmuxPlayRuntime(
-  options: RunTmuxPlayOptions,
+  callerOptions: RunTmuxPlayOptions,
 ): Promise<TmuxPlayRuntime> {
+  // tmux-play-226: before any await, take a detached frozen copy of every
+  // skill list and validate the copy, so the Kimi check, the resolved
+  // players, and the runtime all hold the list admitted at this call however
+  // the caller later mutates its arrays. A malformed list or a Kimi name
+  // dispute rejects before any adapter is loaded. Relative entries pass
+  // unchanged; the adapter resolves them against the run cwd, which the
+  // dispute check uses too.
+  const skills = admitSkillList(callerOptions.skills, 'skills');
+  const captainSkills = admitSkillList(
+    callerOptions.captainConfig.skills,
+    'captain.skills',
+  );
+  const admittedPlayers = callerOptions.players.map((player, index) => ({
+    ...player,
+    skills: admitSkillList(player.skills, `players[${index}].skills`),
+  }));
+  const options: RunTmuxPlayOptions = {
+    ...callerOptions,
+    captainConfig: { ...callerOptions.captainConfig, skills: captainSkills },
+    players: admittedPlayers,
+    skills,
+  };
+  await assertKimiSkillsUndisputed(
+    skillRoles(options.skills, options.captainConfig, options.players),
+    options.cwd ?? process.cwd(),
+  );
   const players = await resolveRuntimePlayers(options.players, {
     cwd: options.cwd,
     adapterImports: options.adapterImports,
@@ -993,6 +1050,7 @@ async function runCligentCall(
       permissions: options.permissions,
       browser: options.browser,
       mcpServers: options.mcpServers,
+      skills: options.skills,
       attachments: options.attachments,
       ...(options.resetPermissionPolicy
         ? { permissions: createPermissionPolicyReset() }
@@ -1101,6 +1159,7 @@ function resolveAgentCallSettings(
       permissions: snapshot.permissions,
       browser: snapshot.browser ?? false,
       mcpServers: snapshot.mcpServers ?? Object.freeze({}),
+      skills: snapshot.skills ?? NO_SKILLS,
       explicit: true,
       modelUsesProviderDefault,
       effortUsesProviderDefault,
@@ -1146,7 +1205,8 @@ function snapshotAgentCallSettings(
       key !== 'instruction' &&
       key !== 'permissions' &&
       key !== 'browser' &&
-      key !== 'mcpServers',
+      key !== 'mcpServers' &&
+      key !== 'skills',
   );
   if (unknown.length > 0) {
     throw new TypeError(
@@ -1187,6 +1247,7 @@ function snapshotAgentCallSettings(
     throw new TypeError('cligent_browser is reserved when browser is enabled');
   }
   const permissions = snapshotPermissionPolicy(fields.permissions);
+  const skills = snapshotSkills(fields.skills);
   return Object.freeze({
     model,
     effort,
@@ -1199,7 +1260,56 @@ function snapshotAgentCallSettings(
     ...(permissions !== undefined ? { permissions } : {}),
     ...(browser !== undefined ? { browser } : {}),
     ...(mcpServers !== undefined ? { mcpServers } : {}),
+    ...(skills !== undefined ? { skills } : {}),
   });
+}
+
+/**
+ * tmux-play-93: a supplied list's entries are non-blank strings without NUL,
+ * captured as a detached frozen copy; directory validation is the adapter's.
+ */
+function snapshotSkills(value: unknown): readonly string[] | undefined {
+  return snapshotDenseArray(
+    value,
+    'tmux-play call settings skills',
+    (entry, path) => {
+      if (
+        typeof entry !== 'string' ||
+        entry.trim().length === 0 ||
+        entry.includes('\0')
+      ) {
+        throw new TypeError(
+          `${path} must be a non-blank skill directory path without NUL`,
+        );
+      }
+      return entry;
+    },
+  );
+}
+
+/**
+ * tmux-play-88: a Captain control call whose explicit tool list leaves out
+ * the adapter's skill tool runs without skills rather than being rejected by
+ * the adapter, keeping the restriction intact.
+ */
+function captainCallSkills(
+  adapter: string,
+  skills: readonly string[] | undefined,
+  allowedTools: readonly string[] | undefined,
+): readonly string[] | undefined {
+  const skillTool = Object.hasOwn(SKILL_TOOL_BY_ADAPTER, adapter)
+    ? SKILL_TOOL_BY_ADAPTER[adapter]
+    : undefined;
+  if (
+    skills === undefined ||
+    skills.length === 0 ||
+    skillTool === undefined ||
+    allowedTools === undefined ||
+    allowedTools.includes(skillTool)
+  ) {
+    return skills;
+  }
+  return NO_SKILLS;
 }
 
 function snapshotTuningSelection(

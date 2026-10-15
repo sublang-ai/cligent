@@ -7,11 +7,13 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EFFORT_SUPPORT } from '../../effort.js';
@@ -1606,6 +1608,11 @@ describe('tmux-play config loading', () => {
     expect(migrated).not.toContain('fastMode:');
     expect(migrated).not.toContain('subagentModel:');
     expect(migrated).not.toContain('subagentEffort:');
+    // tmux-play-227: migration synthesizes no skills default anywhere.
+    expect(migrated).not.toContain('skills');
+    expect(loaded.config).not.toHaveProperty('skills');
+    expect(loaded.config.captain).not.toHaveProperty('skills');
+    expect(loaded.config.players[0]).not.toHaveProperty('skills');
   });
 
   it('preserves an existing partial home notifications block', async () => {
@@ -2723,6 +2730,224 @@ describe('tmux-play config loading', () => {
         from: pathToFileURL(join(workDir, 'captains/fanout.js')).href,
       },
     });
+  });
+
+  // tmux-play-227: YAML admits a top-level default and per-role replacements
+  // on every adapter, anchoring relative entries at the config directory, and
+  // the snapshot keeps them absolute.
+  it('admits top-level and role skills on every adapter and anchors relative entries', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const configDir = join(workDir, 'configs');
+    const absolute = join(workDir, 'library', 'audit');
+    mkdirSync(configDir);
+    const configPath = join(configDir, TMUX_PLAY_CONFIG_FILE);
+    writeFileSync(
+      configPath,
+      [
+        'skills:',
+        '  - ./skills/shared',
+        `  - ${absolute}`,
+        'captain:',
+        "  from: '@sublang/cligent/captains/fanout'",
+        '  adapter: claude',
+        '  skills:',
+        '    - ../lead',
+        'players:',
+        '  - id: claude',
+        '    adapter: claude',
+        '  - id: codex',
+        '    adapter: codex',
+        '    skills: []',
+        '  - id: gemini',
+        '    adapter: gemini',
+        '    skills:',
+        '      - skills/review/SKILL.md',
+        '  - id: kimi',
+        '    adapter: kimi',
+        '  - id: opencode',
+        '    adapter: opencode',
+        '    skills:',
+        `      - ${absolute}`,
+        '',
+      ].join('\n'),
+    );
+
+    const loaded = await loadTmuxPlayConfig({ configPath });
+    const shared = [join(configDir, 'skills', 'shared'), absolute];
+
+    expect(loaded.config.skills).toEqual(shared);
+    expect(loaded.config.captain.skills).toEqual([join(workDir, 'lead')]);
+    expect(loaded.config.players[0]).not.toHaveProperty('skills');
+    expect(loaded.config.players[1]?.skills).toEqual([]);
+    expect(loaded.config.players[2]?.skills).toEqual([
+      join(configDir, 'skills', 'review', 'SKILL.md'),
+    ]);
+    expect(loaded.config.players[3]).not.toHaveProperty('skills');
+    expect(loaded.config.players[4]?.skills).toEqual([absolute]);
+
+    const snapshotPath = await writeTmuxPlayConfigSnapshot(
+      loaded,
+      join(workDir, 'session'),
+    );
+    const snapshot = JSON.parse(
+      readFileSync(snapshotPath, 'utf8'),
+    ) as TmuxPlayConfig;
+    expect(snapshot.skills).toEqual(shared);
+    expect(snapshot.captain.skills).toEqual(loaded.config.captain.skills);
+    expect(snapshot.players).toEqual(loaded.config.players);
+    const entries = [
+      ...(snapshot.skills ?? []),
+      ...(snapshot.captain.skills ?? []),
+      ...snapshot.players.flatMap((player) => player.skills ?? []),
+    ];
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.every((entry) => isAbsolute(entry))).toBe(true);
+  });
+
+  it('anchors a hand-built relative skill entry in the snapshot', () => {
+    const config = validConfig({ skills: ['skills/shared'] });
+    config.captain.skills = ['lead'];
+    config.players[0]!.skills = ['../review'];
+    const snapshot = createTmuxPlayConfigSnapshot({
+      path: '/configs/tmux-play.config.yaml',
+      config,
+    });
+    expect(snapshot.skills).toEqual(['/configs/skills/shared']);
+    expect(snapshot.captain.skills).toEqual(['/configs/lead']);
+    expect(snapshot.players[0]?.skills).toEqual(['/review']);
+    expect(config.skills).toEqual(['skills/shared']);
+  });
+
+  it.each([
+    ['a string', "'./skills/shared'", ' must be an array'],
+    ['a map', '{ path: ./skills/shared }', ' must be an array'],
+    ['a number entry', '[1]', '[0] must be a non-blank'],
+    ['a null entry', '[null]', '[0] must be a non-blank'],
+    ['an empty entry', '[""]', '[0] must be a non-blank'],
+    ['a blank entry', "['./ok', '   ']", '[1] must be a non-blank'],
+    ['a NUL entry', '["skills/a\\0b"]', '[0] must be a non-blank'],
+  ])(
+    'rejects skills holding %s with the offending path',
+    async (_label, value, diagnostic) => {
+      workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+      for (const [scope, path] of [
+        ['top', 'skills'],
+        ['captain', 'captain.skills'],
+        ['player', 'players[0].skills'],
+      ] as const) {
+        const configPath = join(workDir, `skills-${scope}.yaml`);
+        writeFileSync(
+          configPath,
+          [
+            ...(scope === 'top' ? [`skills: ${value}`] : []),
+            'captain:',
+            "  from: '@sublang/cligent/captains/fanout'",
+            '  adapter: claude',
+            ...(scope === 'captain' ? [`  skills: ${value}`] : []),
+            'players:',
+            '  - id: worker',
+            '    adapter: kimi',
+            ...(scope === 'player' ? [`    skills: ${value}`] : []),
+          ].join('\n'),
+        );
+        await expect(loadTmuxPlayConfig({ configPath })).rejects.toThrow(
+          `${path}${diagnostic}`,
+        );
+      }
+    },
+  );
+
+  it('rejects two Kimi roles mapping one skill name to different directories', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    const first = join(workDir, 'first', 'review');
+    const second = join(workDir, 'second', 'review');
+    for (const directory of [first, second]) {
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(
+        join(directory, 'SKILL.md'),
+        '---\nname: review\ndescription: Review changes.\n---\n',
+      );
+    }
+    mkdirSync(join(workDir, 'linked'));
+    symlinkSync(first, join(workDir, 'linked', 'review'));
+    const write = (name: string, lines: readonly string[]): string => {
+      const configPath = join(workDir!, `${name}.yaml`);
+      writeFileSync(configPath, [...lines, ''].join('\n'));
+      return configPath;
+    };
+    const roles = (
+      captain: { adapter: string; skills?: string },
+      player: { adapter: string; skills?: string },
+      topLevel?: string,
+    ): string[] => [
+      ...(topLevel === undefined ? [] : ['skills:', `  - ${topLevel}`]),
+      'captain:',
+      "  from: '@sublang/cligent/captains/fanout'",
+      `  adapter: ${captain.adapter}`,
+      ...(captain.skills === undefined
+        ? []
+        : ['  skills:', `    - ${captain.skills}`]),
+      'players:',
+      '  - id: worker',
+      `    adapter: ${player.adapter}`,
+      ...(player.skills === undefined
+        ? []
+        : ['    skills:', `      - ${player.skills}`]),
+    ];
+
+    await expect(
+      loadTmuxPlayConfig({
+        configPath: write(
+          'disputed',
+          roles(
+            { adapter: 'kimi', skills: './first/review' },
+            { adapter: 'kimi', skills: './second/review' },
+          ),
+        ),
+      }),
+    ).rejects.toThrow(
+      `captain.skills[0] for captain and players[0].skills[0] for players[0] ` +
+        `map skill name "review" to different directories on adapter "kimi": ` +
+        `${realpathSync(first)} and ${realpathSync(second)}`,
+    );
+    // The top-level default counts for a Kimi role that inherits it.
+    await expect(
+      loadTmuxPlayConfig({
+        configPath: write(
+          'inherited',
+          roles(
+            { adapter: 'kimi' },
+            { adapter: 'kimi', skills: './second/review/SKILL.md' },
+            './first/review',
+          ),
+        ),
+      }),
+    ).rejects.toThrow('skills[0] for captain and players[0].skills[0]');
+
+    // Links are followed and a SKILL.md entry names its directory, so these
+    // entries share one directory; a non-Kimi role never disputes a name.
+    for (const [name, captain, player] of [
+      [
+        'linked',
+        { adapter: 'kimi', skills: './first/review' },
+        { adapter: 'kimi', skills: './linked/review' },
+      ],
+      [
+        'skill-file',
+        { adapter: 'kimi', skills: './first/review' },
+        { adapter: 'kimi', skills: './first/review/SKILL.md' },
+      ],
+      [
+        'other-adapter',
+        { adapter: 'claude', skills: './first/review' },
+        { adapter: 'kimi', skills: './second/review' },
+      ],
+    ] as const) {
+      const loaded = await loadTmuxPlayConfig({
+        configPath: write(name, roles(captain, player)),
+      });
+      expect(loaded.config.players[0]?.skills).toHaveLength(1);
+    }
   });
 });
 

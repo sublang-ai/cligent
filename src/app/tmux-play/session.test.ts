@@ -8,9 +8,17 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createEvent } from '../../events.js';
+import type {
+  AgentAdapter,
+  AgentEvent,
+  AgentOptions,
+  AgentType,
+} from '../../types.js';
 import type { Captain, RunTmuxPlayOptions } from './contract.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 import { TMUX_PLAY_WORK_DIR_OWNER_MARKER } from './launcher.js';
+import type { PlayerAdapterImports } from './players.js';
 import { ObserverDispatchError, type TmuxPlayRecord } from './records.js';
 import {
   readConfigSnapshot,
@@ -246,6 +254,105 @@ describe('TmuxPlaySession', () => {
     );
     readline.close();
     await session.done;
+  });
+
+  // tmux-play-227: session mode hands the snapshot's top-level and role skill
+  // lists to the runtime factory, which resolves each role's default.
+  it('passes top-level and role skills from the snapshot to the runtime', async () => {
+    tempDir = makeWorkDir({
+      skills: ['/skills/shared'],
+      captainSkills: ['/skills/lead'],
+      playerSkills: [],
+    });
+    const readline = new FakeReadline();
+    const createRuntime = vi.fn(async (_options: RunTmuxPlayOptions) => ({
+      abortActiveTurn: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+      runBossTurn: vi.fn(async () => undefined),
+    }));
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      createReadline: () => readline,
+      createRuntime,
+      importCaptain: async () => ({
+        default: (): Captain => ({ async handleBossTurn() {} }),
+      }),
+      output: new MemoryOutput(),
+    });
+    await session.start();
+    expect(createRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skills: ['/skills/shared'],
+        captainConfig: expect.objectContaining({ skills: ['/skills/lead'] }),
+        players: [expect.objectContaining({ id: 'coder', skills: [] })],
+      }),
+    );
+    readline.close();
+    await session.done;
+  });
+
+  // tmux-play-227: the stock session path from a launcher snapshot through
+  // the real runtime factory to each adapter: a role's own list replaces the
+  // top-level one, an empty list selects none, and an entry stays absolute.
+  it('runs a Boss turn from the snapshot with each role skill list reaching its adapter', async () => {
+    tempDir = makeWorkDir({
+      skills: ['/skills/shared', '/library/audit'],
+      captainSkills: ['/skills/lead/SKILL.md'],
+      playerSkills: [],
+      extraPlayers: [{ id: 'reviewer', adapter: 'gemini' }],
+    });
+    const readline = new FakeReadline();
+    const captured: RecordedSkillRun[] = [];
+    let settle!: (record: TmuxPlayRecord) => void;
+    const settled = new Promise<TmuxPlayRecord>((resolve) => {
+      settle = resolve;
+    });
+    const session = new TmuxPlaySession({
+      ...baseOptions(tempDir),
+      adapterImports: recordingAdapterImports(captured),
+      createReadline: () => readline,
+      importCaptain: async () => ({
+        default: (): Captain => ({
+          async handleBossTurn(_turn, context) {
+            for (const player of context.players) {
+              await context.callPlayer(player.id, `to ${player.id}`);
+            }
+            await context.callCaptain('to captain');
+          },
+        }),
+      }),
+      observers: [
+        {
+          onRecord(record) {
+            if (
+              record.type === 'turn_finished' ||
+              record.type === 'turn_aborted'
+            ) {
+              settle(record);
+            }
+          },
+        },
+      ],
+      output: new MemoryOutput(),
+      queryPaneWidths: () => new Map(),
+    });
+    await session.start();
+    readline.emitLine('work');
+    expect((await settled).type).toBe('turn_finished');
+    readline.close();
+    await session.done;
+
+    expect(
+      captured.map(({ agent, prompt, skills }) => [agent, prompt, skills]),
+    ).toEqual([
+      ['codex', 'to coder', []],
+      ['gemini', 'to reviewer', ['/skills/shared', '/library/audit']],
+      [
+        'claude-code',
+        expect.stringContaining('to captain'),
+        ['/skills/lead/SKILL.md'],
+      ],
+    ]);
   });
 
   // tmux-play-213: the session seam carries each Claude role's subagent model
@@ -2053,6 +2160,45 @@ function noopTimingObserver(): TimingObserverHandle {
   };
 }
 
+interface RecordedSkillRun {
+  readonly agent: string;
+  readonly prompt: string;
+  readonly skills: unknown;
+}
+
+/** Adapter imports whose every run records its `skills` and succeeds. */
+function recordingAdapterImports(
+  captured: RecordedSkillRun[],
+): PlayerAdapterImports {
+  const recording = (agent: AgentType): new () => AgentAdapter =>
+    class implements AgentAdapter {
+      readonly agent = agent;
+
+      async *run(
+        prompt: string,
+        options?: AgentOptions,
+      ): AsyncGenerator<AgentEvent, void, void> {
+        captured.push({ agent, prompt, skills: options?.skills });
+        yield createEvent('done', agent, {
+          status: 'success',
+          usage: { toolUses: 0 },
+          durationMs: 0,
+        });
+      }
+
+      async isAvailable(): Promise<boolean> {
+        return true;
+      }
+    };
+  return {
+    claude: async () => recording('claude-code'),
+    codex: async () => recording('codex'),
+    gemini: async () => recording('gemini'),
+    kimi: async () => recording('kimi'),
+    opencode: async () => recording('opencode'),
+  };
+}
+
 function makeWorkDir(
   overrides: {
     theme?: 'mocha' | 'latte';
@@ -2065,6 +2211,10 @@ function makeWorkDir(
     captainSubagentEffort?: string;
     claudePlayerSubagentModel?: string;
     claudePlayerSubagentEffort?: string;
+    skills?: string[];
+    captainSkills?: string[];
+    playerSkills?: string[];
+    extraPlayers?: Array<Record<string, unknown>>;
   } = {},
 ): string {
   const workDir = mkdtempSync(join(tmpdir(), 'cligent-session-'));
@@ -2077,6 +2227,9 @@ function makeWorkDir(
       instruction: 'Coordinate players.',
       effort: 'ultracode',
       ...(overrides.captainBrowser === undefined ? {} : { browser: overrides.captainBrowser }),
+      ...(overrides.captainSkills === undefined
+        ? {}
+        : { skills: overrides.captainSkills }),
       ...(overrides.captainFastMode === undefined
         ? {}
         : { fastMode: overrides.captainFastMode }),
@@ -2107,10 +2260,14 @@ function makeWorkDir(
             adapter: 'codex',
             effort: 'ultra',
             ...(overrides.playerBrowser === undefined ? {} : { browser: overrides.playerBrowser }),
+            ...(overrides.playerSkills === undefined
+              ? {}
+              : { skills: overrides.playerSkills }),
             ...(overrides.playerFastMode === undefined
               ? {}
               : { fastMode: overrides.playerFastMode }),
           },
+          ...(overrides.extraPlayers ?? []),
         ],
     layout: {
       window: { columns: 174, rows: 49 },
@@ -2122,6 +2279,9 @@ function makeWorkDir(
   };
   if (overrides.theme !== undefined) {
     snapshot.theme = overrides.theme;
+  }
+  if (overrides.skills !== undefined) {
+    snapshot.skills = overrides.skills;
   }
   writeFileSync(
     join(workDir, TMUX_PLAY_CONFIG_SNAPSHOT),

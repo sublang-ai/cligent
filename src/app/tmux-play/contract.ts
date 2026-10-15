@@ -78,7 +78,8 @@ export type TuningSelection<T extends string = string> =
  * Omitting `instruction` or `permissions` means no per-call instruction or
  * permission policy; configured values are not merged into this object.
  * Omitting `browser` disables browser tools; omitting `mcpServers` selects
- * an empty server map for this invocation.
+ * an empty server map for this invocation; omitting `skills` selects no
+ * skills.
  */
 export interface AgentCallSettings {
   readonly model: TuningSelection;
@@ -101,6 +102,12 @@ export interface AgentCallSettings {
   readonly permissions?: PermissionPolicy;
   readonly mcpServers?: McpServers;
   readonly browser?: boolean;
+  /**
+   * Skill directories, or their `SKILL.md` files, for this invocation only
+   * (tmux-play-93); each entry is a non-blank string without NUL, and the
+   * selected adapter validates the directories.
+   */
+  readonly skills?: readonly string[];
 }
 
 const AGENT_CALL_SETTINGS_ERROR = Symbol.for('cligent.agentCallSettingsError');
@@ -263,6 +270,12 @@ interface RuntimePlayerConfigBase {
   readonly permissions?: PermissionPolicy;
   readonly browser?: boolean;
   readonly mcpServers?: McpServers;
+  /**
+   * tmux-play-226: this player's skill directories, replacing the top-level
+   * {@link RunTmuxPlayOptions.skills}; an empty array selects none. Relative
+   * entries resolve against the run `cwd` in the adapter.
+   */
+  readonly skills?: readonly string[];
 }
 
 type RuntimePlayerConfigByAdapter = {
@@ -285,6 +298,11 @@ interface RuntimeCaptainConfigBase {
   readonly permissions?: PermissionPolicy;
   readonly browser?: boolean;
   readonly mcpServers?: McpServers;
+  /**
+   * tmux-play-226: the Captain's skill directories, replacing the top-level
+   * {@link RunTmuxPlayOptions.skills}; an empty array selects none.
+   */
+  readonly skills?: readonly string[];
 }
 
 type RuntimeCaptainConfigByAdapter = {
@@ -320,6 +338,12 @@ export interface RunTmuxPlayOptions {
   readonly captain: Captain;
   readonly captainConfig: RuntimeCaptainConfig;
   readonly players: readonly RuntimePlayerConfig[];
+  /**
+   * tmux-play-226: skill directories, or their `SKILL.md` files, applied to
+   * the Captain and every player without a `skills` list of its own.
+   * Relative entries pass unchanged and resolve against the run `cwd`.
+   */
+  readonly skills?: readonly string[];
   readonly observers?: readonly RecordObserver[];
   readonly cwd?: string;
   readonly signal?: AbortSignal;
