@@ -1086,3 +1086,108 @@ it('clears a rejected automatic token before handing the error to the caller', a
   expect(received).toEqual([undefined, 'saved', undefined]);
   expect(calls).toBe(3);
 });
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+describe('Cligent skills forwarding', () => {
+  function createSkillsRecorder(agent = 'custom-skills'): {
+    adapter: AgentAdapter;
+    received: unknown[];
+  } {
+    const received: unknown[] = [];
+    const adapter: AgentAdapter = {
+      agent,
+      async *run(_prompt, options) {
+        received.push(options?.skills);
+        yield doneEvent(agent);
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+    return { adapter, received };
+  }
+
+  // engine-131 / engine-103: the instance list reaches the adapter unchanged
+  // [engine-124], and a per-call list replaces it, including an empty one
+  // [engine-3].
+  it('forwards the instance list unchanged and replaces it with any per-call list', async () => {
+    const defaults = Object.freeze(['skills/review', 'skills/lint/SKILL.md']);
+    const perCall = Object.freeze(['skills/release']);
+    const empty: readonly string[] = Object.freeze([]);
+    const { adapter, received } = createSkillsRecorder();
+
+    const agent = new Cligent(adapter, { skills: defaults });
+    await collectEvents(agent.run('default'));
+    await collectEvents(agent.run('replace', { skills: perCall }));
+    await collectEvents(agent.run('empty', { skills: empty }));
+    await collectEvents(agent.run('undefined', { skills: undefined }));
+    await collectEvents(agent.run('other override', { model: 'other' }));
+    const bare = new Cligent(adapter);
+    await collectEvents(bare.run('omitted'));
+    await collectEvents(bare.run('per-call', { skills: perCall }));
+
+    expect(received).toHaveLength(7);
+    expect(received[0]).toBe(defaults);
+    expect(received[1]).toBe(perCall);
+    expect(received[2]).toBe(empty);
+    expect(received[3]).toBe(defaults);
+    expect(received[4]).toBe(defaults);
+    expect(received[5]).toBeUndefined();
+    expect(received[6]).toBe(perCall);
+    expect(defaults).toEqual(['skills/review', 'skills/lint/SKILL.md']);
+  });
+
+  // engine-130: a custom adapter admits its own skills value.
+  it('passes any dynamic skills value to a custom adapter unchanged', async () => {
+    const values: unknown[] = [
+      'skills/review',
+      [{ path: 'skills/review' }],
+      [42, null],
+      { review: 'skills/review' },
+      null,
+    ];
+    const { adapter, received } = createSkillsRecorder();
+    for (const value of values) {
+      await collectEvents(
+        new Cligent(adapter, { skills: value as never }).run('default'),
+      );
+      await collectEvents(
+        new Cligent(adapter).run('per-call', { skills: value as never }),
+      );
+    }
+    expect(received).toHaveLength(values.length * 2);
+    values.forEach((value, index) => {
+      expect(received[index * 2]).toBe(value);
+      expect(received[index * 2 + 1]).toBe(value);
+    });
+  });
+
+  it('forwards independent lists through Cligent.parallel', async () => {
+    const first = Object.freeze(['skills/review']);
+    const empty: readonly string[] = Object.freeze([]);
+    const a = createSkillsRecorder('custom-a');
+    const b = createSkillsRecorder('custom-b');
+    const c = createSkillsRecorder('custom-c');
+
+    await collectEvents(
+      Cligent.parallel([
+        { agent: new Cligent(a.adapter, { skills: first }), prompt: 'a' },
+        {
+          agent: new Cligent(b.adapter, { skills: first }),
+          prompt: 'b',
+          overrides: { skills: empty },
+        },
+        { agent: new Cligent(c.adapter), prompt: 'c' },
+      ]),
+    );
+
+    expect(a.received).toHaveLength(1);
+    expect(a.received[0]).toBe(first);
+    expect(b.received).toHaveLength(1);
+    expect(b.received[0]).toBe(empty);
+    expect(c.received).toEqual([undefined]);
+  });
+});

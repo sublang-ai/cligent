@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
+import { CodexAdapter } from '../adapters/codex.js';
+import { GeminiAdapter } from '../adapters/gemini.js';
+import { KimiAdapter } from '../adapters/kimi.js';
+import { OpenCodeAdapter } from '../adapters/opencode.js';
+import { Cligent } from '../cligent.js';
 import { runAgent, runParallel } from '../engine.js';
 import { createEvent } from '../events.js';
 import { AdapterRegistry } from '../registry.js';
@@ -837,5 +843,305 @@ describe('runParallel', () => {
   it('empty tasks yields nothing', async () => {
     const events = await collectEvents(runParallel([]));
     expect(events).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+describe('skills forwarding', () => {
+  function createSkillsRecorder(agent: string): {
+    adapter: AgentAdapter;
+    received: unknown[];
+  } {
+    const received: unknown[] = [];
+    const adapter: AgentAdapter = {
+      agent,
+      async *run(_prompt, options) {
+        received.push(options?.skills);
+        yield doneEvent(agent);
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+    return { adapter, received };
+  }
+
+  // engine-131: the legacy registry path forwards the list unchanged
+  // [engine-124], and a custom adapter receives any value [engine-130].
+  it('forwards the skill list unchanged through the legacy registry', async () => {
+    const skills = Object.freeze(['skills/review', 'skills/lint/SKILL.md']);
+    const empty: readonly string[] = Object.freeze([]);
+    const dynamic = { review: 'skills/review' };
+    const { adapter, received } = createSkillsRecorder('custom-skills');
+    const registry = new AdapterRegistry();
+    registry.register(adapter);
+
+    for (const options of [
+      { skills },
+      { skills: empty },
+      {},
+      undefined,
+      { skills: dynamic as never },
+    ]) {
+      await collectEvents(runAgent('custom-skills', 'p', options, registry));
+    }
+
+    expect(received).toHaveLength(5);
+    expect(received[0]).toBe(skills);
+    expect(received[1]).toBe(empty);
+    expect(received[2]).toBeUndefined();
+    expect(received[3]).toBeUndefined();
+    expect(received[4]).toBe(dynamic);
+  });
+
+  it('forwards each parallel task list independently', async () => {
+    const skills = Object.freeze(['skills/review']);
+    const empty: readonly string[] = Object.freeze([]);
+    const listed = createSkillsRecorder('custom-listed');
+    const emptied = createSkillsRecorder('custom-empty');
+    const omitted = createSkillsRecorder('custom-omitted');
+
+    await collectEvents(
+      runParallel([
+        { adapter: listed.adapter, prompt: 'a', options: { skills } },
+        { adapter: emptied.adapter, prompt: 'b', options: { skills: empty } },
+        { adapter: omitted.adapter, prompt: 'c' },
+      ]),
+    );
+
+    expect(listed.received).toHaveLength(1);
+    expect(listed.received[0]).toBe(skills);
+    expect(emptied.received).toHaveLength(1);
+    expect(emptied.received[0]).toBe(empty);
+    expect(omitted.received).toEqual([undefined]);
+  });
+});
+
+// engine-131: every real built-in adapter class rejects a malformed `skills`
+// value through its own preparation [engine-130], and that validation
+// precedes any SDK load or process spawn, so no backend is needed: each
+// adapter here gets a loader or spawner that records a reach and fails.
+// That a list adding no skill configuration creates no carrier is verified
+// against each adapter's own backend fixture, not repeated here: the run
+// without skills in claude-skills.test.ts, codex-skills.test.ts,
+// kimi-skills.test.ts, and opencode-skills.test.ts, and both the omitted and
+// the empty list in gemini-skills.test.ts and, for an external server,
+// opencode-skills.test.ts.
+describe('malformed skills through the real built-in adapters', () => {
+  beforeEach(() => {
+    vi.stubEnv('CLIGENT_RUNTIME_GATE', 'off');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const BUILT_IN_AGENTS = [
+    'claude-code',
+    'codex',
+    'gemini',
+    'kimi',
+    'opencode',
+  ] as const;
+  type BuiltInAgent = (typeof BUILT_IN_AGENTS)[number];
+
+  const notAnArray = (agent: string): string =>
+    `skills for adapter "${agent}" must be an array`;
+  const MALFORMED: ReadonlyArray<
+    readonly [label: string, value: unknown, message: (agent: string) => string]
+  > = [
+    ['a string', 'skills/review', notAnArray],
+    ['an object', { review: 'skills/review' }, notAnArray],
+    [
+      '[42]',
+      [42],
+      (agent) =>
+        `skills[0] for adapter "${agent}" must be a non-blank skill directory path`,
+    ],
+  ];
+
+  function builtIn(agent: BuiltInAgent): {
+    adapter:
+      | ClaudeCodeAdapter
+      | CodexAdapter
+      | GeminiAdapter
+      | KimiAdapter
+      | OpenCodeAdapter;
+    backend: string[];
+  } {
+    const backend: string[] = [];
+    const reach = (what: string) => (): never => {
+      backend.push(what);
+      throw new Error(`${agent} ${what} reached`);
+    };
+    switch (agent) {
+      case 'claude-code':
+        return {
+          adapter: new ClaudeCodeAdapter({ loadSdk: reach('SDK load') }),
+          backend,
+        };
+      case 'codex':
+        return {
+          adapter: new CodexAdapter({ loadSdk: reach('SDK load') }),
+          backend,
+        };
+      case 'gemini':
+        return {
+          adapter: new GeminiAdapter({ spawnProcess: reach('spawn') }),
+          backend,
+        };
+      case 'kimi':
+        return {
+          adapter: new KimiAdapter({ spawnProcess: reach('spawn') }),
+          backend,
+        };
+      case 'opencode':
+        return {
+          adapter: new OpenCodeAdapter(
+            {},
+            { loadSdk: reach('SDK load'), spawnProcess: reach('spawn') },
+          ),
+          backend,
+        };
+    }
+  }
+
+  // The adapter's own error terminal, or the one Cligent and the engine
+  // synthesize from its rejection [engine-8], is the agent's only error and
+  // precedes its only, final, error `done`.
+  function expectRejection(
+    events: readonly AgentEvent[],
+    agent: string,
+    message: string,
+  ): void {
+    const own = events.filter((event) => event.agent === agent);
+    expect(
+      own
+        .filter((event) => event.type === 'error')
+        .map((event) => (event.payload as { message: string }).message),
+    ).toEqual([message]);
+    expect(own.filter((event) => event.type === 'done')).toHaveLength(1);
+    expect(own.at(-1)).toMatchObject({
+      type: 'done',
+      payload: { status: 'error' },
+    });
+  }
+
+  async function settle(
+    run: AsyncGenerator<AgentEvent, void, void>,
+  ): Promise<{ events: AgentEvent[]; thrown?: unknown }> {
+    const events: AgentEvent[] = [];
+    try {
+      for await (const event of run) events.push(event);
+    } catch (thrown) {
+      return { events, thrown };
+    }
+    return { events };
+  }
+
+  it.each(BUILT_IN_AGENTS)(
+    'rejects each malformed value on the direct %s adapter and through Cligent.run before any backend',
+    async (agent) => {
+      for (const [, value, message] of MALFORMED) {
+        // Direct adapter: the generator rejects, or ends with its own error
+        // terminal, naming the adapter's skills.
+        const direct = builtIn(agent);
+        const outcome = await settle(
+          direct.adapter.run('p', { skills: value as never }) as AsyncGenerator<
+            AgentEvent,
+            void,
+            void
+          >,
+        );
+        if (outcome.thrown === undefined) {
+          expectRejection(outcome.events, agent, message(agent));
+        } else {
+          expect(outcome.thrown).toMatchObject({ message: message(agent) });
+        }
+        expect(direct.backend).toEqual([]);
+
+        // Instance default [engine-1] and per-run override: Cligent ends the
+        // run with an error terminal naming the adapter's skills.
+        const instance = builtIn(agent);
+        expectRejection(
+          await collectEvents(
+            new Cligent(instance.adapter, { skills: value as never }).run('p'),
+          ),
+          agent,
+          message(agent),
+        );
+        const perRun = builtIn(agent);
+        expectRejection(
+          await collectEvents(
+            new Cligent(perRun.adapter).run('p', { skills: value as never }),
+          ),
+          agent,
+          message(agent),
+        );
+        expect([...instance.backend, ...perRun.backend]).toEqual([]);
+      }
+    },
+  );
+
+  it('rejects each malformed value through the legacy registry', async () => {
+    for (const [, value, message] of MALFORMED) {
+      const { adapter, backend } = builtIn('kimi');
+      const registry = new AdapterRegistry();
+      registry.register(adapter);
+      expectRejection(
+        await collectEvents(
+          runAgent('kimi', 'p', { skills: value as never }, registry),
+        ),
+        'kimi',
+        message('kimi'),
+      );
+      expect(backend).toEqual([]);
+    }
+  });
+
+  it('rejects each malformed value on every parallel built-in while a custom adapter receives it unchanged', async () => {
+    for (const [, value, message] of MALFORMED) {
+      const builtIns = BUILT_IN_AGENTS.map((agent) => ({
+        agent,
+        ...builtIn(agent),
+      }));
+      const received: unknown[] = [];
+      const custom: AgentAdapter = {
+        agent: 'custom-skills',
+        async *run(_prompt, options) {
+          received.push(options?.skills);
+          yield doneEvent('custom-skills');
+        },
+        async isAvailable() {
+          return true;
+        },
+      };
+
+      const events = await collectEvents(
+        runParallel([
+          ...builtIns.map(({ adapter }) => ({
+            adapter: adapter as AgentAdapter,
+            prompt: 'p',
+            options: { skills: value as never },
+          })),
+          { adapter: custom, prompt: 'p', options: { skills: value as never } },
+        ]),
+      );
+
+      for (const { agent, backend } of builtIns) {
+        expectRejection(events, agent, message(agent));
+        expect(backend).toEqual([]);
+      }
+      expect(received).toHaveLength(1);
+      expect(received[0]).toBe(value);
+      expect(
+        events.find(
+          (event) => event.type === 'done' && event.agent === 'custom-skills',
+        )?.payload,
+      ).toMatchObject({ status: 'success' });
+    }
   });
 });

@@ -498,6 +498,150 @@ To offer model choices, reuse the adapter's catalog from
 [model discovery](../README.md#model-discovery), and offer efforts from
 `EFFORT_SUPPORT['claude-code']` less its `orchestrationValues`.
 
+## Skills
+
+`skills` hands a run's runtime [Agent Skills](https://agentskills.io/specification)
+directories without committing them to the repository or changing the
+runtime's own configuration. On Claude, Gemini, and OpenCode the run's copy is
+private to the run. On Codex it is a plugin in the Codex home plugin cache for
+the run. On Kimi it is a workspace directory the process shares: concurrent
+Kimi runs and other Kimi processes see it until the process's last Kimi run
+with skills ends. Each entry names a skill directory, or the `SKILL.md` file it
+holds, by path; a relative entry resolves against the run's `cwd`, otherwise
+the process working directory. A per-run list replaces the constructor
+default, and an empty one runs without skills. Omitting the option adds no
+Cligent skill configuration and leaves each runtime's own skill discovery in
+force.
+
+```ts
+import { Cligent } from '@sublang/cligent';
+import { CodexAdapter } from '@sublang/cligent/adapters/codex';
+
+const codex = new Cligent(new CodexAdapter(), {
+  cwd: '/path/to/project',
+  skills: ['tools/skills/release-notes', 'tools/skills/changelog/SKILL.md'],
+});
+
+for await (const event of codex.run('Draft the release notes')) {
+  // ...
+}
+
+// A per-run list replaces the default; an empty one runs without skills.
+for await (const event of codex.run('Answer briefly', { skills: [] })) {
+  // ...
+}
+```
+
+Before any provider work, each built-in adapter checks the whole list and
+rejects it, naming the adapter and the entry's index, unless every skill keeps
+to the portable subset of the convention:
+
+- The directory holds a regular `SKILL.md` that opens with a `---` YAML
+  frontmatter block mapping `name` and `description` to strings.
+- `name` matches `^[a-z0-9]+(-[a-z0-9]+)*$`, has at most 64 characters, and
+  equals the directory's name as given, before any symbolic link is resolved.
+- `description` is non-empty once trimmed and has at most 1024 characters.
+- No other `SKILL.md` lies below the directory, following links to
+  directories, and no symbolic link inside it is dangling or resolves outside
+  it.
+- Every entry below the directory is a regular file, a directory, or a
+  symbolic link; a FIFO, socket, or device file is rejected.
+- No two entries share a `name`.
+
+Cligent rejects a skill rather than rewriting it and does not translate
+runtime-specific frontmatter: `allowed-tools` and `hooks`, for example, act
+only on Claude.
+
+Each run gets a snapshot. The adapter copies every skill into a carrier its
+runtime discovers for that run, keeping file modes and relative links and
+turning an absolute link inside the skill into a relative one, and writes each
+copy under a temporary name before renaming it into place.
+
+| Adapter       | Carrier                                                                  | The model sees                                                  | Checked before the first turn                                 |
+| ------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------- |
+| `claude-code` | a run-private local plugin named `cligent`                               | `cligent:<name>`; the bare name resolves while unique           | initialization lists the plugin and every skill               |
+| `codex`       | a run-private plugin named `cligent` in the Codex home plugin cache      | `cligent:<name>`; a `$cligent:<name>` mention injects the skill | no                                                            |
+| `gemini`      | user-tier skills in the per-run settings home                            | `<name>`                                                        | no                                                            |
+| `kimi`        | a process-shared directory under `.kimi-code/skills` at the project root | `<name>`                                                        | the ACP command list names every skill with its description   |
+| `opencode`    | inline configuration skill paths for the managed server                  | `<name>`                                                        | the server's skill list shows every skill at its run location |
+
+A failed check ends the run as a setup failure naming each missing or
+shadowed skill. Codex and Gemini give no evidence before the first model turn,
+so a skill their runtime drops is silently absent. A same-named skill the
+runtime discovers elsewhere can shadow a run skill on Gemini, Kimi, and
+OpenCode; on Claude and Codex the names collide with another enabled plugin
+named `cligent`.
+
+Claude and Gemini need their skill tool left available:
+
+- On Claude, an empty `allowedTools`, an `allowedTools` without `Skill`, or a
+  `disallowedTools` naming `Skill`, or carrying a `Skill(cligent:<name>)` or `Skill(cligent:*)` deny rule while other `Skill(…)` rules are accepted, rejects a skills run. The adapter adds a
+  `Skill(cligent:<name>)` allow rule for each run skill, so a headless run
+  never waits on the `Skill` ask, and a run skill's `allowed-tools` widens the
+  run's permissions while it is active. Managed settings keep their authority:
+  `disableSideloadFlags` makes the run fail at start, and under
+  `allowManagedPermissionRulesOnly` a skill that sets `allowed-tools`,
+  `disallowed-tools`, or `hooks` asks and is denied unless the permission mode
+  or an approver admits the ask.
+- On Gemini, an `allowedTools` without `activate_skill` or a `disallowedTools`
+  naming it rejects a skills run; otherwise the adapter allows
+  `activate_skill` in the per-run policy, which Gemini's headless policy would
+  deny. Gemini also rejects a skills run whose working directory is your real
+  home, that would enable the native sandbox, or whose user settings set
+  `skills.enabled` to `false`.
+- Codex, Kimi, and OpenCode invoke skills under their native defaults.
+
+Kimi Code takes no per-run skill location, so the Kimi adapter writes into the
+workspace: one `cligent-<host>-<pid>-<suffix>` directory per process under
+`.kimi-code/skills` at the project root, the nearest `.git` ancestor of the
+working directory or that directory itself. While it lasts, the directory is
+visible to version control and to other Kimi processes in that project, and
+every concurrent Kimi run of the process sees every run's skills there,
+whatever its own list. It is removed when the process's last Kimi run with
+skills under that root ends; one left by an abnormal exit is swept by a later
+run of another process on the same host. Kimi rejects a project root that is
+the operating-system home, a `.kimi-code/skills` resolving into your user skill
+directories, a run skill containing that directory, and a run supplying a
+different directory under a name already present.
+
+OpenCode delivers skills only to the server it manages. External mode rejects
+a non-empty list, because that server's configuration and skill cache are
+fixed outside the run. For the run, the managed server's inline configuration
+replaces any `skills.paths` from your configuration files.
+
+A resumed session keeps transcript references to the previous run's carrier
+paths, so pass the same `skills` on every call of a session that should keep
+them; a Kimi session resumed from another working directory fails its delivery
+check.
+
+The adapter removes its carrier when the run ends, or for Kimi when the
+process's last Kimi run with skills under that root ends: after the native
+process exits, or before the terminal where no process started. A removal failure
+before the terminal of an otherwise successful run yields one non-recoverable
+`error` with code `SKILL_CARRIER_CLEANUP_FAILED` naming the path, then `done`
+with `status: 'error'` that keeps the result, resume token, and usage. A run
+that already failed keeps its own error, with the unremoved paths appended to
+its message. A failure after the terminal, or after you abort, leaves the path
+behind and is reported through the adapter's cleanup reporter where it has
+one, such as Kimi's `reportCleanupFailure`, and is otherwise suppressed.
+
+Use `SKILL_SUPPORT` and `getSkillSupport` to see where an adapter carries
+skills. The metadata is deeply frozen and gives each adapter's `carrier`
+(`'run-private'`, or `'workspace'` for Kimi), the `namespace` the model sees
+where the runtime adds one (`'cligent'` on Claude and Codex), and `notes` on
+its limits. It describes transport delivery, not whether a model selects a
+skill or a runtime policy admits it. `claude` is accepted as an alias for
+`claude-code`. A custom adapter receives `skills` unchanged and owns its skill
+contract, so `getSkillSupport` returns `undefined` for it.
+
+```ts
+import { SKILL_SUPPORT, getSkillSupport } from '@sublang/cligent';
+
+console.log(SKILL_SUPPORT.kimi.carrier); // 'workspace'
+console.log(getSkillSupport('claude')?.namespace); // 'cligent'
+console.log(getSkillSupport('my-agent')); // undefined
+```
+
 ## Session continuity
 
 When an adapter's `done` event includes a `resumeToken`, `Cligent` stores it

@@ -12,10 +12,12 @@ import {
   Cligent,
   EFFORT_SUPPORT,
   FAST_MODE_SUPPORT,
+  SKILL_SUPPORT,
   SUBAGENT_MODEL_SUPPORT,
   assertFastModeSupported,
   assertSubagentModelSupported,
   assertSupportedEffort,
+  getSkillSupport,
   isFastModeSupported,
   isEffortSupported,
   isSubagentModelSupported,
@@ -52,6 +54,8 @@ import type {
   PermissionPolicy,
   PortableEffort,
   RunOptions,
+  SkillCarrier,
+  SkillSupport,
   TextPayload,
   TokenUsage,
   TokenUsageReport,
@@ -864,5 +868,76 @@ describe('core types', () => {
     let asserted: string = 'claude-code';
     assertSubagentModelSupported(asserted);
     expectTypeOf(asserted).toMatchTypeOf<'claude' | 'claude-code'>();
+  });
+});
+
+describe('skills option', () => {
+  // skills-1 and engine-1: a readonly list of skill paths on every option
+  // type, accepted by every built-in adapter and engine entry point.
+  it('places a readonly path list on every option type', () => {
+    expectTypeOf<AgentOptions['skills']>().toEqualTypeOf<
+      readonly string[] | undefined
+    >();
+    expectTypeOf<CligentOptions['skills']>().toEqualTypeOf<
+      readonly string[] | undefined
+    >();
+    expectTypeOf<RunOptions['skills']>().toEqualTypeOf<
+      readonly string[] | undefined
+    >();
+
+    const skills = ['skills/review', 'skills/lint/SKILL.md'] as const;
+    const agentOptions: AgentOptions = { skills };
+    const cligentOptions: CligentOptions = { skills };
+    const runOptions: RunOptions = { skills: [] };
+    const claude = new Cligent(new ClaudeCodeAdapter(), { skills });
+    void claude.run('prompt', { skills: [] });
+    void new CodexAdapter().run('prompt', { skills });
+    void new GeminiAdapter().run('prompt', { skills });
+    void new KimiAdapter().run('prompt', { skills });
+    void new OpenCodeAdapter().run('prompt', { skills });
+    void runAgent('codex', 'prompt', { skills }, new AdapterRegistry());
+    void runParallel([
+      { adapter: new KimiAdapter(), prompt: 'prompt', options: { skills } },
+    ]);
+    void Cligent.parallel([
+      { agent: claude, prompt: 'prompt', overrides: { skills: [] } },
+    ]);
+
+    // @ts-expect-error - a skill is named by path, not by an object
+    const inline: AgentOptions = { skills: [{ path: 'skills/review' }] };
+    // @ts-expect-error - the option is a list, never a single path
+    const single: CligentOptions = { skills: 'skills/review' };
+    // @ts-expect-error - entries carry no name override
+    const renamed: RunOptions = { skills: [{ name: 'x', dir: 'skills/x' }] };
+    void agentOptions;
+    void cligentOptions;
+    void runOptions;
+    void inline;
+    void single;
+    void renamed;
+  });
+
+  // skills-5 and skills-6: readonly descriptors keyed by built-in adapter.
+  it('types skill support descriptors and lookups', () => {
+    expectTypeOf<SkillCarrier>().toEqualTypeOf<'run-private' | 'workspace'>();
+    expectTypeOf<SkillSupport>().toEqualTypeOf<{
+      readonly carrier: SkillCarrier;
+      readonly namespace?: string;
+      readonly notes: string;
+    }>();
+    expectTypeOf(getSkillSupport).parameters.toEqualTypeOf<[agent: string]>();
+    expectTypeOf(getSkillSupport).returns.toEqualTypeOf<
+      SkillSupport | undefined
+    >();
+    expectTypeOf<keyof typeof SKILL_SUPPORT>().toEqualTypeOf<
+      'claude-code' | 'codex' | 'gemini' | 'kimi' | 'opencode'
+    >();
+    expectTypeOf(SKILL_SUPPORT.kimi.carrier).toEqualTypeOf<'workspace'>();
+    expectTypeOf(
+      SKILL_SUPPORT['claude-code'].namespace,
+    ).toEqualTypeOf<'cligent'>();
+    expectTypeOf(SKILL_SUPPORT.codex).toMatchTypeOf<SkillSupport>();
+    // @ts-expect-error - descriptors are readonly
+    SKILL_SUPPORT.kimi.carrier = 'run-private';
   });
 });
