@@ -111,13 +111,64 @@ describe('Claude MCP and media through the installed SDK', () => {
       ]);
       expect(events[1]?.payload).toMatchObject({
         code: 'SDK_STREAM_ERROR',
-        message: expect.stringContaining(`"browser" is unavailable (${status})`),
+        message: expect.stringContaining(
+          `"browser" is unavailable (${status})`,
+        ),
         recoverable: false,
       });
       expect(events[2]?.payload).toMatchObject({
         status: 'error',
         usage: { toolUses: 0 },
       });
+    },
+  );
+
+  // claude-code-77: the readiness failure stops the stream through the
+  // mapped abort controller, which a live caller signal and an approval
+  // handler both create, so only the caller's own signal may turn it into an
+  // interruption.
+  it.each(
+    ['failed', 'needs-auth', 'disabled'].flatMap((status) =>
+      (['caller signal', 'approval handler', 'both'] as const).map(
+        (control) => [status, control] as const,
+      ),
+    ),
+  )(
+    'keeps the %s MCP readiness failure under a live %s',
+    async (status, control) => {
+      const { adapter } = await fixture(
+        [{ type: 'assistant', text: 'Must not claim browser work succeeded' }],
+        [{ name: 'browser', status }],
+      );
+      const controller = new AbortController();
+      const approvalHandler = vi.fn(async () => 'deny' as const);
+      const events = await collect(
+        adapter.run('Inspect the browser', {
+          mcpServers: { browser: { type: 'stdio', command: 'fixture' } },
+          ...(control !== 'approval handler'
+            ? { abortSignal: controller.signal }
+            : {}),
+          ...(control !== 'caller signal' ? { approvalHandler } : {}),
+        }),
+      );
+      expect(controller.signal.aborted).toBe(false);
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      expect(events[1]?.payload).toMatchObject({
+        code: 'SDK_STREAM_ERROR',
+        message: expect.stringContaining(
+          `"browser" is unavailable (${status})`,
+        ),
+        recoverable: false,
+      });
+      expect(events[2]?.payload).toMatchObject({
+        status: 'error',
+        usage: { toolUses: 0 },
+      });
+      expect(approvalHandler).not.toHaveBeenCalled();
     },
   );
 
@@ -142,7 +193,10 @@ describe('Claude MCP and media through the installed SDK', () => {
   );
 
   it('preserves no-MCP behavior when the native init reports an unrelated failed server', async () => {
-    const { adapter } = await fixture([], [{ name: 'ambient', status: 'failed' }]);
+    const { adapter } = await fixture(
+      [],
+      [{ name: 'ambient', status: 'failed' }],
+    );
     const events = await collect(adapter.run('Explain this code'));
     expect(events.map((event) => event.type)).toEqual(['init', 'done']);
     expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });

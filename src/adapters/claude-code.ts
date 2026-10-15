@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
 import { describeCapabilities, CapabilityError } from '../capabilities.js';
 import { ApprovalController } from '../internal/approvals.js';
 import { ApprovalEventStream } from '../internal/approval-stream.js';
@@ -14,6 +18,13 @@ import {
   type McpServers,
 } from '../mcp.js';
 import { mediaFromMcpContent } from '../media.js';
+import {
+  formatRemovalFailures,
+  materializeSkills,
+  prepareSkills,
+  removeCarrierPaths,
+  type PreparedSkill,
+} from '../skills.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
@@ -185,6 +196,14 @@ type ClaudeMcpServer =
     }
   | { type: 'http'; url: string; headers?: Record<string, string> };
 
+// The SDK's local plugin entry (claude-code-85); package-104's conformance
+// check rejects drift.
+interface ClaudeLocalPlugin {
+  type: 'local';
+  path: string;
+  skipMcpDiscovery?: boolean;
+}
+
 interface ClaudeQueryOptions {
   prompt: ClaudePrompt;
   pathToClaudeCodeExecutable?: string;
@@ -199,6 +218,7 @@ interface ClaudeQueryOptions {
   settingSources?: Array<'user' | 'project' | 'local'>;
   strictMcpConfig?: boolean;
   mcpServers?: Record<string, ClaudeMcpServer>;
+  plugins?: ClaudeLocalPlugin[];
   permissionMode?: ClaudePermissionMode;
   allowDangerouslySkipPermissions?: boolean;
   canUseTool?: ClaudeCanUseTool;
@@ -263,6 +283,12 @@ interface ClaudeSystemMessage {
   cwd?: unknown;
   tools?: unknown;
   mcp_servers?: unknown;
+  /** Loaded plugins, each `{ name, path }` (claude-code-86). */
+  plugins?: unknown;
+  /** Plugin load-time errors, each `{ plugin, type, message, path? }`. */
+  plugin_errors?: unknown;
+  /** Registered skill names, plugin skills as `<plugin>:<skill>`. */
+  skills?: unknown;
   sessionId?: unknown;
   fast_mode_state?: unknown;
   fast_mode_disabled_reason?: unknown;
@@ -1198,13 +1224,66 @@ function claudeDisallowedTools(
   return [...(denied ?? []), STRUCTURED_QUESTION_TOOL];
 }
 
+/** The native tool that invokes skills (claude-code-85). */
+const SKILL_TOOL = 'Skill';
+/** The plugin manifest name the runtime prefixes to each run skill. */
+const SKILL_PLUGIN_NAME = 'cligent';
+
+/** A run's materialized skill plugin (claude-code-85). */
+interface ClaudeSkillPlugin {
+  /** The plugin root passed to the SDK, as created. */
+  readonly root: string;
+  /** The skill names materialized under the root's `skills` directory. */
+  readonly names: readonly string[];
+}
+
+/**
+ * claude-code-85: a run with skills keeps the `Skill` tool, and each run
+ * skill's invocation, available, because an explicit tool restriction is
+ * never weakened to admit it (engine-17). A denial covers a run skill when it
+ * names the tool or is exactly `Skill(cligent:<name>)` or `Skill(cligent:*)`.
+ */
+function assertClaudeSkillTools(
+  options:
+    | AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>
+    | undefined,
+  names: readonly string[],
+): void {
+  const allowed = options?.allowedTools;
+  const covering = new Set([
+    SKILL_TOOL,
+    `${SKILL_TOOL}(${SKILL_PLUGIN_NAME}:*)`,
+    ...names.map((name) => `${SKILL_TOOL}(${SKILL_PLUGIN_NAME}:${name})`),
+  ]);
+  const denied = options?.disallowedTools?.find((entry) => covering.has(entry));
+  let conflict: string | undefined;
+  if (allowed !== undefined && allowed.length === 0) {
+    conflict = 'an empty allowedTools';
+  } else if (allowed !== undefined && !allowed.includes(SKILL_TOOL)) {
+    conflict = `an allowedTools without ${SKILL_TOOL}`;
+  } else if (denied !== undefined) {
+    conflict = `the disallowedTools entry ${denied}`;
+  }
+  if (conflict !== undefined) {
+    throw new CapabilityError(
+      'tool-restriction',
+      `ClaudeCodeAdapter cannot combine skills with ${conflict}: ` +
+        `the ${SKILL_TOOL} tool must stay available to invoke run skills.`,
+    );
+  }
+}
+
 export function mapAgentOptionsToClaudeQueryOptions(
   options:
     | AgentOptions<ClaudeEffort, boolean, string, ClaudeSubagentEffort>
     | undefined,
+  skillPlugin?: ClaudeSkillPlugin,
 ): MappedClaudeOptions {
   const mcpServers = normalizeMcpServers(options?.mcpServers);
   assertClaudeMcpAllowlist(options, mcpServers);
+  if (skillPlugin !== undefined) {
+    assertClaudeSkillTools(options, skillPlugin.names);
+  }
   const sdkMcpServers =
     mcpServers === undefined
       ? undefined
@@ -1234,6 +1313,18 @@ export function mapAgentOptionsToClaudeQueryOptions(
   const mcpToolGrants = Object.keys(mcpServers ?? {}).map(
     (name) => `mcp__${name}__*`,
   );
+  // claude-code-9 / claude-code-85: one grant per run skill follows the
+  // entries the tool list and MCP servers select, so a headless run never
+  // waits on a Skill permission ask.
+  const skillGrants = (skillPlugin?.names ?? []).map(
+    (name) => `${SKILL_TOOL}(${SKILL_PLUGIN_NAME}:${name})`,
+  );
+  const baseAllowedTools =
+    mcpToolGrants.length > 0 ? mcpToolGrants : options?.allowedTools;
+  const allowedTools =
+    skillGrants.length > 0
+      ? [...(baseAllowedTools ?? []), ...skillGrants]
+      : baseAllowedTools;
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
   assertBuiltInSubagentEffortOption(
@@ -1318,12 +1409,24 @@ export function mapAgentOptionsToClaudeQueryOptions(
         options?.allowedTools !== undefined
           ? [...options.allowedTools]
           : undefined,
-      allowedTools:
-        mcpToolGrants.length > 0 ? mcpToolGrants : options?.allowedTools,
+      allowedTools,
       disallowedTools: claudeDisallowedTools(options),
       settingSources: toolFreeIsolation ? [] : undefined,
       strictMcpConfig: true,
       ...(sdkMcpServers === undefined ? {} : { mcpServers: sdkMcpServers }),
+      // claude-code-85: skipping the plugin's MCP discovery keeps
+      // claude-code-70's confinement.
+      ...(skillPlugin === undefined
+        ? {}
+        : {
+            plugins: [
+              {
+                type: 'local' as const,
+                path: skillPlugin.root,
+                skipMcpDiscovery: true,
+              },
+            ],
+          }),
       permissionMode: permissionOptions.permissionMode,
       allowDangerouslySkipPermissions:
         permissionOptions.allowDangerouslySkipPermissions,
@@ -1356,6 +1459,156 @@ function assertClaudeMcpAllowlist(
     );
   }
 }
+
+/** A materialized skill plugin with its root as the filesystem resolves it. */
+interface MaterializedClaudeSkillPlugin extends ClaudeSkillPlugin {
+  readonly realRoot: string;
+}
+
+/** The manifest whose name the runtime prefixes to each skill (claude-code-85). */
+const SKILL_PLUGIN_MANIFEST = JSON.stringify({ name: SKILL_PLUGIN_NAME });
+
+/**
+ * claude-code-85: a new private temporary plugin root holding the manifest
+ * and a `skills` directory materialized under skills-3, its temporary-name
+ * writes staged in `.staging`, beside rather than under the scanned
+ * `skills`. `onCreated` learns the root as soon as it exists, so a failed or
+ * cancelled materialization can still be removed.
+ */
+async function createClaudeSkillPlugin(
+  skills: readonly PreparedSkill[],
+  signal: AbortSignal | undefined,
+  onCreated: (root: string) => void,
+): Promise<MaterializedClaudeSkillPlugin> {
+  const root = await mkdtemp(join(tmpdir(), 'cligent-claude-skills-'));
+  onCreated(root);
+  await mkdir(join(root, '.claude-plugin'));
+  await writeFile(
+    join(root, '.claude-plugin', 'plugin.json'),
+    SKILL_PLUGIN_MANIFEST,
+  );
+  await materializeSkills(skills, {
+    root: join(root, 'skills'),
+    staging: join(root, '.staging'),
+    signal,
+  });
+  return {
+    root,
+    realRoot: await realpath(root),
+    names: skills.map((skill) => skill.name),
+  };
+}
+
+/**
+ * claude-code-89 / skills-4: remove a plugin root no SDK query used before
+ * the rejection leaves the adapter, appending each unremoved path to the
+ * rejection's message unless the caller signal fired.
+ */
+async function withSkillRootRemoved(
+  error: unknown,
+  root: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<unknown> {
+  if (root === undefined) return error;
+  const failures = await removeCarrierPaths([root]);
+  if (failures.length === 0 || signal?.aborted) return error;
+  const detail = `; skill carrier cleanup failed: ${formatRemovalFailures(failures)}`;
+  if (error instanceof Error) {
+    error.message += detail;
+    return error;
+  }
+  return new Error(`${String(error)}${detail}`);
+}
+
+/**
+ * claude-code-86: the first initialization's evidence that the run's plugin
+ * and skills did not load, or `undefined` where it shows none, because
+ * omitted evidence does not establish failure.
+ */
+async function claudeSkillPluginFailure(
+  system: ClaudeSystemMessage,
+  plugin: MaterializedClaudeSkillPlugin,
+  cwd: string,
+): Promise<string | undefined> {
+  const resolvesToRoot = async (value: unknown): Promise<boolean> => {
+    const path = asString(value);
+    if (path === undefined) return false;
+    const absolute = resolve(cwd, path);
+    if (absolute === plugin.root || absolute === plugin.realRoot) return true;
+    try {
+      return (await realpath(absolute)) === plugin.realRoot;
+    } catch {
+      return false;
+    }
+  };
+  const problems: string[] = [];
+  // A present member that is not an array holds no matching entry.
+  if (system.plugins !== undefined) {
+    let listed = false;
+    for (const entry of Array.isArray(system.plugins) ? system.plugins : []) {
+      if (await resolvesToRoot(asRecord(entry).path)) {
+        listed = true;
+        break;
+      }
+    }
+    if (!listed) problems.push('no loaded plugin has that path');
+  }
+  if (Array.isArray(system.plugin_errors)) {
+    for (const entry of system.plugin_errors) {
+      const record = asRecord(entry);
+      const message = asString(record.message) ?? '';
+      if (
+        (await resolvesToRoot(record.path)) ||
+        message.includes(plugin.root) ||
+        message.includes(plugin.realRoot)
+      ) {
+        const type = asString(record.type);
+        problems.push(
+          `plugin error${type !== undefined ? ` ${type}` : ''}: ${message}`,
+        );
+      }
+    }
+  }
+  if (system.skills !== undefined) {
+    const listed = new Set(asStringArray(system.skills));
+    const missing = plugin.names
+      .map((name) => `${SKILL_PLUGIN_NAME}:${name}`)
+      .filter((name) => !listed.has(name));
+    if (missing.length > 0) {
+      problems.push(`missing skills ${missing.join(', ')}`);
+    }
+  }
+  if (problems.length === 0) return undefined;
+  return (
+    `Claude skills plugin ${plugin.root} did not load: ${problems.join('; ')}. ` +
+    'Check the skill directories and native plugin policy before retrying.'
+  );
+}
+
+/**
+ * claude-code-89: settle an invoked SDK query. The installed SDK's
+ * `Query.return()` runs its memoized cleanup, which closes the transport and
+ * waits for the native process to exit; its iterator's own `return()` does
+ * not.
+ */
+async function settleClaudeQuery(
+  stream: AsyncIterable<unknown> | undefined,
+): Promise<void> {
+  const query = stream as
+    Partial<AsyncGenerator<unknown, unknown, unknown>> | undefined;
+  try {
+    await query?.return?.(undefined);
+  } catch {
+    // Settlement, not its outcome, is what removal waits for.
+  }
+}
+
+/**
+ * A native initialization that ends the run (claude-code-77,
+ * claude-code-86). Stopping the stream aborts the mapped controller, so only
+ * the caller's own signal turns this failure into an interruption.
+ */
+class ClaudeReadinessError extends Error {}
 
 export class ClaudeCodeAdapter implements AgentAdapter<
   ClaudeEffort,
@@ -1421,10 +1674,27 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     const attachmentPreparationStart = Date.now();
     let sdkPrompt: ClaudePrompt = prompt;
     let mcpServers: McpServers | undefined;
+    let skillPlugin: MaterializedClaudeSkillPlugin | undefined;
+    // Set as soon as the plugin root exists (claude-code-89).
+    let skillRoot: string | undefined;
     try {
       options?.abortSignal?.throwIfAborted();
       mcpServers = normalizeMcpServers(options?.mcpServers);
       assertClaudeMcpAllowlist(options, mcpServers);
+      // skills-2 / claude-code-85: the whole list and the tool lists that
+      // must keep the Skill tool are settled before browser preparation.
+      const skills = await prepareSkills(
+        AGENT,
+        options?.skills,
+        options?.cwd,
+        options?.abortSignal,
+      );
+      if (skills.length > 0) {
+        assertClaudeSkillTools(
+          options,
+          skills.map((skill) => skill.name),
+        );
+      }
       const attachments = await prepareAttachments(
         AGENT,
         options?.attachments,
@@ -1467,9 +1737,27 @@ export class ClaudeCodeAdapter implements AgentAdapter<
         })();
       }
       mcpServers = await prepareMcpServers({ ...options, mcpServers });
+      if (skills.length > 0) {
+        skillPlugin = await createClaudeSkillPlugin(
+          skills,
+          options?.abortSignal,
+          (root) => {
+            skillRoot = root;
+          },
+        );
+      }
       options?.abortSignal?.throwIfAborted();
     } catch (error) {
-      if (!options?.abortSignal?.aborted) throw error;
+      if (!options?.abortSignal?.aborted) {
+        throw await withSkillRootRemoved(
+          error,
+          skillRoot,
+          options?.abortSignal,
+        );
+      }
+      // claude-code-89: no SDK query used the root; the caller signal fired,
+      // so a removal failure is suppressed (skills-4).
+      if (skillRoot !== undefined) await removeCarrierPaths([skillRoot]);
       const sessionId = options.resume || generateSessionId();
       yield createEvent(
         'done',
@@ -1490,34 +1778,41 @@ export class ClaudeCodeAdapter implements AgentAdapter<
       return;
     }
     let sdk: ClaudeAgentSdk;
+    let executablePath: string;
+    let mapped: MappedClaudeOptions;
     try {
-      sdk = await this.loadSdk();
-    } catch (error) {
-      // A version refusal already names the installed version, the required
-      // version, the tree, and the repair. Replacing it with "install it"
-      // would tell the user to install something already present.
-      if (isUnsupportedRuntimeError(error)) throw error;
-      throw new Error(
-        'ClaudeCodeAdapter requires @anthropic-ai/claude-agent-sdk. Install it to use this adapter.',
+      try {
+        sdk = await this.loadSdk();
+      } catch (error) {
+        // A version refusal already names the installed version, the required
+        // version, the tree, and the repair. Replacing it with "install it"
+        // would tell the user to install something already present.
+        if (isUnsupportedRuntimeError(error)) throw error;
+        throw new Error(
+          'ClaudeCodeAdapter requires @anthropic-ai/claude-agent-sdk. Install it to use this adapter.',
+        );
+      }
+      // claude-code-56: refuse before any SDK call rather than let the SDK
+      // fail on the binary it cannot spawn.
+      const executable = this.probeExecutable();
+      if (executable.state !== 'present') {
+        throw new Error(claudeExecutableRefusal(executable));
+      }
+      executablePath = executable.path;
+      mapped = mapAgentOptionsToClaudeQueryOptions(
+        { ...options, browser: false, mcpServers },
+        skillPlugin,
       );
-    }
-    // claude-code-56: refuse before any SDK call rather than let the SDK
-    // fail on the binary it cannot spawn.
-    const executable = this.probeExecutable();
-    if (executable.state !== 'present') {
-      throw new Error(claudeExecutableRefusal(executable));
+    } catch (error) {
+      throw await withSkillRootRemoved(error, skillRoot, options?.abortSignal);
     }
 
     const inboundResume = options?.resume || undefined;
     let sessionId = inboundResume ?? generateSessionId();
     let resumableSessionIdKnown = false;
-    const { queryOptions, cleanupAbort } = mapAgentOptionsToClaudeQueryOptions({
-      ...options,
-      browser: false,
-      mcpServers,
-    });
-    if (process.versions.electron && executable.path.includes('.asar.unpacked'))
-      queryOptions.pathToClaudeCodeExecutable = executable.path;
+    const { queryOptions, cleanupAbort } = mapped;
+    if (process.versions.electron && executablePath.includes('.asar.unpacked'))
+      queryOptions.pathToClaudeCodeExecutable = executablePath;
     if (!inboundResume) {
       // The SDK forwards this typed option to `claude --session-id`. It gives
       // fresh runs a stable id once Claude persists the conversation, but an
@@ -1643,10 +1938,14 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     let submittedTurnActivity = false;
     const observedToolUseIds = new Set<string>();
     const toolNames = new Map<string, string>();
+    // Kept so a run with skills can await the query's settlement before the
+    // plugin root goes (claude-code-89).
+    let stream: AsyncIterable<unknown> | undefined;
 
     try {
+      stream = sdk.query({ prompt: sdkPrompt, options: queryOptions });
       for await (const item of approvalEvents.merge(
-        sdk.query({ prompt: sdkPrompt, options: queryOptions }),
+        stream,
         () => approvals.close(),
         () => {
           if (!doneYielded) queryOptions.abortController?.abort();
@@ -1688,13 +1987,14 @@ export class ClaudeCodeAdapter implements AgentAdapter<
           resolveProviderReady(true);
           const fastMode = readFastModeObservation(system);
           const reportedModel = asString(system.model);
+          const initCwd = asString(system.cwd) ?? options?.cwd ?? process.cwd();
           yield createEvent(
             'init',
             AGENT,
             {
               model: reportedModel ?? options?.model ?? 'unknown',
               ...(reportedModel !== undefined ? { reportedModel } : {}),
-              cwd: asString(system.cwd) ?? options?.cwd ?? process.cwd(),
+              cwd: initCwd,
               tools: asStringArray(system.tools),
               ...(fastMode !== undefined ? { fastMode } : {}),
             },
@@ -1715,12 +2015,20 @@ export class ClaudeCodeAdapter implements AgentAdapter<
                   status === 'needs-auth' ||
                   status === 'disabled')
               ) {
-                throw new Error(
+                throw new ClaudeReadinessError(
                   `Claude MCP server "${name}" is unavailable (${status}). ` +
                     'Check its command or endpoint, authentication, and native policy before retrying.',
                 );
               }
             }
+          }
+          if (skillPlugin !== undefined) {
+            const failure = await claudeSkillPluginFailure(
+              system,
+              skillPlugin,
+              initCwd,
+            );
+            if (failure !== undefined) throw new ClaudeReadinessError(failure);
           }
           continue;
         }
@@ -2039,7 +2347,11 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     } catch (error) {
       approvals.close();
       yield* approvalEvents.drain();
-      if (queryOptions.abortController?.signal.aborted) {
+      const interrupted =
+        error instanceof ClaudeReadinessError
+          ? options?.abortSignal?.aborted === true
+          : queryOptions.abortController?.signal.aborted === true;
+      if (interrupted) {
         yield createEvent(
           'done',
           AGENT,
@@ -2093,6 +2405,16 @@ export class ClaudeCodeAdapter implements AgentAdapter<
       resolveProviderReady(false);
       approvals.close();
       cleanupAbort();
+      if (skillRoot !== undefined) {
+        // claude-code-89: after terminal done, once the SDK query settled on
+        // every path, success, readiness failure, abort, or a host break
+        // alike. The merge bounds its own wait on the iterator, so the
+        // query's cleanup, which waits for the native process to exit, is
+        // awaited here. A removal failure is post-terminal and, with no
+        // cleanup reporter on this adapter, suppressed (skills-4).
+        await settleClaudeQuery(stream);
+        await removeCarrierPaths([skillRoot]);
+      }
     }
   }
 }
