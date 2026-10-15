@@ -10,7 +10,16 @@ import type {
   ChildProcessWithoutNullStreams,
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
-import { resolve } from 'node:path';
+import {
+  lstat,
+  mkdir,
+  readdir,
+  readlink,
+  realpath,
+  rm,
+} from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { promisify } from 'node:util';
 
@@ -31,9 +40,14 @@ import type {
   ToolCallStatus,
 } from '@agentclientprotocol/sdk';
 import { prepareMcpServers, withMcpResources } from '../mcp.js';
-import type { AcpSessionConfigOption } from './acp-schema.js';
+import type {
+  AcpAvailableCommand,
+  AcpSessionConfigOption,
+} from './acp-schema.js';
 import {
   ACTED_ON_UPDATES,
+  AVAILABLE_COMMANDS_UPDATE,
+  zAcpAvailableCommandsUpdate as zAvailableCommandsUpdate,
   zAcpError as zError,
   zAcpInitializeResponse as zInitializeResponse,
   zAcpNewSessionResponse as zNewSessionResponse,
@@ -46,6 +60,19 @@ import {
 
 import { createEvent, generateSessionId } from '../events.js';
 import { prepareAttachments, readAttachment } from '../attachments.js';
+import {
+  carrierName,
+  carrierSuffix,
+  formatRemovalFailures,
+  isPathWithin,
+  isStaleCarrierName,
+  materializeSkills,
+  prepareSkills,
+  processCarrierSuffix,
+  removeCarrierPaths,
+  SKILL_CARRIER_CLEANUP_FAILED,
+} from '../skills.js';
+import type { PreparedSkill, RemovalFailure } from '../skills.js';
 import { mediaFromKimiContent, mediaFromMcpContent } from '../media.js';
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
@@ -107,6 +134,8 @@ interface KimiAdapterDeps {
   processStdinExitGraceMs?: number;
   processSignalExitGraceMs?: number;
   cancelTerminationDelayMs?: number;
+  /** kimi-50's bound on the wait for the session's command list. */
+  skillListingTimeoutMs?: number;
   reportCleanupFailure?: (error: Error) => void;
 }
 
@@ -308,16 +337,33 @@ function parseAcpResult<Result>(
 }
 
 /**
+ * The window in which a run with skills consumes `available_commands_update`
+ * (kimi-27): open from its session setup request until kimi-50 settles.
+ */
+interface CommandListingTap {
+  /** Whether an `available_commands_update` is consumed now rather than dropped. */
+  readonly open: () => boolean;
+  /** Receives a validated update; throws a protocol failure for another session. */
+  readonly consume: (
+    sessionId: string,
+    commands: readonly AcpAvailableCommand[],
+  ) => void;
+}
+
+/**
  * Validates one inbound message and reports whether it should reach the SDK.
  *
  * A `session/update` naming a case this adapter does not act on is dropped.
  * It has no mapped Cligent behavior, while a case outside the pinned SDK's
  * closed union would otherwise produce an Invalid params log. Dropping every
- * unhandled case keeps "ignored" true end to end as the protocol grows.
+ * unhandled case keeps "ignored" true end to end as the protocol grows. An
+ * `available_commands_update` inside a skills run's window is consumed here
+ * instead, in arrival order relative to the setup response that follows it.
  */
 function validateInboundAcpMessage(
   value: unknown,
   pendingRequestIds: Set<string>,
+  commandListing?: CommandListingTap,
 ): boolean {
   const message = asRecord(value);
   if (!message || message.jsonrpc !== '2.0') {
@@ -348,6 +394,24 @@ function validateInboundAcpMessage(
           throw malformedAcpTraffic('session/update must be a notification');
         }
         const notification = zSessionNotification.parse(message.params);
+        if (
+          notification.update.sessionUpdate === AVAILABLE_COMMANDS_UPDATE &&
+          commandListing?.open()
+        ) {
+          let update;
+          try {
+            update = zAvailableCommandsUpdate.parse(notification.update);
+          } catch {
+            throw malformedAcpTraffic(
+              'invalid available_commands_update parameters',
+            );
+          }
+          commandListing.consume(
+            notification.sessionId,
+            update.availableCommands,
+          );
+          return false;
+        }
         if (!ACTED_ON_UPDATES.has(notification.update.sessionUpdate)) {
           return false;
         }
@@ -408,6 +472,7 @@ function strictAcpStream(
   output: WritableStream<Uint8Array>,
   input: ReadableStream<Uint8Array>,
   onProtocolError: (error: Error) => void,
+  commandListing?: CommandListingTap,
 ): AcpStream {
   const pendingRequestIds = new Set<string>();
   const encoder = new TextEncoder();
@@ -471,7 +536,11 @@ function strictAcpStream(
         } catch {
           throw malformedAcpTraffic('invalid JSON');
         }
-        if (!validateInboundAcpMessage(message, pendingRequestIds)) return;
+        if (
+          !validateInboundAcpMessage(message, pendingRequestIds, commandListing)
+        ) {
+          return;
+        }
         controller.enqueue(encoder.encode(`${trimmed}\n`));
       };
 
@@ -740,6 +809,428 @@ function killProcess(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Skills (kimi-49, kimi-50, kimi-53): one process-shared carrier per resolved
+// `.kimi-code/skills` directory, the one Kimi scans under a project root.
+
+const SKILL_LISTING_TIMEOUT_MS = 5_000;
+const KIMI_PROJECT_DIR = '.kimi-code';
+const KIMI_SKILLS_DIR = 'skills';
+const STAGING_PREFIX = '.cligent-staging-';
+const LINK_RESOLUTION_LIMIT = 40;
+
+/** kimi-50: the session's command list does not carry every run skill. */
+class KimiSkillDeliveryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'KimiSkillDeliveryError';
+  }
+}
+
+/** A skills preparation that failed after taking a hold, with what its release left behind. */
+class KimiSkillPreparationError extends Error {
+  constructor(
+    readonly reason: unknown,
+    readonly removalFailures: readonly RemovalFailure[],
+  ) {
+    super(reason instanceof Error ? reason.message : String(reason));
+    this.name = 'KimiSkillPreparationError';
+  }
+}
+
+interface KimiCarrierEntry {
+  /** The skill's resolved source directory. */
+  readonly source: string;
+  /** Settles once the entry is in place, rejecting where its materialization failed. */
+  readonly ready: Promise<void>;
+}
+
+interface KimiCarrierState {
+  /** The resolved carrier destination this state serves. */
+  readonly key: string;
+  /** The destination as the creating run named it, before link resolution. */
+  readonly destination: string;
+  readonly root: string;
+  readonly record: KimiCarrierDestination;
+  readonly entries: Map<string, KimiCarrierEntry>;
+  holders: number;
+  rootReady?: Promise<void>;
+  removal?: Promise<RemovalFailure[]>;
+}
+
+interface KimiCarrierDestination {
+  /**
+   * The parents this process created for its carrier root here, kept while
+   * they remain on disk so the holder after a failed removal removes them.
+   */
+  readonly createdParents: string[];
+  /** The state holding the root, absent between holders. */
+  state?: KimiCarrierState;
+}
+
+// The process's carriers, keyed by resolved carrier destination, so project
+// roots whose `.kimi-code` aliases one directory share one root and one hold
+// count. Kept on globalThis so two copies of this module loaded into one
+// process share it, or one copy's last holder would remove the other's root.
+const KIMI_CARRIERS_KEY = Symbol.for('@sublang/cligent.kimiCarriers');
+
+function kimiCarrierRegistry(): Map<string, KimiCarrierDestination> {
+  const holder = globalThis as {
+    [KIMI_CARRIERS_KEY]?: Map<string, KimiCarrierDestination>;
+  };
+  holder[KIMI_CARRIERS_KEY] ??= new Map();
+  return holder[KIMI_CARRIERS_KEY];
+}
+
+interface KimiSkillCarrier {
+  readonly root: string;
+  /** Releases this run's hold; the last holder removes the root (kimi-53). */
+  release(): Promise<RemovalFailure[]>;
+}
+
+function errnoCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException | undefined)?.code;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The physical path a possibly absent path names: links are followed, a
+ * dangling link included, and a missing tail is kept as written.
+ */
+async function resolvePhysical(path: string, depth = 0): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    // Resolve the parent and follow the last component by hand below.
+  }
+  const parent = dirname(path);
+  if (parent === path) return path;
+  const base = join(await resolvePhysical(parent, depth), basename(path));
+  if (depth >= LINK_RESOLUTION_LIMIT) return base;
+  try {
+    const target = await readlink(base);
+    return await resolvePhysical(resolve(dirname(base), target), depth + 1);
+  } catch {
+    return base;
+  }
+}
+
+/** kimi-49: the nearest ancestor of the cwd, itself included, holding a `.git` entry of any type. */
+async function findKimiProjectRoot(cwd: string): Promise<string> {
+  let current = cwd;
+  while (true) {
+    if (await pathExists(join(current, '.git'))) return current;
+    const parent = dirname(current);
+    if (parent === current) return cwd;
+    current = parent;
+  }
+}
+
+/** The user-level skill roots Kimi scans: `$KIMI_CODE_HOME/skills` and `~/.agents/skills`. */
+function kimiUserSkillRoots(cwd: string): string[] {
+  const configured = process.env.KIMI_CODE_HOME;
+  const kimiHome = configured
+    ? resolve(cwd, configured)
+    : join(homedir(), KIMI_PROJECT_DIR);
+  return [
+    join(kimiHome, KIMI_SKILLS_DIR),
+    join(homedir(), '.agents', KIMI_SKILLS_DIR),
+  ];
+}
+
+/** Remove carriers left by dead processes of this host, tolerating any failure (kimi-49). */
+async function sweepStaleKimiCarriers(destination: string): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(destination);
+  } catch {
+    return;
+  }
+  const ownSuffix = processCarrierSuffix();
+  await Promise.all(
+    names
+      .filter((name) => isStaleCarrierName(name, { ownSuffix }))
+      .map((name) =>
+        rm(join(destination, name), { recursive: true, force: true }).catch(
+          () => undefined,
+        ),
+      ),
+  );
+}
+
+/**
+ * Prepare a new state's carrier root: remove a root of this process's name
+ * an earlier holder's failed removal left, tolerating a second failure, then
+ * create the root and its missing parents, recording each parent created.
+ */
+async function prepareKimiCarrierRoot(state: KimiCarrierState): Promise<void> {
+  await rm(state.root, { recursive: true, force: true }).catch(() => undefined);
+  const parents = state.record.createdParents;
+  for (const parent of [dirname(state.destination), state.destination]) {
+    try {
+      await mkdir(parent);
+      if (!parents.includes(parent)) parents.push(parent);
+    } catch (error) {
+      if (errnoCode(error) !== 'EEXIST') throw error;
+    }
+  }
+  try {
+    await mkdir(state.root);
+  } catch (error) {
+    if (errnoCode(error) !== 'EEXIST') throw error;
+  }
+}
+
+/** kimi-53: drop one hold; the last holder removes the root, its entries, and the created parents while empty. */
+async function releaseKimiCarrierHold(
+  state: KimiCarrierState,
+): Promise<RemovalFailure[]> {
+  state.holders -= 1;
+  if (state.holders > 0) return [];
+  state.removal = (async () => {
+    await state.rootReady?.catch(() => undefined);
+    const { record } = state;
+    const failures = await removeCarrierPaths(
+      [state.root],
+      // Deepest first, whichever holder recorded each parent.
+      [...record.createdParents].sort((a, b) => b.length - a.length),
+    );
+    const remaining: string[] = [];
+    for (const parent of record.createdParents) {
+      if (await pathExists(parent)) remaining.push(parent);
+    }
+    record.createdParents.splice(0, record.createdParents.length, ...remaining);
+    // A run waiting on this removal starts a fresh state once it settles.
+    if (record.state === state) record.state = undefined;
+    const registry = kimiCarrierRegistry();
+    if (
+      record.state === undefined &&
+      remaining.length === 0 &&
+      registry.get(state.key) === record
+    ) {
+      registry.delete(state.key);
+    }
+    return failures;
+  })();
+  return state.removal;
+}
+
+/** Await a promise, rejecting with the signal's reason once the caller aborts. */
+async function awaitUnlessAborted<T>(
+  promise: Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  if (!signal) return promise;
+  signal.throwIfAborted();
+  let onAbort = (): void => {};
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason as Error);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+function skillField(index: number): string {
+  return `skills[${index}] for adapter "${AGENT}"`;
+}
+
+/**
+ * kimi-49: select the project root, reject what the carrier cannot serve,
+ * then take a hold on the process's carrier there and materialize every run
+ * skill not already present, reusing an entry supplied from the same
+ * directory. Rejections that need no hold come before any sweep or write.
+ */
+async function acquireKimiSkillCarrier(
+  skills: readonly PreparedSkill[],
+  cwd: string,
+  signal: AbortSignal | undefined,
+): Promise<KimiSkillCarrier> {
+  const projectRoot = await findKimiProjectRoot(cwd);
+  const home = homedir();
+  const [physicalRoot, physicalHome] = await Promise.all([
+    resolvePhysical(projectRoot),
+    resolvePhysical(home),
+  ]);
+  if (projectRoot === home || physicalRoot === physicalHome) {
+    throw new Error(
+      `skills for adapter "${AGENT}" cannot use the project root ${projectRoot}: it is the operating-system home, where the carrier would become a user-level skill directory`,
+    );
+  }
+  const destination = join(projectRoot, KIMI_PROJECT_DIR, KIMI_SKILLS_DIR);
+  const physicalDestination = await resolvePhysical(destination);
+  for (const userRoot of kimiUserSkillRoots(cwd)) {
+    const physicalUserRoot = await resolvePhysical(userRoot);
+    if (
+      isPathWithin(userRoot, destination) ||
+      isPathWithin(physicalUserRoot, physicalDestination)
+    ) {
+      throw new Error(
+        `skills for adapter "${AGENT}" cannot use the carrier destination ${destination}: it resolves to ${physicalDestination}, at or below the user skill root ${userRoot}, so the carrier would reach every project`,
+      );
+    }
+  }
+  const sources = await Promise.all(
+    skills.map((skill) => resolvePhysical(skill.directory)),
+  );
+  for (const [index, skill] of skills.entries()) {
+    if (
+      isPathWithin(skill.directory, destination) ||
+      isPathWithin(sources[index]!, physicalDestination)
+    ) {
+      throw new Error(
+        `${skillField(index)} names ${skill.directory}, which equals or contains the carrier destination ${destination}, so the carrier would nest inside its own source`,
+      );
+    }
+  }
+  signal?.throwIfAborted();
+
+  // Runs whose destinations resolve to one directory share one state. A run
+  // starting while that root's removal is in flight waits for it.
+  const registry = kimiCarrierRegistry();
+  let state = registry.get(physicalDestination)?.state;
+  while (state?.removal) {
+    await awaitUnlessAborted(state.removal, signal);
+    state = registry.get(physicalDestination)?.state;
+  }
+  signal?.throwIfAborted();
+
+  // From here to the hold nothing awaits, so the disputed-name check and
+  // the registration of new entries are atomic among this process's runs.
+  for (const [index, skill] of skills.entries()) {
+    const entry = state?.entries.get(skill.name);
+    if (entry && entry.source !== sources[index]) {
+      throw new Error(
+        `${skillField(index)} supplies ${sources[index]} under the name "${skill.name}", while the carrier entry ${join(state!.root, skill.name)} holds ${entry.source}`,
+      );
+    }
+  }
+  if (!state) {
+    let record = registry.get(physicalDestination);
+    if (!record) {
+      record = { createdParents: [] };
+      registry.set(physicalDestination, record);
+    }
+    state = {
+      key: physicalDestination,
+      destination,
+      root: join(destination, carrierName(processCarrierSuffix())),
+      record,
+      entries: new Map(),
+      holders: 0,
+    };
+    record.state = state;
+  }
+  const carrier = state;
+  carrier.holders += 1;
+  const reused: Array<{ index: number; entry: KimiCarrierEntry }> = [];
+  const pending: Array<{
+    index: number;
+    entry: KimiCarrierEntry;
+    settle: (error?: unknown) => void;
+  }> = [];
+  for (const [index, skill] of skills.entries()) {
+    const entry = carrier.entries.get(skill.name);
+    if (entry) {
+      reused.push({ index, entry });
+      continue;
+    }
+    let settle!: (error?: unknown) => void;
+    const ready = new Promise<void>((resolveReady, rejectReady) => {
+      settle = (error) =>
+        error === undefined ? resolveReady() : rejectReady(error);
+    });
+    ready.catch(() => undefined);
+    const created = { source: sources[index]!, ready };
+    carrier.entries.set(skill.name, created);
+    pending.push({ index, entry: created, settle });
+  }
+
+  let released = false;
+  const release = async (): Promise<RemovalFailure[]> => {
+    if (released) return [];
+    released = true;
+    return releaseKimiCarrierHold(carrier);
+  };
+
+  const unsettled = new Set(pending);
+  const fail = (item: (typeof pending)[number], error: unknown): void => {
+    unsettled.delete(item);
+    const name = skills[item.index]!.name;
+    if (carrier.entries.get(name) === item.entry) carrier.entries.delete(name);
+    item.settle(error);
+  };
+  try {
+    signal?.throwIfAborted();
+    await sweepStaleKimiCarriers(destination);
+    carrier.rootReady ??= prepareKimiCarrierRoot(carrier);
+    carrier.rootReady.catch(() => undefined);
+    await carrier.rootReady;
+    // An entry present without a recorded source survived a removal that
+    // failed twice: once by its holder and once when this state began.
+    for (const item of pending) {
+      const skill = skills[item.index]!;
+      const target = join(carrier.root, skill.name);
+      if (await pathExists(target)) {
+        throw new Error(
+          `${skillField(item.index)} supplies ${sources[item.index]} under the name "${skill.name}", while the carrier entry ${target} is present with no recorded source`,
+        );
+      }
+    }
+    for (const item of pending) {
+      const skill = skills[item.index]!;
+      await materializeSkills([skill], {
+        root: carrier.root,
+        // Beside the resolved destination, so a `.kimi-code/skills` linked
+        // onto another filesystem still renames each entry into place.
+        staging: join(
+          dirname(physicalDestination),
+          `${STAGING_PREFIX}${carrierSuffix()}`,
+        ),
+        signal,
+      });
+      unsettled.delete(item);
+      item.settle();
+    }
+    for (const { index, entry } of reused) {
+      let failure: { error: unknown } | undefined;
+      await awaitUnlessAborted(
+        entry.ready.catch((error: unknown) => {
+          failure = { error };
+        }),
+        signal,
+      );
+      if (failure) {
+        const { error } = failure;
+        throw new Error(
+          `${skillField(index)} supplies ${sources[index]} under the name "${skills[index]!.name}", while the materialization of the carrier entry ${join(carrier.root, skills[index]!.name)} from ${entry.source} failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  } catch (error) {
+    for (const item of [...unsettled]) fail(item, error);
+    throw new KimiSkillPreparationError(error, await release());
+  }
+  return { root: carrier.root, release };
+}
+
+function carrierFailureSuffix(failures: readonly RemovalFailure[]): string {
+  return failures.length > 0
+    ? `; skill carrier cleanup failed: ${formatRemovalFailures(failures)}`
+    : '';
+}
+
 export class KimiAdapter implements AgentAdapter<KimiEffort> {
   readonly agent = AGENT;
 
@@ -748,6 +1239,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
   private readonly processStdinExitGraceMs: number;
   private readonly processSignalExitGraceMs: number;
   private readonly cancelTerminationDelayMs: number;
+  private readonly skillListingTimeoutMs: number;
   private readonly reportCleanupFailure: (error: Error) => void;
 
   constructor(deps: KimiAdapterDeps = {}) {
@@ -759,6 +1251,8 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       deps.processSignalExitGraceMs ?? PROCESS_SIGNAL_EXIT_GRACE_MS;
     this.cancelTerminationDelayMs =
       deps.cancelTerminationDelayMs ?? CANCEL_TERMINATION_DELAY_MS;
+    this.skillListingTimeoutMs =
+      deps.skillListingTimeoutMs ?? SKILL_LISTING_TIMEOUT_MS;
     this.reportCleanupFailure =
       deps.reportCleanupFailure ?? defaultReportCleanupFailure;
   }
@@ -775,6 +1269,20 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
 
   async isAvailable(): Promise<boolean> {
     return this.probeAvailability();
+  }
+
+  /** skills-4: a carrier removal failure the terminal cannot carry goes to the cleanup reporter once. */
+  private reportSkillCarrierFailure(failures: readonly RemovalFailure[]): void {
+    if (failures.length === 0) return;
+    try {
+      this.reportCleanupFailure(
+        new Error(
+          `Kimi skill carrier cleanup failed: ${formatRemovalFailures(failures)}`,
+        ),
+      );
+    } catch {
+      // A diagnostic sink cannot change a terminal outcome.
+    }
   }
 
   async *run(
@@ -863,6 +1371,62 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         return;
       }
     }
+    // kimi-49: validate and place the run's skills before browser
+    // preparation and spawning. A rejection propagates; a caller abort yields
+    // one interrupted terminal without spawning, as kimi-39 selects.
+    let runSkills: PreparedSkill[] = [];
+    let skillCarrier: KimiSkillCarrier | undefined;
+    if (options?.skills !== undefined) {
+      try {
+        runSkills = await prepareSkills(
+          AGENT,
+          options.skills,
+          mapped.cwd,
+          options.abortSignal,
+        );
+        if (runSkills.length > 0) {
+          skillCarrier = await acquireKimiSkillCarrier(
+            runSkills,
+            mapped.cwd,
+            options.abortSignal,
+          );
+        }
+      } catch (error) {
+        const reason =
+          error instanceof KimiSkillPreparationError ? error.reason : error;
+        const failures =
+          error instanceof KimiSkillPreparationError
+            ? error.removalFailures
+            : [];
+        if (!options.abortSignal?.aborted) {
+          // skills-4: a rejection keeps its outcome and names what remains.
+          if (failures.length === 0) throw reason;
+          if (reason instanceof Error) {
+            reason.message += carrierFailureSuffix(failures);
+            throw reason;
+          }
+          throw new Error(`${String(reason)}${carrierFailureSuffix(failures)}`);
+        }
+        this.reportSkillCarrierFailure(failures);
+        yield createEvent(
+          'done',
+          AGENT,
+          {
+            status: 'interrupted',
+            ...kimiResumeTokenPayload(
+              'interrupted',
+              false,
+              initialSessionId,
+              options.resume,
+            ),
+            usage: { ...DEFAULT_DONE_USAGE },
+            durationMs: Date.now() - startTime,
+          },
+          initialSessionId,
+        );
+        return;
+      }
+    }
     const queue = new AsyncEventQueue();
 
     let sessionId = initialSessionId;
@@ -897,6 +1461,36 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       update: SessionUpdate;
       observedAt: number;
     }> = [];
+    // kimi-27 / kimi-50: the command list a run with skills checks.
+    const skillListing: {
+      open: boolean;
+      selected?: string;
+      held: Array<{
+        sessionId: string;
+        commands: readonly AcpAvailableCommand[];
+      }>;
+      retained?: readonly AcpAvailableCommand[];
+      wake?: () => void;
+    } = { open: false, held: [] };
+    const commandListingTap: CommandListingTap = {
+      open: () => skillListing.open,
+      consume: (updateSessionId, commands) => {
+        // One arriving before the setup response is held until it.
+        if (skillListing.selected === undefined) {
+          skillListing.held.push({ sessionId: updateSessionId, commands });
+          return;
+        }
+        if (updateSessionId !== skillListing.selected) {
+          throw malformedAcpTraffic(
+            'available_commands_update referenced a non-active session',
+          );
+        }
+        if (skillListing.retained === undefined) {
+          skillListing.retained = commands;
+          skillListing.wake?.();
+        }
+      },
+    };
 
     let terminalDelivered = false;
     let resolveTerminalDelivered: (() => void) | undefined;
@@ -1001,6 +1595,27 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       );
       queue.close();
       removeAbortListener();
+    };
+
+    let carrierRelease: Promise<RemovalFailure[]> | undefined;
+    let carrierFailuresHandled = false;
+    /**
+     * kimi-53 through skills-4: release the run's hold once. Failures go back
+     * to a caller that can still select the terminal; after the terminal or
+     * a caller abort they go to the cleanup reporter instead.
+     */
+    const releaseSkillCarrier = async (): Promise<RemovalFailure[]> => {
+      if (!skillCarrier) return [];
+      carrierRelease ??= skillCarrier.release();
+      const failures = await carrierRelease;
+      if (carrierFailuresHandled) return [];
+      carrierFailuresHandled = true;
+      if (failures.length === 0) return [];
+      if (terminalQueued || abortRequested || options?.abortSignal?.aborted) {
+        this.reportSkillCarrierFailure(failures);
+        return [];
+      }
+      return failures;
     };
 
     let escalationRequested = false;
@@ -1113,11 +1728,19 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
 
     const finalizeAbort = (forceShutdown: boolean): Promise<void> => {
       abortFinalizationPromise ??= (async () => {
+        // skills-4: with no native process, the carrier goes before the
+        // terminal; otherwise after the child has exited.
+        skillListing.open = false;
+        if (!child) await releaseSkillCarrier();
         finish('interrupted');
         await waitForTerminalHandoff();
         reachAbortDeadline();
         if (forceShutdown) requestEscalation();
-        reportSecondaryCleanupFailure(await shutdownProcess());
+        const shutdown = await shutdownProcess();
+        // The carrier goes before any diagnostic, so a throwing reporter
+        // cannot leave it behind (kimi-35).
+        await releaseSkillCarrier();
+        reportSecondaryCleanupFailure(shutdown);
       })();
       return abortFinalizationPromise;
     };
@@ -1144,6 +1767,101 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       if (!commitNonAbortCause()) return;
       requestEscalation();
       void shutdownProcess();
+    };
+
+    /**
+     * kimi-50: before the run sequence continues, take the session's first
+     * command list, held from before the setup response or awaited for a
+     * bounded time, and confirm it lists every run skill as the runtime
+     * advertises it.
+     */
+    const confirmSkillListing = async (): Promise<void> => {
+      skillListing.selected = sessionId;
+      try {
+        for (const held of skillListing.held.splice(0)) {
+          if (held.sessionId !== sessionId) {
+            recordProtocolFailure(
+              'available_commands_update referenced a non-active session',
+            );
+            throw (
+              protocolFailure ??
+              malformedAcpTraffic(
+                'available_commands_update referenced a non-active session',
+              )
+            );
+          }
+          skillListing.retained ??= held.commands;
+        }
+        if (
+          skillListing.retained === undefined &&
+          !protocolFailure &&
+          !processExited &&
+          !abortRequested
+        ) {
+          await new Promise<void>((resolveWait) => {
+            let timer: NodeJS.Timeout | undefined;
+            const settle = (): void => {
+              if (skillListing.wake !== settle) return;
+              skillListing.wake = undefined;
+              clearTimeout(timer);
+              resolveWait();
+            };
+            skillListing.wake = settle;
+            timer = setTimeout(settle, this.skillListingTimeoutMs);
+            void closePromise?.then(settle);
+            void abortDeadline.then(settle);
+          });
+        }
+      } finally {
+        skillListing.open = false;
+      }
+      if (abortRequested) {
+        onAbort();
+        throw new Error('Kimi ACP run aborted while awaiting its command list');
+      }
+      if (protocolFailure) throw protocolFailure;
+      const root = skillCarrier?.root ?? 'unknown';
+      const listed = skillListing.retained;
+      if (listed === undefined) {
+        if (processExited) {
+          throw new Error(
+            'Kimi ACP process exited before listing its commands',
+          );
+        }
+        throw new KimiSkillDeliveryError(
+          `Kimi listed no commands within ${this.skillListingTimeoutMs} ms of session setup, so the run skills ${runSkills
+            .map((skill) => `skill:${skill.name}`)
+            .join(', ')} from the carrier ${root} are unconfirmed`,
+        );
+      }
+      const descriptions = new Map<string, string>();
+      for (const command of listed) {
+        if (!descriptions.has(command.name)) {
+          descriptions.set(command.name, command.description);
+        }
+      }
+      const missing: string[] = [];
+      const shadowed: string[] = [];
+      for (const skill of runSkills) {
+        const command = `skill:${skill.name}`;
+        const description = descriptions.get(command);
+        if (description === undefined) missing.push(command);
+        else if (description !== skill.description.trim()) {
+          shadowed.push(command);
+        }
+      }
+      if (missing.length > 0 || shadowed.length > 0) {
+        throw new KimiSkillDeliveryError(
+          `Kimi did not list every run skill from the carrier ${root}: ${[
+            ...(missing.length > 0 ? [`missing ${missing.join(', ')}`] : []),
+            ...(shadowed.length > 0
+              ? [
+                  `shadowed by a same-named skill with another description ${shadowed.join(', ')}`,
+                ]
+              : []),
+          ].join('; ')}`,
+        );
+      }
     };
 
     const emitToolUse = (
@@ -1441,6 +2159,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
 
     if (abortRequested) {
       commitCallerAbort();
+      await releaseSkillCarrier();
       finish('interrupted');
       for await (const event of queue) {
         yield event;
@@ -1533,10 +2252,12 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
             ) as unknown as ReadableStream<Uint8Array>,
             (error) => {
               protocolFailure ??= error;
+              skillListing.wake?.();
               if (!commitNonAbortCause()) return;
               requestEscalation();
               void shutdownProcess();
             },
+            commandListingTap,
           ),
         );
 
@@ -1580,6 +2301,9 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         }
 
         let configOptions: AcpSessionConfigOption[] | null | undefined;
+        // kimi-27: a run with skills consumes the command list from its
+        // session setup request on.
+        skillListing.open = runSkills.length > 0;
         if (options?.resume) {
           const resumed = parseAcpResult(
             zResumeSessionResponse,
@@ -1632,6 +2356,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           onAbort();
           throw new Error('Kimi ACP run aborted during session setup');
         }
+        if (runSkills.length > 0) await confirmSkillListing();
 
         // kimi-17: the session configuration's own selection, never the
         // request, is the reported model.
@@ -1771,6 +2496,9 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         if (protocolFailure) throw protocolFailure;
         const closeFailure = shutdownError(shutdown);
         if (closeFailure) throw closeFailure;
+        // kimi-53: the child has exited, so the carrier goes now; a removal
+        // failure ranks below every other failure (kimi-33).
+        const carrierFailures = await releaseSkillCarrier();
 
         let status: DonePayload['status'];
         if (result.stopReason === 'cancelled') {
@@ -1787,7 +2515,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
               AGENT,
               {
                 code: 'KIMI_REFUSAL',
-                message: 'Kimi refused the prompt',
+                message: `Kimi refused the prompt${carrierFailureSuffix(carrierFailures)}`,
                 recoverable: false,
               },
               sessionId,
@@ -1796,6 +2524,21 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           status = 'error';
         } else {
           status = 'success';
+        }
+        if (status !== 'error' && carrierFailures.length > 0) {
+          push(
+            createEvent(
+              'error',
+              AGENT,
+              {
+                code: SKILL_CARRIER_CLEANUP_FAILED,
+                message: `Kimi skill carrier cleanup failed: ${formatRemovalFailures(carrierFailures)}`,
+                recoverable: false,
+              },
+              sessionId,
+            ),
+          );
+          status = 'error';
         }
         // Kimi Code 2.1.1's prompt response publishes only the stop reason.
         // Its later usage_update is session context occupancy, not
@@ -1809,11 +2552,15 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         }
 
         commitNonAbortCause();
+        skillListing.open = false;
         const shutdown = await shutdownProcess();
+        const carrierFailures = await releaseSkillCarrier();
         const closeFailure = shutdown ? shutdownError(shutdown) : undefined;
         resumeRejected = resumeRejected && !protocolFailure && !closeFailure;
         const structuredAuthError =
-          !resumeRejected && isAuthenticationError(error);
+          !resumeRejected &&
+          !(error instanceof KimiSkillDeliveryError) &&
+          isAuthenticationError(error);
         const reportedError = structuredAuthError
           ? error
           : (protocolFailure ?? closeFailure ?? error);
@@ -1823,6 +2570,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
           reportedError instanceof KimiEffortUnavailableError;
         const authError =
           !effortUnavailable &&
+          !(reportedError instanceof KimiSkillDeliveryError) &&
           (structuredAuthError ||
             (!resumeRejected &&
               isAuthenticationError(errorMessage(reportedError, stderr))));
@@ -1838,11 +2586,13 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
                   : effortUnavailable
                     ? 'KIMI_EFFORT_UNAVAILABLE'
                     : 'KIMI_ACP_ERROR',
-              message: authError
-                ? `${errorMessage(reportedError, stderr)}. Authenticate the Kimi Code CLI with \`kimi login\` before using ACP.`
-                : effortUnavailable
-                  ? reportedError.message
-                  : errorMessage(reportedError, stderr),
+              message: `${
+                authError
+                  ? `${errorMessage(reportedError, stderr)}. Authenticate the Kimi Code CLI with \`kimi login\` before using ACP.`
+                  : effortUnavailable
+                    ? reportedError.message
+                    : errorMessage(reportedError, stderr)
+              }${carrierFailureSuffix(carrierFailures)}`,
               recoverable: resumeRejected,
             },
             sessionId,
@@ -1851,6 +2601,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
         finish('error');
       } finally {
         await shutdownProcess();
+        await releaseSkillCarrier();
       }
     };
 

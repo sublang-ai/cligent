@@ -249,6 +249,8 @@ const PLAN_UPDATES = ['plan', 'plan_update', 'plan_removed'] as const;
  * would otherwise produce an Invalid params log, so the stream filter drops
  * all unhandled updates before SDK dispatch and makes "ignored" true end to
  * end; stable but unmapped cases such as `usage_update` are inert either way.
+ * `available_commands_update` stays outside this set: the filter itself
+ * consumes it during a run with skills (see `zAcpAvailableCommandsUpdate`).
  */
 export const ACTED_ON_UPDATES = new Set<string>([
   ...CHUNK_UPDATES,
@@ -297,6 +299,31 @@ const zAcpSessionUpdate = z.union([
       message: 'a session update the adapter acts on is missing its fields',
     }),
 ]);
+
+/**
+ * The update case a run with skills consumes from its session setup request
+ * until its command check settles (kimi-27, kimi-50). It is never forwarded
+ * to the SDK: inside that window the stream filter hands it to the adapter,
+ * and outside it the case is dropped like any other unhandled update.
+ */
+export const AVAILABLE_COMMANDS_UPDATE = 'available_commands_update';
+
+/**
+ * `available_commands_update` as a run with skills reads it: each command's
+ * `name` and `description` are consumed, so both must be strings, while
+ * every other field, such as a command's `input`, is admitted unread.
+ */
+export const zAcpAvailableCommandsUpdate = z.looseObject({
+  sessionUpdate: z.literal(AVAILABLE_COMMANDS_UPDATE),
+  availableCommands: z.array(
+    z.looseObject({ name: z.string(), description: z.string() }),
+  ),
+});
+
+/** One advertised command as a run with skills reads it. */
+export type AcpAvailableCommand = z.infer<
+  typeof zAcpAvailableCommandsUpdate
+>['availableCommands'][number];
 
 /** `session/update` notification parameters. */
 export const zAcpSessionNotification = z.object({

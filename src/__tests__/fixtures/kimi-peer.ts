@@ -2,7 +2,10 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { EventEmitter } from 'node:events';
+import { lstat, readdir, readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
+import { parse as parseYaml } from 'yaml';
 import {
   AgentSideConnection,
   PROTOCOL_VERSION,
@@ -46,6 +49,84 @@ export interface FakeScenario {
     request: PromptRequest,
     fake: FakeKimi,
   ) => Promise<PromptResponse>;
+  /**
+   * Runs inside `session/new` or `session/resume` before its response, so
+   * an update it awaits arrives ahead of that response, while work it
+   * schedules may follow the response.
+   */
+  sessionSetup?: (
+    connection: AgentSideConnection,
+    setup: FakeSessionSetup,
+    fake: FakeKimi,
+  ) => Promise<void>;
+}
+
+export interface FakeSessionSetup {
+  readonly sessionId: string;
+  readonly cwd: string;
+  readonly resumed: boolean;
+}
+
+/**
+ * The `skill:<name>` commands Kimi Code advertises for a working directory's
+ * project skills: the project root is the nearest ancestor holding a `.git`
+ * entry, `.kimi-code/skills` is walked breadth-first in name order, a
+ * directory holding `SKILL.md` registers its frontmatter name with the
+ * trimmed description, and the first registration of a name wins.
+ */
+export async function listKimiSkillCommands(
+  cwd: string,
+): Promise<Array<{ name: string; description: string }>> {
+  let root = cwd;
+  for (let current = cwd; ; current = dirname(current)) {
+    if (await exists(join(current, '.git'))) {
+      root = current;
+      break;
+    }
+    if (dirname(current) === current) break;
+  }
+  const commands = new Map<string, string>();
+  const queue = [join(root, '.kimi-code', 'skills')];
+  while (queue.length > 0) {
+    const directory = queue.shift()!;
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    if (entries.some((entry) => entry.name === 'SKILL.md')) {
+      const text = await readFile(join(directory, 'SKILL.md'), 'utf8');
+      const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+      const data = match
+        ? (parseYaml(match[1]!) as Record<string, unknown> | null)
+        : null;
+      if (
+        typeof data?.name === 'string' &&
+        typeof data.description === 'string' &&
+        !commands.has(data.name)
+      ) {
+        commands.set(data.name, data.description.trim());
+      }
+      continue;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.isDirectory()) queue.push(join(directory, entry.name));
+    }
+  }
+  return [...commands].map(([name, description]) => ({
+    name: `skill:${name}`,
+    description,
+  }));
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 interface CapturedSpawn {
@@ -160,6 +241,11 @@ export class FakeKimi {
     >;
   };
 
+  /** Write one raw JSON-RPC line to the latest child's stdout, bypassing the SDK's own validation. */
+  writeRaw(message: unknown): void {
+    this.children.at(-1)?.stdout.write(`${JSON.stringify(message)}\n`);
+  }
+
   private configOptions() {
     const thinkingOptions = this.scenario.thinkingOptions
       ? this.scenario.thinkingOptions(this.currentModel)
@@ -233,8 +319,14 @@ export class FakeKimi {
         this.newRequests.push(request);
         if (this.scenario.failAuth) throw RequestError.authRequired();
         if (this.scenario.sessionError) throw this.scenario.sessionError;
+        const sessionId = this.scenario.sessionId ?? 'kimi-session';
+        await this.scenario.sessionSetup?.(
+          connection,
+          { sessionId, cwd: request.cwd, resumed: false },
+          this,
+        );
         return {
-          sessionId: this.scenario.sessionId ?? 'kimi-session',
+          sessionId,
           configOptions: this.configOptions(),
         };
       },
@@ -243,6 +335,11 @@ export class FakeKimi {
         this.resumeRequests.push(request);
         if (this.scenario.failAuth) throw RequestError.authRequired();
         if (this.scenario.sessionError) throw this.scenario.sessionError;
+        await this.scenario.sessionSetup?.(
+          connection,
+          { sessionId: request.sessionId, cwd: request.cwd, resumed: true },
+          this,
+        );
         return { configOptions: this.configOptions() };
       },
       setSessionConfigOption: async (request) => {
