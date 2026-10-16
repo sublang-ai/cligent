@@ -249,8 +249,9 @@ The mappings have a few important qualifications:
   settings are your user settings plus that alias; every other file there
   links to your real home, so credentials, sessions, and trust state stay
   shared, and files the run replaces are reconciled back when it ends. A run
-  whose working directory is the Gemini home, or that Gemini would sandbox,
-  gets the concrete model with no effort override.
+  whose working directory is the Gemini home, whose environment names no
+  home, or that Gemini would sandbox, gets the concrete model with no effort
+  override.
 - **OpenCode:** Effort selects the prompt `variant` the chosen model
   advertises in the server's provider catalog for the run's directory, or else
   its nearest advertised effort variant, the higher on a tie: GPT-6 Sol's
@@ -587,8 +588,9 @@ Claude and Gemini need their skill tool left available:
   naming it rejects a skills run; otherwise the adapter allows
   `activate_skill` in the per-run policy, which Gemini's headless policy would
   deny. Gemini also rejects a skills run whose working directory is your real
-  home, that would enable the native sandbox, whose user settings set
-  `skills.enabled` to `false`, or whose settings the adapter cannot read the
+  home, whose environment names no home, that would enable the native
+  sandbox, whose user settings turn
+  `skills.enabled` off, or whose settings the adapter cannot read the
   way Gemini will: on Windows a system settings or system-defaults file, whose
   ownership check the adapter does not run, or in any file a boolean spelled
   as a string, which Gemini coerces only where the whole file validates, where

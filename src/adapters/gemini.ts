@@ -25,7 +25,7 @@ import {
   realpathSync,
   type Stats,
 } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import {
   basename,
   dirname,
@@ -69,7 +69,12 @@ import type {
   UsageRecord,
   WritablePathsPermissionMapping,
 } from '../types.js';
-import { createGeminiHomeOverlay, foldGeminiSkillName } from './gemini-home.js';
+import {
+  createGeminiHomeOverlay,
+  foldGeminiSkillName,
+  reserveGeminiHome,
+  spellGeminiHome,
+} from './gemini-home.js';
 import { prepareSkills, type PreparedSkill } from '../skills.js';
 import { parseNDJSON } from './ndjson.js';
 import { doneResumeTokenPayload } from './resume-token.js';
@@ -751,6 +756,58 @@ interface GeminiSettingsOverrideContext {
   signal?: AbortSignal;
   /** Defaults to the runtime's own admission check (gemini-34). */
   admitsSystemSettingsFile?: GeminiSystemFileAdmission;
+  /**
+   * The directory reserved for the run's overlay, the child's home wherever
+   * the overlay is delivered (gemini-34).
+   */
+  overlay: GeminiOverlayReservation;
+}
+
+/**
+ * gemini-34: the directory a run reserves for its overlay where a decision
+ * first reads the child's home, which that directory then is wherever the
+ * overlay is delivered.
+ */
+interface GeminiOverlayReservation {
+  /** The directory as the child receives it in `GEMINI_CLI_HOME`. */
+  home(): Promise<string>;
+  /** Hands the directory to the overlay that populates and removes it. */
+  claim(): Promise<string>;
+  /** Removes the directory unless an overlay has claimed it. */
+  release(): Promise<void>;
+}
+
+/** gemini-34: a run's overlay directory, reserved on first use. */
+function geminiOverlayReservation(): GeminiOverlayReservation {
+  let reserved: Promise<string> | undefined;
+  let claimed = false;
+  const home = (): Promise<string> => (reserved ??= reserveGeminiHome());
+  return {
+    home,
+    claim: () => {
+      claimed = true;
+      return home();
+    },
+    release: async () => {
+      const path = await reserved?.catch(() => undefined);
+      if (path && !claimed) await rm(path, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
+ * gemini-34: the overlay directory as capabilities discovery spells it,
+ * creating none, since its decisions need only that spelling.
+ */
+function geminiOverlayProbe(): GeminiOverlayReservation {
+  const home = spellGeminiHome();
+  return {
+    home: async () => home,
+    claim: async () => {
+      throw new Error('Gemini capabilities discovery delivers no overlay');
+    },
+    release: async () => {},
+  };
 }
 
 interface GeminiPolicyOverride {
@@ -1079,10 +1136,10 @@ async function geminiSettingsOverrideContext(
     ...extra
   }: Pick<
     GeminiSettingsOverrideContext,
-    'signal' | 'admitsSystemSettingsFile'
+    'signal' | 'admitsSystemSettingsFile' | 'overlay'
   > & {
     environmentPlatform?: NodeJS.Platform;
-  } = {},
+  },
 ): Promise<GeminiSettingsOverrideContext> {
   const effective = resolve(cwd);
   let childCwd = effective;
@@ -1112,6 +1169,8 @@ async function geminiSettingsOverrideContext(
  * Windows names variables in any letter case.
  */
 interface GeminiChildEnv {
+  /** The platform whose rules the child's environment follows. */
+  readonly platform: NodeJS.Platform;
   /** Whether the variable is present, even set to the empty string. */
   has(name: string): boolean;
   /** The variable's value, its name matched in any letter case on Windows. */
@@ -1134,6 +1193,7 @@ function geminiEnvironment(
   const names = new Map<string, string>();
   for (const name of entries.keys()) names.set(fold(name), name);
   return {
+    platform,
     has: (name) => names.has(fold(name)),
     get: (name) => {
       const stored = names.get(fold(name));
@@ -1832,13 +1892,56 @@ function mergeGeminiModelAlias(
 }
 
 /**
- * The home a Gemini child resolves before any Cligent overlay applies. The
- * child takes `GEMINI_CLI_HOME` verbatim but joins path segments to it,
- * which drops each `..` lexically, so it resolves lexically here.
+ * gemini-34: the home a Gemini child would resolve without any Cligent
+ * overlay, as spelled, from the environment it is spawned with rather than
+ * this process's: the caller's non-empty `GEMINI_CLI_HOME`, or else the
+ * operating-system home libuv's `uv_os_homedir` derives there, `HOME` on
+ * POSIX and `USERPROFILE` on Windows wherever present, and otherwise the
+ * password-database home of the process user, which this process shares.
+ * An empty home from any of these sources, which libuv returns as it is and
+ * in place of which the runtime keeps its user state under the temporary
+ * directory, and a `USERPROFILE` of fewer than three bytes, for which
+ * libuv's lookup fails, name no home for an overlay to mirror.
+ */
+function geminiRealHomeSpelling(
+  context: GeminiSettingsOverrideContext,
+): string {
+  const { env } = context;
+  const configured = env.get('GEMINI_CLI_HOME');
+  if (configured) return configured;
+  const name = env.platform === 'win32' ? 'USERPROFILE' : 'HOME';
+  const variable = env.get(name);
+  const home = variable ?? userInfo().homedir;
+  const source =
+    variable === undefined
+      ? `the home the operating system records for its process user, ${JSON.stringify(home)},`
+      : `the ${name} of ${JSON.stringify(home)} in its environment,`;
+  if (
+    env.platform === 'win32' &&
+    variable !== undefined &&
+    Buffer.byteLength(variable, 'utf8') < 3
+  ) {
+    throw new CapabilityError(
+      'no-home',
+      `Gemini's user home cannot be derived from ${source} which holds fewer than the three bytes its home lookup requires`,
+    );
+  }
+  if (!home) {
+    throw new CapabilityError(
+      'no-home',
+      `Gemini's user home cannot be derived from ${source} which names no home for this adapter to overlay`,
+    );
+  }
+  return home;
+}
+
+/**
+ * gemini-34: the real home, resolved lexically against the child's working
+ * directory, because the runtime takes its home verbatim but joins path
+ * segments to it, which drops each `..` lexically.
  */
 function geminiRealHome(context: GeminiSettingsOverrideContext): string {
-  const configured = context.env.get('GEMINI_CLI_HOME');
-  return configured ? resolve(context.childCwd, configured) : homedir();
+  return resolve(context.childCwd, geminiRealHomeSpelling(context));
 }
 
 async function comparablePath(path: string): Promise<string> {
@@ -1983,19 +2086,22 @@ function parseGeminiDotEnv(source: string): Record<string, string> {
  * gemini-34: the one `.env` file the runtime loads after its settings: from
  * the child's working directory upward, in each directory the `.gemini/.env`
  * where the workspace is trusted and then the `.env` unless local files are
- * ignored and the directory is not the home as the child spells it, and
- * past the root the home's `.gemini/.env` where trusted and then its `.env`.
- * A path is returned as the child spells it; a relative home's files resolve
- * against the child's working directory. Each file exists as the runtime's
- * `existsSync` finds it, which on Windows also reads the status of the
- * file a symbolic link names, so a dangling link does not exist there.
+ * ignored and the directory is not the child's home, and past the root the
+ * home's `.gemini/.env` where trusted and then its `.env`. The child's home
+ * is the overlay, against whose path it compares each directory and under
+ * which it spells the home's files; those link to the real home's, so each
+ * exists, and is read, there. A file is returned as the child spells it and
+ * as this adapter reads it; a relative path resolves against the child's
+ * working directory. Each file exists as the runtime's `existsSync` finds
+ * it, which on Windows also reads the status of the file a symbolic link
+ * names, so a dangling link does not exist there.
  */
 async function findGeminiEnvFile(
   childCwd: string,
-  home: string,
+  home: { overlay: string; real: string },
   trusted: boolean,
   ignoreLocalEnv: boolean,
-): Promise<string | undefined> {
+): Promise<{ spelled: string; read: string } | undefined> {
   const exists = (path: string): Promise<boolean> => {
     const resolved = resolve(childCwd, path);
     const found: Promise<unknown> =
@@ -2009,20 +2115,24 @@ async function findGeminiEnvFile(
   for (;;) {
     if (trusted) {
       const geminiEnv = join(current, '.gemini', '.env');
-      if (await exists(geminiEnv)) return geminiEnv;
+      if (await exists(geminiEnv)) {
+        return { spelled: geminiEnv, read: geminiEnv };
+      }
     }
     const env = join(current, '.env');
-    if ((await exists(env)) && (!ignoreLocalEnv || current === home)) {
-      return env;
+    if ((await exists(env)) && (!ignoreLocalEnv || current === home.overlay)) {
+      return { spelled: env, read: env };
     }
     const parent = dirname(current);
     if (parent === current || !parent) {
-      if (trusted) {
-        const homeGeminiEnv = join(home, '.gemini', '.env');
-        if (await exists(homeGeminiEnv)) return homeGeminiEnv;
+      const homeFiles = trusted ? [['.gemini', '.env'], ['.env']] : [['.env']];
+      for (const segments of homeFiles) {
+        const read = join(home.real, ...segments);
+        if (await exists(read)) {
+          return { spelled: join(home.overlay, ...segments), read };
+        }
       }
-      const homeEnv = join(home, '.env');
-      return (await exists(homeEnv)) ? homeEnv : undefined;
+      return undefined;
     }
     current = parent;
   }
@@ -2049,12 +2159,12 @@ const GEMINI_DEFAULT_EXCLUDED_ENV_NAMES = [
  * environment it loads its settings in plus each variable of the `.env`
  * file it then loads that the environment lacks, in any letter case on
  * Windows. Where the workspace is untrusted only the authentication names
- * load, sanitized; a project file, one whose path lacks `.gemini`, skips
- * the merged `advanced.excludedEnvVars`. The child sees the overlay as its
- * home, whose `.env` files link to the real ones; the home here is the one
- * the child would have without it. The Cloud Shell setup, which sets only
- * `GOOGLE_CLOUD_PROJECT`, and the `-s`, `--sandbox`, and `--ignore-env`
- * flags, which this adapter never passes, are left out.
+ * load, sanitized; a project file, one whose path as the child spells it
+ * lacks `.gemini`, skips the merged `advanced.excludedEnvVars`. The child's
+ * home is the reserved overlay directory, whose `.env` files link to the
+ * real home's. The Cloud Shell setup, which sets only `GOOGLE_CLOUD_PROJECT`,
+ * and the `-s`, `--sandbox`, and `--ignore-env` flags, which this adapter
+ * never passes, are left out.
  */
 async function geminiSandboxEnvironment(
   context: GeminiSettingsOverrideContext,
@@ -2063,9 +2173,10 @@ async function geminiSandboxEnvironment(
 ): Promise<GeminiChildEnv> {
   let env = context.runtimeEnv;
   const advanced = asRecord(merged.advanced);
+  const real = geminiRealHome(context);
   const found = await findGeminiEnvFile(
     context.childCwd,
-    env.get('GEMINI_CLI_HOME') || homedir(),
+    { overlay: await context.overlay.home(), real },
     trusted,
     Boolean(advanced.ignoreLocalEnv),
   );
@@ -2073,14 +2184,14 @@ async function geminiSandboxEnvironment(
   let parsed: Record<string, string>;
   try {
     parsed = parseGeminiDotEnv(
-      await readFile(resolve(context.childCwd, found), 'utf8'),
+      await readFile(resolve(context.childCwd, found.read), 'utf8'),
     );
   } catch {
     return env;
   }
   const excluded = (advanced.excludedEnvVars ||
     GEMINI_DEFAULT_EXCLUDED_ENV_NAMES) as { includes(name: string): boolean };
-  const project = !found.includes('.gemini');
+  const project = !found.spelled.includes('.gemini');
   try {
     for (const name in parsed) {
       if (!Object.hasOwn(parsed, name)) continue;
@@ -2490,9 +2601,12 @@ async function geminiRuntimePolicySources(
         system,
       ).policyPaths;
       if (Array.isArray(merged) && merged.length > 0) {
-        // `resolvePath` splices the child's home as spelled before
-        // normalizing.
-        const childHome = context.env.get('GEMINI_CLI_HOME') || homedir();
+        // `resolvePath` splices the home as spelled before normalizing: the
+        // real home, not the overlay the child splices only because this
+        // adapter redirected its home, whose spelling would place an entry
+        // such as `~/../pol` beside it in a temporary directory other local
+        // users may share.
+        const childHome = geminiRealHomeSpelling(context);
         const sources: string[] = [];
         for (const entry of merged) {
           if (typeof entry !== 'string' || entry.length === 0) continue;
@@ -2552,9 +2666,10 @@ const SKILLS_SANDBOX_REFUSAL = `skills for adapter "${AGENT}" cannot be delivere
 /**
  * gemini-51: user settings that turn skills off, as the runtime evaluates
  * them (gemini-34), reject a skills run, because turning them on for the run
- * would also load the user's other skill sources; so does a `false` string
- * there, which the runtime makes `false` only where the whole file
- * validates.
+ * would also load the user's other skill sources. The runtime reads the
+ * setting by its truthiness, unset or null reading as on, so any other falsy
+ * value turns skills off however the file validates; a `false` string, which
+ * the runtime makes `false` only where the whole file validates, rejects too.
  */
 function assertGeminiSkillsEnabled(
   userSettings: Record<string, unknown>,
@@ -2565,9 +2680,9 @@ function assertGeminiSkillsEnabled(
     expandGeminiSettings(userSettings, env),
     'skills.enabled',
   );
-  if (enabled === false) {
+  if (enabled !== undefined && enabled !== null && !enabled) {
     throw new Error(
-      `skills for adapter "${AGENT}" cannot be delivered while the Gemini user settings at ${path} set skills.enabled to false`,
+      `skills for adapter "${AGENT}" cannot be delivered while the Gemini user settings at ${path} set skills.enabled to ${JSON.stringify(enabled)}, which the runtime reads as off`,
     );
   }
   if (coercedGeminiBoolean(enabled) === false) {
@@ -2577,9 +2692,161 @@ function assertGeminiSkillsEnabled(
   }
 }
 
+/** A string the runtime's validation makes a number, if any. */
+function coercedGeminiNumber(value: unknown): number | undefined {
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+  const number = Number(value);
+  return Number.isNaN(number) ? undefined : number;
+}
+
+const isGeminiString = (value: unknown): boolean => typeof value === 'string';
+const isGeminiStringList = (value: unknown): boolean =>
+  Array.isArray(value) && value.every(isGeminiString);
+const isGeminiStringRecord = (value: unknown): boolean =>
+  isGeminiPlainObject(value) && Object.values(value).every(isGeminiString);
+
+/** gemini-48: the values of the runtime's `AuthProviderType`. */
+const GEMINI_MCP_AUTH_PROVIDER_TYPES: readonly unknown[] = [
+  'dynamic_discovery',
+  'google_credentials',
+  'service_account_impersonation',
+];
+
 /**
- * gemini-51: the run's skills cannot be delivered from a working directory
- * that is the real home, under the native sandbox, or with skills disabled.
+ * gemini-48: each property the runtime's validation admits in an MCP server
+ * entry, which it validates as a strict object, with the check the
+ * property's value must pass, `null` passing none. `extension` declares
+ * string, boolean, or number values, a list of types the runtime's schema
+ * builder reads as any value.
+ */
+const GEMINI_MCP_SERVER_PROPERTIES = new Map<
+  string,
+  (value: unknown) => boolean
+>([
+  ['command', isGeminiString],
+  ['args', isGeminiStringList],
+  ['env', isGeminiStringRecord],
+  ['cwd', isGeminiString],
+  ['url', isGeminiString],
+  ['httpUrl', isGeminiString],
+  ['headers', isGeminiStringRecord],
+  ['tcp', isGeminiString],
+  ['type', (value) => value === 'stdio' || value === 'sse' || value === 'http'],
+  [
+    'timeout',
+    (value) =>
+      typeof value === 'number' || coercedGeminiNumber(value) !== undefined,
+  ],
+  [
+    'trust',
+    (value) =>
+      typeof value === 'boolean' || coercedGeminiBoolean(value) !== undefined,
+  ],
+  ['description', isGeminiString],
+  ['includeTools', isGeminiStringList],
+  ['excludeTools', isGeminiStringList],
+  ['extension', isGeminiPlainObject],
+  ['oauth', isGeminiPlainObject],
+  [
+    'authProviderType',
+    (value) => GEMINI_MCP_AUTH_PROVIDER_TYPES.includes(value),
+  ],
+  ['targetAudience', isGeminiString],
+  ['targetServiceAccount', isGeminiString],
+]);
+
+/**
+ * gemini-48: how an MCP server entry fails the runtime's validation: the
+ * first of its properties, in the order JavaScript enumerates them, that the
+ * validation does not admit or whose value fails its check; `null` where the
+ * entry is no plain object; `undefined` where it validates. A property a
+ * newer runtime admits fails here, which can only reject.
+ */
+function failingGeminiMcpProperty(entry: unknown): string | null | undefined {
+  if (!isGeminiPlainObject(entry)) return null;
+  return Object.keys(entry).find(
+    (key) => !GEMINI_MCP_SERVER_PROPERTIES.get(key)?.(entry[key]),
+  );
+}
+
+/**
+ * gemini-48: the first string, walking the parsed keys depth first in the
+ * order JavaScript enumerates them, that the runtime's validation could
+ * coerce: `true` or `false` in any letter case, which it makes a boolean at
+ * a boolean-typed setting, or a non-blank string `Number` reads as a number,
+ * which it makes a number at a number-typed setting; with its path, keys
+ * joined by `.` and list indexes bracketed. This adapter does not tell those
+ * settings apart, so such a string at any key counts, which can only reject.
+ */
+function firstGeminiCoercibleString(
+  value: unknown,
+  path = '',
+): { path: string; value: string } | undefined {
+  if (typeof value === 'string') {
+    return coercedGeminiBoolean(value) === undefined &&
+      coercedGeminiNumber(value) === undefined
+      ? undefined
+      : { path, value };
+  }
+  const entries: [string, unknown][] = Array.isArray(value)
+    ? value.map((entry, index) => [`${path}[${index}]`, entry])
+    : isGeminiPlainObject(value)
+      ? Object.entries(value).map(([key, entry]) => [
+          path ? `${path}.${key}` : key,
+          entry,
+        ])
+      : [];
+  for (const [entryPath, entry] of entries) {
+    const found = firstGeminiCoercibleString(entry, entryPath);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * gemini-48: a per-run MCP server replacing a same-name user entry that
+ * fails the runtime's validation can make user settings that validation
+ * rejects validate, since each MCP entry is a strict object while unknown
+ * keys elsewhere pass and every per-run entry validates, and the runtime
+ * coerces the file's strings only where it validates. This adapter does not
+ * run that validation, so it refuses such a replacement wherever the user
+ * settings, expanded as the runtime validates them, hold a string it could
+ * coerce outside every entry the run replaces.
+ */
+function assertGeminiMcpReplacement(
+  userSettings: Record<string, unknown>,
+  path: string,
+  names: readonly string[],
+  env: GeminiChildEnv,
+): void {
+  const expanded = expandGeminiSettings(userSettings, env);
+  const servers = expanded.mcpServers;
+  if (!isGeminiPlainObject(servers)) return;
+  const replaced = names.filter((name) => Object.hasOwn(servers, name));
+  const failing = replaced
+    .map((name) => ({
+      name,
+      property: failingGeminiMcpProperty(servers[name]),
+    }))
+    .find(({ property }) => property !== undefined);
+  if (failing === undefined) return;
+  const found = firstGeminiCoercibleString({
+    ...expanded,
+    mcpServers: Object.fromEntries(
+      Object.entries(servers).filter(([name]) => !replaced.includes(name)),
+    ),
+  });
+  if (found === undefined) return;
+  throw new CapabilityError(
+    'settings-validity',
+    `Gemini per-run MCP server ${JSON.stringify(failing.name)} cannot replace the same-name entry in the Gemini user settings at ${path}, ${failing.property === null ? "which is no object, as the runtime's validation of an MCP server requires" : `whose property ${JSON.stringify(failing.property)} fails the runtime's validation of an MCP server`}, while they hold ${JSON.stringify(found.value)} at ${found.path}, because the replacement can change whether the runtime's validation accepts the file, which this adapter does not check, and so whether the runtime coerces that string`,
+  );
+}
+
+/**
+ * gemini-51: the run's skills cannot be delivered where the child's
+ * environment names no home, from a working directory that is the real
+ * home, under the native sandbox, or with skills disabled.
  */
 async function assertGeminiSkillsContext(
   context: GeminiSettingsOverrideContext,
@@ -2639,7 +2906,7 @@ function enableRunSkills(
  */
 async function defaultCreateSettingsOverride(
   settingsConfig: GeminiSettingsConfig,
-  givenContext?: GeminiSettingsOverrideContext,
+  context: GeminiSettingsOverrideContext,
 ): Promise<GeminiSettingsOverride> {
   const servers = normalizeMcpServers(settingsConfig.mcpServers);
   const hasMcpServers = Object.keys(servers ?? {}).length > 0;
@@ -2648,10 +2915,18 @@ async function defaultCreateSettingsOverride(
   if (!settingsConfig.modelAlias && !hasMcpServers && !hasSkills) {
     return NOOP_SETTINGS_OVERRIDE;
   }
-  const context =
-    givenContext ?? (await geminiSettingsOverrideContext(process.cwd()));
 
-  const realHome = geminiRealHome(context);
+  let realHome: string;
+  try {
+    realHome = geminiRealHome(context);
+  } catch (error) {
+    // gemini-34: with no home to mirror, an alias alone goes undelivered,
+    // as for a workspace that is the home.
+    if (hasMcpServers || hasSkills || !(error instanceof CapabilityError)) {
+      throw error;
+    }
+    return UNDELIVERED_ALIAS_OVERRIDE;
+  }
   // Gemini reads a workspace that is its home as neither workspace nor
   // project; a separate home would make it load the real settings twice.
   if (await geminiWorkspaceIsHome(context, realHome)) {
@@ -2687,6 +2962,12 @@ async function defaultCreateSettingsOverride(
       )
     : { ...userSettings };
   if (hasMcpServers) {
+    assertGeminiMcpReplacement(
+      userSettings,
+      settingsPath,
+      Object.keys(servers!),
+      env,
+    );
     const existing =
       settings.mcpServers === undefined
         ? {}
@@ -2716,7 +2997,7 @@ async function defaultCreateSettingsOverride(
   const overlay = await createGeminiHomeOverlay(
     realHome,
     `${JSON.stringify(settings, null, 2)}\n`,
-    { skills, signal: context.signal },
+    { skills, signal: context.signal, home: await context.overlay.claim() },
   );
 
   return {
@@ -3005,15 +3286,17 @@ function buildInitPayload(
   };
 }
 
+/**
+ * gemini-48: per-run MCP servers named `names` cannot be delivered where the
+ * child's environment names no home, from a working directory that is the
+ * real home, under the native sandbox, or where one replaces an invalid
+ * same-name user entry beside a string the runtime's validation could
+ * coerce.
+ */
 async function assertGeminiBrowserContext(
-  options: AgentOptions<GeminiEffort> | undefined,
-  admitsSystemSettingsFile: GeminiSystemFileAdmission,
-  environmentPlatform: NodeJS.Platform,
+  context: GeminiSettingsOverrideContext,
+  names: readonly string[],
 ): Promise<void> {
-  const context = await geminiSettingsOverrideContext(
-    options?.cwd ?? process.cwd(),
-    { admitsSystemSettingsFile, environmentPlatform },
-  );
   const realHome = geminiRealHome(context);
   if (await geminiWorkspaceIsHome(context, realHome)) {
     throw new CapabilityError(
@@ -3021,8 +3304,9 @@ async function assertGeminiBrowserContext(
       'Gemini per-run MCP servers require a working directory different from its user home',
     );
   }
+  const settingsPath = join(realHome, '.gemini', 'settings.json');
   const userSettings = await readGeminiSettingsFile(
-    join(realHome, '.gemini', 'settings.json'),
+    settingsPath,
     'user settings',
   );
   if (await geminiSandboxRequested(context, userSettings, false)) {
@@ -3031,6 +3315,23 @@ async function assertGeminiBrowserContext(
       'Gemini per-run MCP servers cannot be delivered while its native sandbox is enabled',
     );
   }
+  assertGeminiMcpReplacement(
+    userSettings,
+    settingsPath,
+    names,
+    context.runtimeEnv,
+  );
+}
+
+/** The per-run MCP server names a run's options request (gemini-48). */
+function requestedGeminiMcpNames(
+  options: AgentOptions<GeminiEffort> | undefined,
+  browser: boolean,
+): string[] {
+  return [
+    ...Object.keys(normalizeMcpServers(options?.mcpServers) ?? {}),
+    ...(browser ? ['cligent_browser'] : []),
+  ];
 }
 
 export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
@@ -3076,10 +3377,19 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       AGENT,
       async () => {
         mapAgentOptionsToGeminiCommand('', options);
+        // gemini-48: discovery spells the overlay directory a browser run
+        // would reserve, the child's home there, without creating it.
+        const context = await geminiSettingsOverrideContext(
+          options?.cwd ?? process.cwd(),
+          {
+            admitsSystemSettingsFile: this.admitsSystemSettingsFile,
+            environmentPlatform: this.environmentPlatform,
+            overlay: geminiOverlayProbe(),
+          },
+        );
         await assertGeminiBrowserContext(
-          options,
-          this.admitsSystemSettingsFile,
-          this.environmentPlatform,
+          context,
+          requestedGeminiMcpNames(options, true),
         );
       },
       options,
@@ -3148,6 +3458,8 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     let child: ChildProcessWithoutNullStreams | undefined;
     let closePromise: Promise<CloseResult> | undefined;
     let settingsOverride: GeminiSettingsOverride = NOOP_SETTINGS_OVERRIDE;
+    // gemini-34: reserved where a decision first reads the child's home.
+    const overlayReservation = geminiOverlayReservation();
     let policyOverride: GeminiPolicyOverride = NOOP_POLICY_OVERRIDE;
     let telemetryCapture: GeminiTelemetryCapture = NOOP_TELEMETRY_CAPTURE;
 
@@ -3200,6 +3512,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
           ...(options?.abortSignal ? { signal: options.abortSignal } : {}),
           admitsSystemSettingsFile: this.admitsSystemSettingsFile,
           environmentPlatform: this.environmentPlatform,
+          overlay: overlayReservation,
         },
       );
       // skills-2, gemini-51: the whole list and its delivery context are
@@ -3234,16 +3547,12 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
           : []),
         `--prompt=${attachmentStage.prompt}`,
       );
-      const requestedMcp = normalizeMcpServers(options?.mcpServers);
-      if (
-        options?.browser === true ||
-        Object.keys(requestedMcp ?? {}).length > 0
-      ) {
-        await assertGeminiBrowserContext(
-          options,
-          this.admitsSystemSettingsFile,
-          this.environmentPlatform,
-        );
+      const requestedMcp = requestedGeminiMcpNames(
+        options,
+        options?.browser === true,
+      );
+      if (requestedMcp.length > 0) {
+        await assertGeminiBrowserContext(context, requestedMcp);
       }
       const mcpServers = await prepareMcpServers(options);
       if (abortRequested || options?.abortSignal?.aborted) {
@@ -3819,6 +4128,8 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         telemetryCapture.cleanup(),
         policyOverride.cleanup(),
         settingsOverride.cleanup(),
+        // gemini-34: the reserved overlay directory no overlay claimed.
+        overlayReservation.release(),
       ]);
       const cleanupErrors = cleanupResults.flatMap((result) =>
         result.status === 'rejected' ? [result.reason] : [],

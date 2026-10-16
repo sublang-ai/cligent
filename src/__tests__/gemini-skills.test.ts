@@ -36,6 +36,27 @@ const hooks = vi.hoisted(() => ({
   beforeMaterialize: undefined as (() => void) | undefined,
 }));
 const browserPreparation = vi.hoisted(() => vi.fn());
+// gemini-34: a home this process's own lookup would give, and the home the
+// operating system records for the process user, which a test sets apart
+// from the home the child's environment names.
+const processHome = vi.hoisted(() => ({
+  path: undefined as string | undefined,
+  /** The home the operating system records for the process user. */
+  passwd: undefined as string | undefined,
+}));
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return {
+    ...actual,
+    homedir: () => processHome.path ?? actual.homedir(),
+    userInfo: (options?: { encoding: BufferEncoding }) => ({
+      ...actual.userInfo(options),
+      ...(processHome.passwd === undefined
+        ? {}
+        : { homedir: processHome.passwd }),
+    }),
+  };
+});
 vi.mock('../browser.js', () => ({
   prepareBrowserServer: browserPreparation,
   releaseBrowserServer: async () => {},
@@ -320,6 +341,8 @@ beforeEach(() => {
     join(fixtureRoot, 'system', 'system-defaults.json'),
   );
   browserPreparation.mockReset();
+  processHome.path = undefined;
+  processHome.passwd = undefined;
   hooks.beforePrepare = undefined;
   hooks.beforeMaterialize = undefined;
 });
@@ -798,19 +821,25 @@ describe('Gemini per-run skills (gemini-53)', () => {
     expect(overlaysLeft()).toEqual([]);
   });
 
-  it('splices a policyPaths home prefix onto the home as spelled before normalizing (gemini-55)', async () => {
-    // The child's resolvePath appends the rest to GEMINI_CLI_HOME verbatim,
-    // so the trailing separator keeps the entry inside the home.
+  it('splices a policyPaths home prefix onto the real home as spelled before normalizing, not onto the overlay (gemini-55)', async () => {
+    // The child's resolvePath appends the rest to the home verbatim, so the
+    // trailing separator keeps the first entry inside the home. The child
+    // splices the overlay only because this adapter redirected its home;
+    // spliced there, the second would name a path beside the overlay in the
+    // shared temporary directory, which another local user can create.
     vi.stubEnv('GEMINI_CLI_HOME', `${realHome}/`);
     writeJson(join(realGemini, 'settings.json'), {
-      policyPaths: ['%USERPROFILE%pol'],
+      policyPaths: ['%USERPROFILE%pol', '~/../team-pol'],
     });
 
     const { captured } = await runFixture({
       skills: [writeSkill(sources, 'alpha', 'alpha')],
     });
 
-    expect(captured.policies.slice(1)).toEqual([join(realHome, 'pol')]);
+    expect(captured.policies.slice(1)).toEqual([
+      join(realHome, 'pol'),
+      join(fixtureRoot, 'team-pol'),
+    ]);
     expect(overlaysLeft()).toEqual([]);
   });
 
@@ -1007,6 +1036,280 @@ describe('Gemini per-run skills (gemini-53)', () => {
       expect(overlaysLeft()).toEqual([]);
     },
   );
+
+  /**
+   * A home the child's environment names, a decoy this process's own home
+   * lookup gives, and the home the operating system records for the process
+   * user, each with its own user settings naming `~/pol`.
+   */
+  function writeChildAndProcessHomes(): {
+    childHome: string;
+    decoy: string;
+    passwdHome: string;
+  } {
+    const childHome = join(fixtureRoot, 'child-home');
+    const decoy = join(fixtureRoot, 'process-home');
+    const passwdHome = join(fixtureRoot, 'passwd-home');
+    for (const [home, tag] of [
+      [childHome, 'child'],
+      [decoy, 'process'],
+      [passwdHome, 'passwd'],
+    ] as const) {
+      writeJson(join(home, '.gemini', 'settings.json'), {
+        custom: tag,
+        policyPaths: ['~/pol'],
+      });
+      mkdirSync(join(home, 'pol'));
+    }
+    vi.stubEnv('GEMINI_CLI_HOME', undefined);
+    processHome.path = decoy;
+    processHome.passwd = passwdHome;
+    return { childHome, decoy, passwdHome };
+  }
+
+  it.each([
+    { platform: 'linux' as const, variable: 'HOME', other: 'USERPROFILE' },
+    { platform: 'win32' as const, variable: 'USERPROFILE', other: 'HOME' },
+  ])(
+    "takes the real home from the child environment's $variable under an injected $platform platform, splicing policyPaths onto it (gemini-34, gemini-55)",
+    async ({ platform, variable, other }) => {
+      const { childHome, decoy } = writeChildAndProcessHomes();
+      vi.stubEnv(variable, childHome);
+      // The variable the other platform reads names the decoy.
+      vi.stubEnv(other, decoy);
+
+      const { captured } = await runFixture(
+        { skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        undefined,
+        undefined,
+        platform,
+      );
+
+      expect(captured.settings).toEqual({
+        custom: 'child',
+        policyPaths: ['~/pol'],
+      });
+      expect(captured.policies.slice(1)).toEqual([join(childHome, 'pol')]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  // libuv's lookup reads the password database, or on Windows the process
+  // user's profile directory, as os.userInfo does, not this process's own
+  // HOME or USERPROFILE, as os.homedir does.
+  it.each([
+    { platform: 'linux' as const, variable: 'HOME' },
+    { platform: 'win32' as const, variable: 'USERPROFILE' },
+  ])(
+    'falls back to the home the operating system records for the process user where the child environment lacks $variable under an injected $platform platform (gemini-34)',
+    async ({ platform, variable }) => {
+      writeChildAndProcessHomes();
+      vi.stubEnv(variable, undefined);
+
+      const { captured } = await runFixture(
+        { skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        undefined,
+        undefined,
+        platform,
+      );
+
+      expect(captured.settings).toEqual({
+        custom: 'passwd',
+        policyPaths: ['~/pol'],
+      });
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  // libuv requires three bytes of USERPROFILE, so a one-character value of
+  // three UTF-8 bytes names a home, resolved against the run cwd.
+  it('takes a USERPROFILE of one three-byte character as the real home under an injected Windows platform (gemini-34)', async () => {
+    writeChildAndProcessHomes();
+    const euroHome = join(childCwdOf(cwd), '\u20ac');
+    writeJson(join(euroHome, '.gemini', 'settings.json'), { custom: 'euro' });
+    vi.stubEnv('USERPROFILE', '\u20ac');
+
+    const { captured } = await runFixture(
+      { skills: [writeSkill(sources, 'alpha', 'alpha')] },
+      undefined,
+      undefined,
+      'win32',
+    );
+
+    expect(captured.settings).toEqual({ custom: 'euro' });
+    expect(overlaysLeft()).toEqual([]);
+  });
+
+  it.each([
+    { platform: 'linux' as const, variable: 'HOME' },
+    { platform: 'win32' as const, variable: 'USERPROFILE' },
+  ])(
+    "decides the sandbox from the .env under the child environment's $variable under an injected $platform platform (gemini-34, gemini-51)",
+    async ({ platform, variable }) => {
+      const { childHome } = writeChildAndProcessHomes();
+      vi.stubEnv(variable, childHome);
+      writeEnvFile(join(childHome, '.env'), 'GEMINI_SANDBOX=docker\n');
+      const spawned: string[][] = [];
+
+      const events = await collect(
+        fixtureAdapter(spawned, undefined, undefined, platform).run(
+          'Use the skills',
+          { cwd, skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        ),
+      );
+
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      expect(events[1]!.payload).toMatchObject({
+        code: 'GEMINI_STREAM_ERROR',
+        recoverable: false,
+        message:
+          'skills for adapter "gemini" cannot be delivered while its native sandbox is enabled',
+      });
+      expect(events[2]!.payload).toMatchObject({ status: 'error' });
+      expect(spawned).toEqual([]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  // libuv's home lookup fails on Windows for a USERPROFILE of fewer than
+  // three bytes rather than falling back, and on POSIX an empty HOME, or an
+  // empty home the password database records where HOME is absent, which
+  // libuv returns as it is, leaves the runtime keeping its state under the
+  // temporary directory.
+  const noHomeCases = [
+    {
+      platform: 'win32' as const,
+      label: 'its USERPROFILE "C:"',
+      variable: 'USERPROFILE',
+      value: 'C:' as string | undefined,
+      passwd: undefined as string | undefined,
+      message: `Gemini's user home cannot be derived from the USERPROFILE of "C:" in its environment, which holds fewer than the three bytes its home lookup requires`,
+    },
+    {
+      platform: 'linux' as const,
+      label: 'its HOME empty',
+      variable: 'HOME',
+      value: '',
+      passwd: undefined,
+      message: `Gemini's user home cannot be derived from the HOME of "" in its environment, which names no home for this adapter to overlay`,
+    },
+    {
+      platform: 'linux' as const,
+      label: 'its HOME absent and the recorded home empty',
+      variable: 'HOME',
+      value: undefined,
+      passwd: '',
+      message: `Gemini's user home cannot be derived from the home the operating system records for its process user, "", which names no home for this adapter to overlay`,
+    },
+  ];
+
+  it.each(noHomeCases)(
+    'rejects skills where the child environment names no home, $label, under an injected $platform platform (gemini-19, gemini-34, gemini-51)',
+    async ({ platform, variable, value, passwd, message }) => {
+      writeChildAndProcessHomes();
+      vi.stubEnv(variable, value);
+      if (passwd !== undefined) processHome.passwd = passwd;
+      const spawned: string[][] = [];
+
+      const events = await collect(
+        fixtureAdapter(spawned, undefined, undefined, platform).run(
+          'Use the skills',
+          { cwd, skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        ),
+      );
+
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      expect(events[1]!.payload).toMatchObject({
+        code: 'GEMINI_STREAM_ERROR',
+        recoverable: false,
+        message,
+      });
+      expect(events[2]!.payload).toMatchObject({ status: 'error' });
+      expect(spawned).toEqual([]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.each(noHomeCases)(
+    'reports the browser unsupported with code no-home where the child environment names no home, $label, under an injected $platform platform (gemini-57, capabilities-3)',
+    async ({ platform, variable, value, passwd, message }) => {
+      writeChildAndProcessHomes();
+      vi.stubEnv(variable, value);
+      if (passwd !== undefined) processHome.passwd = passwd;
+
+      const facts = await fixtureAdapter(
+        [],
+        undefined,
+        undefined,
+        platform,
+      ).getCapabilities({ cwd });
+
+      expect(facts.browser).toEqual({
+        status: 'unsupported',
+        code: 'no-home',
+        message,
+      });
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  // gemini-34: with no home to mirror, an alias alone goes undelivered, so
+  // the concrete model is sent with no overlay reserved.
+  it('sends the concrete model without an overlay where HOME is absent and the recorded home is empty under an injected Linux platform (gemini-34)', async () => {
+    writeChildAndProcessHomes();
+    vi.stubEnv('HOME', undefined);
+    processHome.passwd = '';
+    const spawned: {
+      args: string[];
+      home: string | undefined;
+      reserved: string[];
+    }[] = [];
+    const adapter = new GeminiAdapter({
+      environmentPlatform: 'linux',
+      spawnProcess: (
+        _command: string,
+        args: readonly string[],
+        options: SpawnOptionsWithoutStdio,
+      ): ChildProcessWithoutNullStreams => {
+        spawned.push({
+          args: [...args],
+          home: options.env?.GEMINI_CLI_HOME,
+          reserved: overlaysLeft(),
+        });
+        return spawn(
+          process.execPath,
+          [
+            '-e',
+            "console.log(JSON.stringify({ type: 'init', session_id: 'gemini-effort' })); console.log(JSON.stringify({ type: 'result', status: 'success', result: 'done' }));",
+          ],
+          { ...options, stdio: 'pipe' },
+        );
+      },
+    });
+
+    const events = await collect(
+      adapter.run('Use the model', {
+        cwd,
+        model: 'gemini-3-pro',
+        effort: 'high',
+      }),
+    );
+
+    expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]!.args).toContain('--model=gemini-3-pro');
+    expect(spawned[0]!.home).toBeUndefined();
+    expect(spawned[0]!.reserved).toEqual([]);
+    expect(overlaysLeft()).toEqual([]);
+  });
 
   it('honors a lower-case gemini_cli_system_settings_path override on Windows (gemini-56, gemini-34, gemini-55)', async () => {
     const systemPath = join(fixtureRoot, 'lower-system', 'settings.json');
@@ -1222,20 +1525,42 @@ describe('Gemini per-run skills (gemini-53)', () => {
       outcome: sandboxRefusal,
     },
     {
-      // Climbing through the home as the child spells it, its .env loads
-      // despite advanced.ignoreLocalEnv, before the .gemini/.env above it.
+      // The child's home is the overlay, which no directory above the run
+      // cwd is, so advanced.ignoreLocalEnv skips the real home's .env, even
+      // spelled as the child climbs through it, and the search reaches the
+      // .gemini/.env above the home.
       label:
-        "the home's .env under user advanced.ignoreLocalEnv, the run cwd inside the home, beside a .gemini/.env above the home",
+        "a .gemini/.env above the home setting GEMINI_SANDBOX=docker, beside the home's .env setting it to false under user advanced.ignoreLocalEnv, the run cwd inside the home",
       arrange: () => {
         vi.stubEnv('GEMINI_CLI_HOME', childCwdOf(realHome));
         writeJson(join(realGemini, 'settings.json'), {
           advanced: { ignoreLocalEnv: true },
         });
-        writeEnvFile(join(realHome, '.env'), 'GEMINI_SANDBOX=docker\n');
-        writeEnvFile(join(fixtureRoot, '.gemini', '.env'), 'OTHER_VAR=1\n');
+        writeEnvFile(join(realHome, '.env'), 'GEMINI_SANDBOX=false\n');
+        writeEnvFile(
+          join(fixtureRoot, '.gemini', '.env'),
+          'GEMINI_SANDBOX=docker\n',
+        );
         const runCwd = join(realHome, 'proj');
         mkdirSync(runCwd);
         return runCwd;
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      // The child spells the home's .env under the overlay, whose path
+      // lacks .gemini, so it is a project file and the excluded variable
+      // does not load from it.
+      label:
+        'the .env of a real home whose path holds .gemini, setting an excluded GEMINI_SANDBOX=false beside a user sandbox request',
+      arrange: () => {
+        const home = join(fixtureRoot, 'home.gemini');
+        vi.stubEnv('GEMINI_CLI_HOME', home);
+        writeJson(join(home, '.gemini', 'settings.json'), {
+          tools: { sandbox: true },
+          advanced: { excludedEnvVars: ['GEMINI_SANDBOX'] },
+        });
+        writeEnvFile(join(home, '.env'), 'GEMINI_SANDBOX=false\n');
       },
       outcome: sandboxRefusal,
     },
@@ -2172,7 +2497,7 @@ describe('Gemini per-run skills (gemini-53)', () => {
     },
   );
 
-  it('counts a system settings file of unknown Windows admission for a run without skills selecting the browser (gemini-34, gemini-48)', async () => {
+  it('counts a system settings file of unknown Windows admission for a run without skills selecting the browser (gemini-49, gemini-34, gemini-48)', async () => {
     // Counted, the file disables the sandbox the user settings request.
     writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
       tools: { sandbox: false },
@@ -2199,6 +2524,334 @@ describe('Gemini per-run skills (gemini-53)', () => {
     expect(captured.policies).toEqual([]);
     expect(overlaysLeft()).toEqual([]);
   });
+
+  /**
+   * The rejection of a per-run MCP server replacing a same-name user entry
+   * that fails the runtime's validation beside a string it could coerce
+   * (gemini-48).
+   */
+  function mcpReplacementRefusal(
+    name: string,
+    failure: string,
+    value: string,
+    path: string,
+  ): string {
+    return `Gemini per-run MCP server ${JSON.stringify(name)} cannot replace the same-name entry in the Gemini user settings at ${join(realGemini, 'settings.json')}, ${failure}, while they hold ${JSON.stringify(value)} at ${path}, because the replacement can change whether the runtime's validation accepts the file, which this adapter does not check, and so whether the runtime coerces that string`;
+  }
+
+  const unknownKeyFailure =
+    'whose property "unknownKey" fails the runtime\'s validation of an MCP server';
+
+  // gemini-48: an MCP entry is a strict object while unknown keys elsewhere
+  // pass, so replacing an invalid same-name user entry can make the user
+  // settings validate, and the runtime coerce their `false` folder-trust
+  // string, trusting a workspace no rule trusts; this adapter does not run
+  // that validation.
+  it.each([
+    {
+      name: 'srv',
+      options: {
+        browser: true,
+        mcpServers: { srv: { type: 'stdio' as const, command: 'run-srv' } },
+      },
+    },
+    { name: 'cligent_browser', options: { browser: true } },
+  ])(
+    'rejects a per-run $name server replacing a same-name user entry beside a folder-trust string of "false" before browser preparation (gemini-19, gemini-48)',
+    async ({ name, options }) => {
+      vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+      // The replaced entry's own string is no part of the walk.
+      writeJson(join(realGemini, 'settings.json'), {
+        security: { folderTrust: { enabled: 'false' } },
+        mcpServers: {
+          [name]: { command: 'user-srv', unknownKey: true, trust: 'TRUE' },
+        },
+      });
+      const spawned: string[][] = [];
+
+      const events = await collect(
+        fixtureAdapter(spawned).run('Use the skills', {
+          cwd,
+          skills: [writeSkill(sources, 'alpha', 'alpha')],
+          ...options,
+        }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      expect(events[1]!.payload).toMatchObject({
+        code: 'GEMINI_STREAM_ERROR',
+        recoverable: false,
+      });
+      expect((events[1]!.payload as { message: string }).message).toBe(
+        mcpReplacementRefusal(
+          name,
+          unknownKeyFailure,
+          'false',
+          'security.folderTrust.enabled',
+        ),
+      );
+      expect(events[2]!.payload).toMatchObject({ status: 'error' });
+      expect(spawned).toEqual([]);
+      expect(browserPreparation).not.toHaveBeenCalled();
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  // gemini-48: the walk visits every string outside the replaced entries,
+  // at any depth and as expanded, for one the runtime could coerce to a
+  // boolean or a number.
+  it.each([
+    {
+      label:
+        'an entry with an unknown property beside "5" at a number-typed setting',
+      user: {
+        mcpServers: { srv: { command: 'user-srv', unknownKey: true } },
+        model: { maxSessionTurns: '5' },
+      },
+      failure: unknownKeyFailure,
+      value: '5',
+      path: 'model.maxSessionTurns',
+    },
+    {
+      label:
+        'an entry with an unknown property beside "TRUE" in a list element',
+      user: {
+        custom: { nested: [{ list: ['keep', 'TRUE'] }] },
+        mcpServers: { srv: { command: 'user-srv', unknownKey: true } },
+      },
+      failure: unknownKeyFailure,
+      value: 'TRUE',
+      path: 'custom.nested[0].list[1]',
+    },
+    {
+      label:
+        'an entry with an unknown property beside ${COERCED_FLAG}, set to false',
+      user: {
+        custom: '${COERCED_FLAG}',
+        mcpServers: { srv: { command: 'user-srv', unknownKey: true } },
+      },
+      failure: unknownKeyFailure,
+      value: 'false',
+      path: 'custom',
+    },
+    {
+      label: 'an entry trusting "yes" beside a numeric string',
+      user: {
+        mcpServers: { srv: { command: 'user-srv', trust: 'yes' } },
+        model: { maxSessionTurns: '5' },
+      },
+      failure:
+        'whose property "trust" fails the runtime\'s validation of an MCP server',
+      value: '5',
+      path: 'model.maxSessionTurns',
+    },
+    {
+      label: 'an entry with a null command beside a numeric string',
+      user: {
+        mcpServers: { srv: { command: null } },
+        model: { maxSessionTurns: '5' },
+      },
+      failure:
+        'whose property "command" fails the runtime\'s validation of an MCP server',
+      value: '5',
+      path: 'model.maxSessionTurns',
+    },
+    {
+      label: 'a null entry beside a numeric string',
+      user: {
+        mcpServers: { srv: null },
+        model: { maxSessionTurns: '5' },
+      },
+      failure:
+        "which is no object, as the runtime's validation of an MCP server requires",
+      value: '5',
+      path: 'model.maxSessionTurns',
+    },
+    // Each property is checked as the runtime checks it, not by its outer
+    // shape alone.
+    ...(
+      [
+        ['type', { type: 'ws' }],
+        ['args', { args: ['-v', 1] }],
+        ['env', { env: { MODE: 1 } }],
+        ['oauth', { oauth: 'enabled' }],
+        ['authProviderType', { authProviderType: 'oauth2' }],
+      ] as const
+    ).map(([property, invalid]) => ({
+      label: `an entry with ${JSON.stringify(invalid)} beside a numeric string`,
+      user: {
+        mcpServers: { srv: { command: 'user-srv', ...invalid } },
+        model: { maxSessionTurns: '5' },
+      },
+      failure: `whose property ${JSON.stringify(property)} fails the runtime's validation of an MCP server`,
+      value: '5',
+      path: 'model.maxSessionTurns',
+    })),
+  ])(
+    'rejects a per-run MCP server replacing $label (gemini-49, gemini-19, gemini-48)',
+    async ({ user, failure, value, path }) => {
+      vi.stubEnv('COERCED_FLAG', 'false');
+      writeJson(join(realGemini, 'settings.json'), user);
+      const spawned: string[][] = [];
+
+      const events = await collect(
+        fixtureAdapter(spawned).run('Use the server', {
+          cwd,
+          mcpServers: { srv: { type: 'stdio', command: 'run-srv' } },
+        }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      expect(events[1]!.payload).toMatchObject({
+        code: 'GEMINI_STREAM_ERROR',
+        recoverable: false,
+        message: mcpReplacementRefusal('srv', failure, value, path),
+      });
+      expect(events[2]!.payload).toMatchObject({ status: 'error' });
+      expect(spawned).toEqual([]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it('reports the browser unsupported with code settings-validity where it would replace an invalid same-name user entry beside a coercible string (gemini-57, capabilities-3)', async () => {
+    writeJson(join(realGemini, 'settings.json'), {
+      mcpServers: { cligent_browser: { command: 'user-srv', unknownKey: 1 } },
+      model: { maxSessionTurns: '5' },
+    });
+
+    const facts = await fixtureAdapter().getCapabilities({ cwd });
+
+    expect(facts.browser).toEqual({
+      status: 'unsupported',
+      code: 'settings-validity',
+      message: mcpReplacementRefusal(
+        'cligent_browser',
+        unknownKeyFailure,
+        '5',
+        'model.maxSessionTurns',
+      ),
+    });
+    expect(browserPreparation).not.toHaveBeenCalled();
+  });
+
+  // gemini-48: discovery needs only the overlay directory's spelling, so it
+  // creates none, even where the temporary directory takes no new entry.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'reports the browser supported without creating an overlay directory (gemini-57, capabilities-3)',
+    async () => {
+      chmodSync(overlayTmp, 0o500);
+      try {
+        const facts = await fixtureAdapter().getCapabilities({ cwd });
+
+        expect(facts.browser).toEqual({ status: 'supported' });
+        expect(overlaysLeft()).toEqual([]);
+      } finally {
+        chmodSync(overlayTmp, 0o700);
+      }
+    },
+  );
+
+  it.each([
+    {
+      label: 'replacing a same-name user entry beside no true or false string',
+      user: { mcpServers: { srv: { command: 'user-srv', unknownKey: true } } },
+    },
+    {
+      label: 'beside a folder-trust string of "false" and no same-name entry',
+      user: {
+        security: { folderTrust: { enabled: 'false' } },
+        mcpServers: { other: { command: 'user-other', unknownKey: true } },
+      },
+    },
+  ])('delivers a per-run MCP server $label (gemini-48)', async ({ user }) => {
+    vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+    writeJson(join(realGemini, 'settings.json'), user);
+
+    const { captured } = await runFixture({
+      skills: [writeSkill(sources, 'alpha', 'alpha')],
+      mcpServers: { srv: { type: 'stdio', command: 'run-srv' } },
+    });
+
+    expect(captured.settings).toEqual({
+      ...user,
+      mcpServers: {
+        ...user.mcpServers,
+        srv: { command: 'run-srv', args: [], trust: true },
+      },
+    });
+    expect(captured.skills!.map((entry) => entry.name)).toEqual(['alpha']);
+    expect(overlaysLeft()).toEqual([]);
+  });
+
+  // gemini-48: a colliding entry that validates, every property of its
+  // checked as the runtime checks it, or whose only coercible string lies
+  // inside it, leaves the file's validity, and so every coerced reading,
+  // as it was.
+  it.each([
+    {
+      label:
+        'a valid same-name user entry beside a boolean string and a numeric string',
+      user: {
+        general: { vimMode: 'TRUE' },
+        mcpServers: {
+          srv: {
+            command: 'user-srv',
+            args: ['-v'],
+            env: { MODE: 'x' },
+            type: 'stdio',
+            timeout: ' 30 ',
+            trust: 'FALSE',
+            authProviderType: 'google_credentials',
+            // Declared as string, boolean, or number values, which the
+            // runtime's schema builder reads as any value.
+            extension: { name: 'ext', extra: null },
+            oauth: { enabled: true },
+          },
+        },
+        model: { maxSessionTurns: '5' },
+      },
+    },
+    {
+      label:
+        'a same-name user entry invalid only inside itself, beside its own "false"',
+      user: {
+        mcpServers: {
+          srv: { command: 'user-srv', unknownKey: true, trust: 'false' },
+        },
+      },
+    },
+    {
+      // A blank string is no number the runtime's validation reads.
+      label: 'an invalid same-name user entry beside a blank string',
+      user: {
+        custom: ' ',
+        mcpServers: { srv: { command: 'user-srv', unknownKey: true } },
+      },
+    },
+  ])(
+    'delivers a per-run MCP server replacing $label (gemini-49, gemini-48)',
+    async ({ user }) => {
+      writeJson(join(realGemini, 'settings.json'), user);
+
+      const { captured } = await runFixture({
+        mcpServers: { srv: { type: 'stdio', command: 'run-srv' } },
+      });
+
+      expect(captured.settings).toEqual({
+        ...user,
+        mcpServers: { srv: { command: 'run-srv', args: [], trust: true } },
+      });
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
 
   const policyCases: {
     label: string;
@@ -2285,6 +2938,27 @@ describe('Gemini per-run skills (gemini-53)', () => {
       expect(captured.args.some((arg) => arg.startsWith('--policy'))).toBe(
         false,
       );
+    },
+  );
+
+  // gemini-51: the runtime reads skills.enabled by its truthiness, unset or
+  // null reading as on, and a string other than `false` in any letter case
+  // reads as on whether or not the file validates.
+  it.each([
+    { label: 'null', enabled: null },
+    { label: '"0"', enabled: '0' },
+  ])(
+    'delivers skills beside user settings setting skills.enabled to $label (gemini-51)',
+    async ({ enabled }) => {
+      writeJson(join(realGemini, 'settings.json'), { skills: { enabled } });
+
+      const { captured } = await runFixture({
+        skills: [writeSkill(sources, 'alpha', 'alpha')],
+      });
+
+      expect(captured.skills!.map((entry) => entry.name)).toEqual(['alpha']);
+      expect(captured.settings).toEqual({ skills: { enabled } });
+      expect(overlaysLeft()).toEqual([]);
     },
   );
 
@@ -2658,16 +3332,30 @@ describe('Gemini per-run skills (gemini-53)', () => {
       message: (): string =>
         `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system settings at ${process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!} would change whether its native sandbox starts, because this adapter does not run the runtime's PowerShell check of that file's ownership and write access`,
     },
-    {
-      label: 'user settings disabling skills',
+    // gemini-51: the runtime reads skills.enabled by its truthiness, so any
+    // falsy value other than null turns skills off however the file
+    // validates, including an empty string a variable expands to.
+    ...[
+      { label: 'false', enabled: false, json: 'false' },
+      { label: '0', enabled: 0, json: '0' },
+      { label: 'the empty string', enabled: '', json: '""' },
+      {
+        label: '${ENABLE_SKILLS} with ENABLE_SKILLS empty',
+        enabled: '${ENABLE_SKILLS}',
+        json: '""',
+      },
+    ].map(({ label, enabled, json }) => ({
+      label: `user settings setting skills.enabled to ${label}`,
       setup: (): AgentOptions<GeminiEffort> => {
+        vi.stubEnv('ENABLE_SKILLS', '');
         writeJson(join(realGemini, 'settings.json'), {
-          skills: { enabled: false },
+          skills: { enabled },
         });
         return {};
       },
-      message: 'set skills.enabled to false',
-    },
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the Gemini user settings at ${join(realGemini, 'settings.json')} set skills.enabled to ${json}, which the runtime reads as off`,
+    })),
     {
       // gemini-34: the runtime makes the string false only where the whole
       // file validates.

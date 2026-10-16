@@ -61,6 +61,11 @@ export interface GeminiHomeOverlayOptions {
   readonly skills?: readonly PreparedSkill[];
   /** Cancels skill materialization. */
   readonly signal?: AbortSignal;
+  /**
+   * gemini-34: the empty directory reserved for the overlay, which it then
+   * owns, removing it on failure; one is reserved here where absent.
+   */
+  readonly home?: string;
 }
 
 /** A per-run Gemini home whose user settings differ from the real home's. */
@@ -490,6 +495,22 @@ async function reconcileEntries(
   }
 }
 
+/**
+ * gemini-34: reserves a new private temporary directory for a per-run
+ * Gemini home, its path known before the overlay populates it.
+ */
+export function reserveGeminiHome(): Promise<string> {
+  return mkdtemp(join(tmpdir(), 'cligent-gemini-home-'));
+}
+
+/**
+ * gemini-34: a path spelled as `reserveGeminiHome` spells one, for a
+ * decision that needs only that spelling; nothing is created there.
+ */
+export function spellGeminiHome(): string {
+  return join(tmpdir(), `cligent-gemini-home-${randomUUID().slice(0, 6)}`);
+}
+
 async function removeOverlay(
   home: string,
   links: ReadonlyMap<string, string>,
@@ -509,11 +530,12 @@ async function removeOverlay(
 }
 
 /**
- * gemini-34: builds a private home for one Gemini child whose user settings
- * are `settingsContent` and whose every other entry, in the home and in its
- * `.gemini`, links to the real home's. gemini-51: with skills, its
- * `.gemini/skills` is a real directory holding the run's skills, then links to
- * the real user skills that none of them shadows.
+ * gemini-34: builds a private home for one Gemini child, in the directory
+ * reserved for it, whose user settings are `settingsContent` and whose every
+ * other entry, in the home and in its `.gemini`, links to the real home's.
+ * gemini-51: with skills, its `.gemini/skills` is a real directory holding
+ * the run's skills, then links to the real user skills that none of them
+ * shadows.
  */
 export async function createGeminiHomeOverlay(
   realHome: string,
@@ -521,21 +543,20 @@ export async function createGeminiHomeOverlay(
   options: GeminiHomeOverlayOptions = {},
 ): Promise<GeminiHomeOverlay> {
   const realGeminiDir = join(realHome, GEMINI_DIR);
-  for (const name of SHARED_STATE_DIRS) {
-    await mkdir(join(realGeminiDir, name), { recursive: true });
-  }
-
   const skills = options.skills ?? [];
   const runSkillNames = new Set(skills.map((skill) => skill.name));
   const geminiSkip = new Set([SETTINGS_FILE]);
   if (skills.length > 0) geminiSkip.add(SKILLS_DIR);
 
-  const home = await mkdtemp(join(tmpdir(), 'cligent-gemini-home-'));
+  const home = options.home ?? (await reserveGeminiHome());
   const links = new Map<string, string>();
   const overlayGeminiDir = join(home, GEMINI_DIR);
   const overlaySkillsDir = join(overlayGeminiDir, SKILLS_DIR);
   const realSkillsDir = join(realGeminiDir, SKILLS_DIR);
   try {
+    for (const name of SHARED_STATE_DIRS) {
+      await mkdir(join(realGeminiDir, name), { recursive: true });
+    }
     await mkdir(overlayGeminiDir, { mode: 0o700 });
     if (skills.length > 0) {
       // The run's skills first, so no link can take one of their names.

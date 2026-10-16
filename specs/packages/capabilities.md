@@ -21,7 +21,7 @@ When `Cligent.getCapabilities` receives per-call options, it shall merge instanc
 
 ### capabilities-3
 
-When a built-in adapter reports browser admission, discovery shall apply the same contextual restrictions as a browser-enabled run without asserting installed-runtime, authentication, native policy, or model eligibility:
+When a built-in adapter reports browser admission, discovery shall apply the same contextual restrictions as a browser-enabled run, creating no directory such a run would reserve, without asserting installed-runtime, authentication, native policy, or model eligibility:
 
 | Context | Result |
 | --- | --- |
@@ -30,6 +30,8 @@ When a built-in adapter reports browser admission, discovery shall apply the sam
 | OpenCode external server [[opencode-61](adapters/opencode.md#opencode-61)] | unsupported server mode |
 | Gemini workspace equals its real home [[gemini-48](adapters/gemini.md#gemini-48)] | unsupported workspace context |
 | Gemini native sandbox enabled [[gemini-48](adapters/gemini.md#gemini-48)] | unsupported native sandbox |
+| Gemini child environment naming no home [[gemini-48](adapters/gemini.md#gemini-48)] | unsupported home |
+| Gemini per-run server, the browser's included, replacing a same-name user entry that fails the runtime's MCP entry schema beside a string its validation could coerce [[gemini-48](adapters/gemini.md#gemini-48)] | unsupported settings validity |
 | native Windows Codex explicit permission isolation [[codex-31](adapters/codex.md#codex-31)] | unsupported permissions |
 | Codex with explicit `allowedTools` or `disallowedTools` [[codex-70](adapters/codex.md#codex-70)] | unsupported tool restriction |
 | other known rejected adapter options | unsupported option |
@@ -70,7 +72,7 @@ When a caller supplies an explicit browser preparation timeout, validation shall
 
 ### capabilities-7
 
-When real `Cligent` instances inspect built-in and custom adapters through default/per-call configurations, integration checks shall verify exact descriptor semantics [[capabilities-1](#capabilities-1)], option merging and unknown custom facts without side effects [[capabilities-2](#capabilities-2)], and contextual restrictions shared with execution [[capabilities-3](#capabilities-3)].
+When real `Cligent` instances inspect built-in and custom adapters through default/per-call configurations, integration checks shall verify exact descriptor semantics [[capabilities-1](#capabilities-1)], option merging and unknown custom facts without side effects [[capabilities-2](#capabilities-2)], and contextual restrictions shared with execution, including Gemini's child environment naming no home, a same-name replacement its MCP entry schema and a coercible string reject, and no directory created by discovery [[capabilities-3](#capabilities-3)].
 
 ### capabilities-10
 

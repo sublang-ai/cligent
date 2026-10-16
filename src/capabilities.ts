@@ -16,6 +16,8 @@ export type CapabilityRestriction =
   | 'native-sandbox'
   | 'workspace-is-home'
   | 'unsupported-permissions'
+  | 'no-home'
+  | 'settings-validity'
   | 'unsupported-option';
 export type CapabilityState =
   | { readonly status: 'supported' }

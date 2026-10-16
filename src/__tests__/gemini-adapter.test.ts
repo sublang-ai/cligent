@@ -2053,7 +2053,9 @@ describe('GeminiAdapter', () => {
       const cwd =
         form === 'the real home' ? realHome : join(fixtureRoot, 'home-link');
       if (cwd !== realHome) symlinkSync(realHome, cwd, 'dir');
+      let reserved: string[] | undefined;
       const { spawnProcess, invocations } = makeSpawn((child) => {
+        reserved = overlaysLeft();
         writeEventsAndClose(child, [successResult()], 0, null);
       });
 
@@ -2072,9 +2074,36 @@ describe('GeminiAdapter', () => {
       );
       expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBe(realHome);
       expect(existsSync(join(realHome, '.gemini'))).toBe(false);
+      // gemini-34: decided before any overlay directory is reserved.
+      expect(reserved).toEqual([]);
       expect(overlaysLeft()).toEqual([]);
     },
   );
+
+  // gemini-34: an empty HOME names no home for an overlay to mirror, so an
+  // alias alone goes undelivered, as for a workspace that is the home.
+  it('sends the concrete model without an overlay where the child environment names no home, its HOME empty under an injected Linux platform', async () => {
+    vi.stubEnv('GEMINI_CLI_HOME', undefined);
+    vi.stubEnv('HOME', '');
+    let reserved: string[] | undefined;
+    const { spawnProcess, invocations } = makeSpawn((child) => {
+      reserved = overlaysLeft();
+      writeEventsAndClose(child, [successResult()], 0, null);
+    });
+
+    const events = await collect(
+      new GeminiAdapter({ spawnProcess, environmentPlatform: 'linux' }).run(
+        'prompt',
+        { model: 'gemini-3-pro', effort: 'high', cwd: fixtureRoot },
+      ),
+    );
+
+    expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+    expect(modelArg(invocations[0]!.args)).toBe('gemini-3-pro');
+    expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBeUndefined();
+    expect(reserved).toEqual([]);
+    expect(overlaysLeft()).toEqual([]);
+  });
 
   // The operating system applies a `..` after a symbolic link to the link's
   // target, so the child runs in the real home while lexical resolution of
@@ -2303,6 +2332,77 @@ describe('GeminiAdapter', () => {
     expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBe(realHome);
     expect(overlaysLeft()).toEqual([]);
   });
+
+  // gemini-34: the child's home is the overlay, so its `.env` lookup compares
+  // each directory above the run cwd with the overlay's path and spells the
+  // home's files under it; the reserved overlay directory goes once no
+  // overlay is delivered.
+  it.each([
+    {
+      label:
+        "a .gemini/.env above the real home setting GEMINI_SANDBOX=docker, beside the home's .env setting it to false under user advanced.ignoreLocalEnv, the run cwd inside the home",
+      arrange: (): string => {
+        // Spelled as the child's working directory spells it.
+        vi.stubEnv('GEMINI_CLI_HOME', realpathSync(realHome));
+        mkdirSync(join(realHome, '.gemini'));
+        writeFileSync(
+          join(realHome, '.gemini', 'settings.json'),
+          JSON.stringify({ advanced: { ignoreLocalEnv: true } }),
+        );
+        writeFileSync(join(realHome, '.env'), 'GEMINI_SANDBOX=false\n');
+        mkdirSync(join(fixtureRoot, '.gemini'));
+        writeFileSync(
+          join(fixtureRoot, '.gemini', '.env'),
+          'GEMINI_SANDBOX=docker\n',
+        );
+        const cwd = join(realHome, 'proj');
+        mkdirSync(cwd);
+        return cwd;
+      },
+    },
+    {
+      label:
+        'the .env of a real home whose path holds .gemini, setting an excluded GEMINI_SANDBOX=false beside a user sandbox request',
+      arrange: (): string => {
+        const home = join(fixtureRoot, 'home.gemini');
+        vi.stubEnv('GEMINI_CLI_HOME', home);
+        mkdirSync(join(home, '.gemini'), { recursive: true });
+        writeFileSync(
+          join(home, '.gemini', 'settings.json'),
+          JSON.stringify({
+            tools: { sandbox: true },
+            advanced: { excludedEnvVars: ['GEMINI_SANDBOX'] },
+          }),
+        );
+        writeFileSync(join(home, '.env'), 'GEMINI_SANDBOX=false\n');
+        const cwd = join(fixtureRoot, 'work');
+        mkdirSync(cwd);
+        return cwd;
+      },
+    },
+  ])(
+    'sends the concrete model without an overlay where the child, its home the overlay, loads a sandbox request: $label (gemini-34)',
+    async ({ arrange }) => {
+      const cwd = arrange();
+      const childHome = process.env.GEMINI_CLI_HOME;
+      const { spawnProcess, invocations } = makeSpawn((child) => {
+        writeEventsAndClose(child, [successResult()], 0, null);
+      });
+
+      const events = await collect(
+        new GeminiAdapter({ spawnProcess }).run('prompt', {
+          model: 'gemini-3-pro',
+          effort: 'medium',
+          cwd,
+        }),
+      );
+
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+      expect(modelArg(invocations[0]!.args)).toBe('gemini-3-pro');
+      expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBe(childHome);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
 
   it.skipIf(process.platform === 'win32')(
     'overlays the operating-system home when GEMINI_CLI_HOME is unset',
