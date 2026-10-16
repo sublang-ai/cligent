@@ -588,9 +588,11 @@ Claude and Gemini need their skill tool left available:
   `activate_skill` in the per-run policy, which Gemini's headless policy would
   deny. Gemini also rejects a skills run whose working directory is your real
   home, that would enable the native sandbox, whose user settings set
-  `skills.enabled` to `false`, or, on Windows, whose system settings or
-  system-defaults file would change the run's sandbox or policy sources,
-  because the adapter does not run Gemini's ownership check of that file.
+  `skills.enabled` to `false`, or whose settings the adapter cannot read the
+  way Gemini will: on Windows a system settings or system-defaults file, whose
+  ownership check the adapter does not run, or in any file a boolean spelled
+  as a string, which Gemini coerces only where the whole file validates, where
+  the possible readings would change the run's sandbox or policy sources.
 - Codex, Kimi, and OpenCode invoke skills under their native defaults.
 
 Kimi Code takes no per-run skill location, so the Kimi adapter writes into the

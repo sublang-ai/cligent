@@ -88,6 +88,8 @@ writeFileSync(capture, JSON.stringify({
   cwd: process.cwd(),
   home,
   trust: process.env.GEMINI_CLI_TRUST_WORKSPACE ?? null,
+  lowerTrust: process.env.gemini_cli_trust_workspace ?? null,
+  lowerHome: process.env.gemini_cli_home ?? null,
   homeEntries: readdirSync(home).sort(),
   settings: existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf8')) : null,
   skillsIsLink: existsSync(skillsDir) ? lstatSync(skillsDir).isSymbolicLink() : null,
@@ -129,6 +131,8 @@ interface Captured {
   cwd: string;
   home: string;
   trust: string | null;
+  lowerTrust: string | null;
+  lowerHome: string | null;
   homeEntries: string[];
   settings: Record<string, unknown> | null;
   skillsIsLink: boolean | null;
@@ -211,6 +215,18 @@ type SystemFileAdmission = (
 ) => Promise<'admitted' | 'rejected' | 'unknown'>;
 
 /**
+ * The rejection of a run whose decision depends on whether the runtime's
+ * validation accepts a settings file holding one coerced string (gemini-51).
+ */
+function coercionRefusal(
+  file: string,
+  setting: string,
+  decision: string,
+): string {
+  return `skills for adapter "gemini" cannot be delivered while the runtime's coercion of ${setting} in the Gemini ${file} would change ${decision}, because the runtime coerces that string only where the whole file validates, which this adapter does not check`;
+}
+
+/**
  * Admits every system file and records each path checked: a test cannot
  * create the root-owned files the runtime's own check admits (gemini-34).
  */
@@ -223,16 +239,20 @@ function admitAll(checked: string[] = []): SystemFileAdmission {
 
 /**
  * A fixture-backed adapter; `admissionPlatform` selects the platform whose
- * admission rule the adapter's own check applies (gemini-34).
+ * admission rule the adapter's own check applies, and `environmentPlatform`
+ * the platform whose rules for naming variables the child's environment
+ * follows (gemini-56).
  */
 function fixtureAdapter(
   spawned: string[][] = [],
   admitsSystemSettingsFile?: SystemFileAdmission,
   admissionPlatform?: NodeJS.Platform,
+  environmentPlatform?: NodeJS.Platform,
 ): GeminiAdapter {
   return new GeminiAdapter({
     ...(admitsSystemSettingsFile ? { admitsSystemSettingsFile } : {}),
     ...(admissionPlatform ? { admissionPlatform } : {}),
+    ...(environmentPlatform ? { environmentPlatform } : {}),
     spawnProcess: (
       _command: string,
       args: readonly string[],
@@ -251,12 +271,15 @@ async function runFixture(
   options: AgentOptions<GeminiEffort>,
   admitsSystemSettingsFile?: SystemFileAdmission,
   admissionPlatform?: NodeJS.Platform,
+  environmentPlatform?: NodeJS.Platform,
 ): Promise<{ events: AgentEvent[]; captured: Captured }> {
   const events = await collect(
-    fixtureAdapter([], admitsSystemSettingsFile, admissionPlatform).run(
-      'Use the skills',
-      { cwd, ...options },
-    ),
+    fixtureAdapter(
+      [],
+      admitsSystemSettingsFile,
+      admissionPlatform,
+      environmentPlatform,
+    ).run('Use the skills', { cwd, ...options }),
   );
   expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
   return {
@@ -408,9 +431,12 @@ describe('Gemini per-run skills (gemini-53)', () => {
 
   it.each([
     {
+      // A colon names no skill, the runtime replacing each `:` in a skill's
+      // name, and, still a string, keeps the runtime's validation of the
+      // file failing as it did (gemini-34).
       label: "a run skill's case variant",
       disabled: 'Alpha',
-      expected: { skills: { kept: 1 } },
+      expected: { skills: { disabled: ':', kept: 1 } },
     },
     {
       label: 'no run skill',
@@ -471,14 +497,6 @@ describe('Gemini per-run skills (gemini-53)', () => {
     {
       label: 'a sandbox of ${USE_SANDBOX:-false} with USE_SANDBOX unset',
       user: { tools: { sandbox: '${USE_SANDBOX:-false}' } },
-    },
-    {
-      label: 'a sandbox of "FALSE"',
-      user: { tools: { sandbox: 'FALSE' } },
-    },
-    {
-      label: 'a sandbox object whose enabled is "false"',
-      user: { tools: { sandbox: { enabled: 'false' } } },
     },
     {
       // Layer order: the system settings override the workspace.
@@ -606,9 +624,9 @@ describe('Gemini per-run skills (gemini-53)', () => {
   );
 
   it.each(['false', 'FALSE', '${UNSET_TRUST:-false}'])(
-    'trusts the workspace where user settings set folder trust to %j (gemini-34, gemini-55)',
+    'rejects user settings setting folder trust to %j, which the runtime coerces only where the whole file validates (gemini-34, gemini-51, gemini-55)',
     async (enabled) => {
-      // Expanded before it is made a boolean.
+      // Expanded before it is read.
       vi.stubEnv('UNSET_TRUST', undefined);
       // Present but neither 'true' nor 'false': the trust settings decide.
       vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
@@ -619,15 +637,72 @@ describe('Gemini per-run skills (gemini-53)', () => {
       writeJson(join(cwd, '.gemini', 'settings.json'), {
         policyPaths: ['ws-pol'],
       });
+      const spawned: string[][] = [];
+
+      const events = await collect(
+        fixtureAdapter(spawned).run('Use the skills', {
+          cwd,
+          skills: [writeSkill(sources, 'alpha', 'alpha')],
+        }),
+      );
+
+      // Coerced, folder trust is off and the workspace policyPaths merge;
+      // as written, the string turns folder trust on, no rule trusts the
+      // workspace, and the user policy directory is the source.
+      expect(events.map((event) => event.type)).toEqual([
+        'init',
+        'error',
+        'done',
+      ]);
+      expect(events[1]!.payload).toMatchObject({
+        code: 'GEMINI_STREAM_ERROR',
+        recoverable: false,
+      });
+      expect((events[1]!.payload as { message: string }).message).toBe(
+        coercionRefusal(
+          `user settings at ${join(realGemini, 'settings.json')}`,
+          'security.folderTrust.enabled',
+          'its policy sources',
+        ),
+      );
+      expect(events[2]!.payload).toMatchObject({ status: 'error' });
+      expect(spawned).toEqual([]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.each([
+    { label: 'a rule trusting the run cwd', trusted: true },
+    { label: 'no rule', trusted: false },
+  ])(
+    'reads a user folder trust of "TRUE" alike as written and coerced, the trusted-folders file deciding with $label (gemini-34, gemini-51, gemini-55)',
+    async ({ trusted }) => {
+      // Present but neither 'true' nor 'false': the trust settings decide.
+      vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+      mkdirSync(join(realGemini, 'policies'), { recursive: true });
+      writeJson(join(realGemini, 'settings.json'), {
+        security: { folderTrust: { enabled: 'TRUE' } },
+      });
+      if (trusted) {
+        writeJson(join(realGemini, 'trustedFolders.json'), {
+          '.': 'TRUST_FOLDER',
+        });
+      }
+      writeJson(join(cwd, '.gemini', 'settings.json'), {
+        policyPaths: ['ws-pol'],
+      });
 
       const { captured } = await runFixture({
         skills: [writeSkill(sources, 'alpha', 'alpha')],
       });
 
-      // Folder trust evaluates to off, so the workspace policyPaths merge.
-      expect(captured.policies.slice(1)).toEqual([
-        join(childCwdOf(cwd), 'ws-pol'),
-      ]);
+      // Truthy either way, folder trust is on, so no rejection names the
+      // string and the trusted-folders file decides.
+      expect(captured.policies.slice(1)).toEqual(
+        trusted
+          ? [join(childCwdOf(cwd), 'ws-pol')]
+          : [join(realGemini, 'policies')],
+      );
       expect(overlaysLeft()).toEqual([]);
     },
   );
@@ -755,23 +830,20 @@ describe('Gemini per-run skills (gemini-53)', () => {
   });
 
   it.each([{ platform: 'win32' as const }, { platform: process.platform }])(
-    'matches a settings variable named in another letter case only on Windows, which names variables case-insensitively ($platform, gemini-34, gemini-55)',
+    'matches a settings variable named in another letter case only on Windows, which names variables case-insensitively ($platform, gemini-56, gemini-34, gemini-55)',
     async ({ platform }) => {
       const root = join(fixtureRoot, 'mixed-root');
       vi.stubEnv('Cligent_Mixed_Root', root);
       writeJson(join(realGemini, 'settings.json'), {
         policyPaths: ['$CLIGENT_MIXED_ROOT/pol'],
       });
-      const host = Object.getOwnPropertyDescriptor(process, 'platform')!;
-      Object.defineProperty(process, 'platform', { ...host, value: platform });
-      let captured: Captured;
-      try {
-        ({ captured } = await runFixture({
-          skills: [writeSkill(sources, 'alpha', 'alpha')],
-        }));
-      } finally {
-        Object.defineProperty(process, 'platform', host);
-      }
+
+      const { captured } = await runFixture(
+        { skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        undefined,
+        undefined,
+        platform,
+      );
 
       // Elsewhere the variable is unset, so the entry stays as written.
       expect(captured.policies.slice(1)).toEqual([
@@ -820,6 +892,476 @@ describe('Gemini per-run skills (gemini-53)', () => {
     ]);
     expect(overlaysLeft()).toEqual([]);
   });
+
+  it.each([
+    { label: 'unset', env: {}, expanded: 'true' },
+    // Only a non-empty value stops the relaunch, which sets it to 'true'.
+    {
+      label: 'set to the empty string',
+      env: { GEMINI_CLI_NO_RELAUNCH: '' },
+      expanded: 'true',
+    },
+    // No relaunch inside a sandbox, so the variable stays unset.
+    {
+      label: 'unset under a SANDBOX',
+      env: { SANDBOX: 'docker' },
+      expanded: '$GEMINI_CLI_NO_RELAUNCH',
+    },
+  ])(
+    'expands GEMINI_CLI_NO_RELAUNCH as the process the runtime relaunches to load its settings holds it: $label (gemini-34, gemini-55)',
+    async ({ env, expanded }) => {
+      vi.stubEnv('GEMINI_CLI_NO_RELAUNCH', undefined);
+      for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
+      writeJson(join(realGemini, 'settings.json'), {
+        policyPaths: [join(fixtureRoot, 'relaunch-$GEMINI_CLI_NO_RELAUNCH')],
+      });
+
+      const { captured } = await runFixture({
+        skills: [writeSkill(sources, 'alpha', 'alpha')],
+      });
+
+      expect(captured.policies.slice(1)).toEqual([
+        join(fixtureRoot, `relaunch-${expanded}`),
+      ]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'reads a settings variable as the first of its case variants spawn keeps on Windows (gemini-56, gemini-34, gemini-55)',
+    async () => {
+      // Spawn sorts the names, so the upper-case variant comes first and is
+      // the one a Windows child holds.
+      vi.stubEnv('CLIGENT_ROOT', join(fixtureRoot, 'upper-root'));
+      vi.stubEnv('cligent_root', join(fixtureRoot, 'lower-root'));
+      writeJson(join(realGemini, 'settings.json'), {
+        policyPaths: ['$cligent_root/pol'],
+      });
+
+      const { captured } = await runFixture(
+        { skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        undefined,
+        undefined,
+        'win32',
+      );
+
+      expect(captured.policies.slice(1)).toEqual([
+        join(fixtureRoot, 'upper-root', 'pol'),
+      ]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'keeps a lower-case gemini_cli_trust_workspace=false on Windows, adding no default and reading it as false (gemini-10, gemini-34, gemini-55)',
+    async () => {
+      vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', undefined);
+      vi.stubEnv('gemini_cli_trust_workspace', 'false');
+      mkdirSync(join(realGemini, 'policies'), { recursive: true });
+      // The rule and the default 'true' would each trust the workspace.
+      writeJson(join(realGemini, 'trustedFolders.json'), {
+        '.': 'TRUST_FOLDER',
+      });
+      writeJson(join(cwd, '.gemini', 'settings.json'), {
+        policyPaths: ['ws-pol'],
+      });
+
+      const { captured } = await runFixture(
+        { skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        undefined,
+        undefined,
+        'win32',
+      );
+
+      expect(captured.trust).toBeNull();
+      expect(captured.lowerTrust).toBe('false');
+      // Untrusted, the workspace policyPaths stay unmerged.
+      expect(captured.policies.slice(1)).toEqual([
+        join(realGemini, 'policies'),
+      ]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'reads a lower-case gemini_cli_home as the real home on Windows and replaces it with the overlay (gemini-56, gemini-34)',
+    async () => {
+      vi.stubEnv('GEMINI_CLI_HOME', undefined);
+      vi.stubEnv('gemini_cli_home', realHome);
+      // The operating-system home, were the variant not read, is elsewhere.
+      vi.stubEnv('HOME', join(fixtureRoot, 'os-home'));
+      writeJson(join(realGemini, 'settings.json'), { custom: 'real' });
+
+      const { captured } = await runFixture(
+        { skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        undefined,
+        undefined,
+        'win32',
+      );
+
+      // The overlay holds the real home's settings, and the child receives
+      // only the overlay under that name.
+      expect(captured.settings).toEqual({ custom: 'real' });
+      expect(captured.home).not.toBe(realHome);
+      expect(captured.lowerHome).toBeNull();
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it('honors a lower-case gemini_cli_system_settings_path override on Windows (gemini-56, gemini-34, gemini-55)', async () => {
+    const systemPath = join(fixtureRoot, 'lower-system', 'settings.json');
+    vi.stubEnv('GEMINI_CLI_SYSTEM_SETTINGS_PATH', undefined);
+    vi.stubEnv('gemini_cli_system_settings_path', systemPath);
+    writeJson(systemPath, { policyPaths: [join(fixtureRoot, 'system-pol')] });
+    const checked: string[] = [];
+
+    const { captured } = await runFixture(
+      { skills: [writeSkill(sources, 'alpha', 'alpha')] },
+      admitAll(checked),
+      undefined,
+      'win32',
+    );
+
+    expect(checked).toContain(systemPath);
+    expect(captured.policies.slice(1)).toEqual([
+      join(fixtureRoot, 'system-pol'),
+    ]);
+    expect(overlaysLeft()).toEqual([]);
+  });
+
+  /** Writes a `.env` file, creating its directory. */
+  function writeEnvFile(path: string, content: string): void {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content);
+  }
+
+  const sandboxRefusal =
+    'skills for adapter "gemini" cannot be delivered while its native sandbox is enabled';
+  it.each([
+    {
+      label: 'a trusted workspace .gemini/.env setting GEMINI_SANDBOX=docker',
+      arrange: () => {
+        writeEnvFile(join(cwd, '.gemini', '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      // Only authentication variables load into an untrusted workspace.
+      label:
+        'that .gemini/.env in a workspace GEMINI_CLI_TRUST_WORKSPACE=false distrusts, beside its .env',
+      arrange: () => {
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', 'false');
+        writeEnvFile(join(cwd, '.gemini', '.env'), 'GEMINI_SANDBOX=docker\n');
+        writeEnvFile(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: 'delivered',
+    },
+    {
+      // The runtime loads its .env trusting the workspace as the merged
+      // settings decide, the trusted workspace's own folder-trust setting
+      // included: here it turns folder trust back on, and no rule trusts.
+      label:
+        'that .gemini/.env in a workspace trusted by user settings disabling folder trust, whose own settings enable it under file-based trust with no rule',
+      arrange: () => {
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+        writeJson(join(realGemini, 'settings.json'), {
+          security: { folderTrust: { enabled: false } },
+        });
+        writeJson(join(cwd, '.gemini', 'settings.json'), {
+          security: { folderTrust: { enabled: true } },
+        });
+        writeEnvFile(join(cwd, '.gemini', '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: 'delivered',
+    },
+    {
+      // A variable the child already holds keeps its value.
+      label: 'that .gemini/.env beside a parent GEMINI_SANDBOX=false',
+      arrange: () => {
+        vi.stubEnv('GEMINI_SANDBOX', 'false');
+        writeEnvFile(join(cwd, '.gemini', '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: 'delivered',
+    },
+    {
+      label: 'a project .env setting GEMINI_SANDBOX=docker',
+      arrange: () => {
+        writeEnvFile(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      label:
+        'that project .env under user advanced.excludedEnvVars naming GEMINI_SANDBOX',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          advanced: { excludedEnvVars: ['GEMINI_SANDBOX'] },
+        });
+        writeEnvFile(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: 'delivered',
+    },
+    {
+      // The exclusions apply only to a file whose path lacks .gemini.
+      label:
+        'a .gemini/.env under user advanced.excludedEnvVars naming GEMINI_SANDBOX',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          advanced: { excludedEnvVars: ['GEMINI_SANDBOX'] },
+        });
+        writeEnvFile(join(cwd, '.gemini', '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      // The union with the schema's default list makes the lone string one
+      // entry, not a string GEMINI_SANDBOX is a part of.
+      label:
+        'that project .env under a lone-string user advanced.excludedEnvVars of GEMINI_SANDBOX_OTHER',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          advanced: { excludedEnvVars: 'GEMINI_SANDBOX_OTHER' },
+        });
+        writeEnvFile(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      label: 'that project .env under user advanced.ignoreLocalEnv',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          advanced: { ignoreLocalEnv: true },
+        });
+        writeEnvFile(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: 'delivered',
+    },
+    {
+      label: 'a .gemini/.env under user advanced.ignoreLocalEnv',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          advanced: { ignoreLocalEnv: true },
+        });
+        writeEnvFile(join(cwd, '.gemini', '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      // gemini-34, gemini-51: coerced, the string loads the project .env;
+      // as written, it ignores it.
+      label: 'that project .env under user advanced.ignoreLocalEnv of "false"',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          advanced: { ignoreLocalEnv: 'false' },
+        });
+        writeEnvFile(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: () =>
+        coercionRefusal(
+          `user settings at ${join(realGemini, 'settings.json')}`,
+          'advanced.ignoreLocalEnv',
+          'whether its native sandbox starts',
+        ),
+    },
+    {
+      // gemini-34, gemini-51: an exact "false" at a top-level tools.sandbox
+      // requests no sandbox as written or coerced, so only the
+      // advanced.ignoreLocalEnv string is named.
+      label:
+        'that project .env under user advanced.ignoreLocalEnv of "false" beside a tools.sandbox of "false"',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: 'false' },
+          advanced: { ignoreLocalEnv: 'false' },
+        });
+        writeEnvFile(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: () =>
+        coercionRefusal(
+          `user settings at ${join(realGemini, 'settings.json')}`,
+          'advanced.ignoreLocalEnv',
+          'whether its native sandbox starts',
+        ),
+    },
+    {
+      // The search climbs from the run cwd.
+      label: 'a project .env two directories above the run cwd',
+      arrange: () => {
+        writeEnvFile(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+        const runCwd = join(cwd, 'a', 'b');
+        mkdirSync(runCwd, { recursive: true });
+        return runCwd;
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      // The first file found in a directory is the one loaded.
+      label:
+        'a trusted workspace .gemini/.env setting another variable beside a project .env setting GEMINI_SANDBOX=docker',
+      arrange: () => {
+        writeEnvFile(join(cwd, '.gemini', '.env'), 'OTHER_VAR=1\n');
+        writeEnvFile(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: 'delivered',
+    },
+    {
+      // Past the root, the home's files are the fallback.
+      label:
+        "the home's .gemini/.env setting GEMINI_SANDBOX=docker, the run cwd outside the home",
+      arrange: () => {
+        writeEnvFile(join(realGemini, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      label:
+        "the home's .env setting GEMINI_SANDBOX=docker, the run cwd outside the home",
+      arrange: () => {
+        writeEnvFile(join(realHome, '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      // Climbing through the home as the child spells it, its .env loads
+      // despite advanced.ignoreLocalEnv, before the .gemini/.env above it.
+      label:
+        "the home's .env under user advanced.ignoreLocalEnv, the run cwd inside the home, beside a .gemini/.env above the home",
+      arrange: () => {
+        vi.stubEnv('GEMINI_CLI_HOME', childCwdOf(realHome));
+        writeJson(join(realGemini, 'settings.json'), {
+          advanced: { ignoreLocalEnv: true },
+        });
+        writeEnvFile(join(realHome, '.env'), 'GEMINI_SANDBOX=docker\n');
+        writeEnvFile(join(fixtureRoot, '.gemini', '.env'), 'OTHER_VAR=1\n');
+        const runCwd = join(realHome, 'proj');
+        mkdirSync(runCwd);
+        return runCwd;
+      },
+      outcome: sandboxRefusal,
+    },
+    {
+      // A variable present, even empty, is never replaced.
+      label:
+        'a .gemini/.env setting GEMINI_SANDBOX=docker beside a parent GEMINI_SANDBOX set to the empty string',
+      arrange: () => {
+        vi.stubEnv('GEMINI_SANDBOX', '');
+        writeEnvFile(join(cwd, '.gemini', '.env'), 'GEMINI_SANDBOX=docker\n');
+      },
+      outcome: 'delivered',
+    },
+    {
+      label:
+        'an export-prefixed, double-quoted GEMINI_SANDBOX of false with a comment, beside a user sandbox request',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: true },
+        });
+        writeEnvFile(
+          join(cwd, '.gemini', '.env'),
+          '# comment\nexport GEMINI_SANDBOX="false" # trailing\n',
+        );
+      },
+      outcome: 'delivered',
+    },
+    {
+      label:
+        "a single-quoted GEMINI_SANDBOX of 'false', beside a user sandbox request",
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: true },
+        });
+        writeEnvFile(join(cwd, '.gemini', '.env'), "GEMINI_SANDBOX='false'\n");
+      },
+      outcome: 'delivered',
+    },
+    {
+      label:
+        'a CRLF file setting GEMINI_SANDBOX: false, beside a user sandbox request',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: true },
+        });
+        writeEnvFile(
+          join(cwd, '.gemini', '.env'),
+          'OTHER=1\r\nGEMINI_SANDBOX: false\r\n',
+        );
+      },
+      outcome: 'delivered',
+    },
+    {
+      // The child takes itself to be inside a sandbox already.
+      label: 'SANDBOX=1, beside a user sandbox request',
+      arrange: () => {
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: true },
+        });
+        writeEnvFile(join(cwd, '.gemini', '.env'), 'SANDBOX=1\n');
+      },
+      outcome: 'delivered',
+    },
+  ] satisfies {
+    label: string;
+    // Returns the run cwd where it is not the default.
+    arrange: () => string | void;
+    outcome: string | (() => string);
+  }[])(
+    'decides the sandbox in the environment the child loads its .env into: $label (gemini-34, gemini-51)',
+    async ({ arrange, outcome }) => {
+      const runCwd = arrange() ?? cwd;
+      const spawned: string[][] = [];
+
+      const events = await collect(
+        fixtureAdapter(spawned).run('Use the skills', {
+          cwd: runCwd,
+          skills: [writeSkill(sources, 'alpha', 'alpha')],
+        }),
+      );
+
+      const expected = typeof outcome === 'function' ? outcome() : outcome;
+      if (expected === 'delivered') {
+        expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+        expect(spawned).toHaveLength(1);
+      } else {
+        expect(events.map((event) => event.type)).toEqual([
+          'init',
+          'error',
+          'done',
+        ]);
+        expect(events[1]!.payload).toMatchObject({
+          code: 'GEMINI_STREAM_ERROR',
+          recoverable: false,
+        });
+        expect((events[1]!.payload as { message: string }).message).toBe(
+          expected,
+        );
+        expect(events[2]!.payload).toMatchObject({ status: 'error' });
+        expect(spawned).toEqual([]);
+      }
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'keeps a parent lower-case gemini_sandbox=false on Windows over a .gemini/.env setting GEMINI_SANDBOX=docker (gemini-56, gemini-34)',
+    async () => {
+      vi.stubEnv('gemini_sandbox', 'false');
+      writeEnvFile(join(cwd, '.gemini', '.env'), 'GEMINI_SANDBOX=docker\n');
+      const spawned: string[][] = [];
+
+      // The variable is present in another letter case, so the file's
+      // value never loads and the parent's disables the sandbox.
+      const events = await collect(
+        fixtureAdapter(spawned, undefined, undefined, 'win32').run(
+          'Use the skills',
+          { cwd, skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        ),
+      );
+
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+      expect(spawned).toHaveLength(1);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
 
   it('appends no policy source where the user tier has none (gemini-55)', async () => {
     const { captured } = await runFixture({ skills: runSkills() });
@@ -1877,9 +2419,9 @@ describe('Gemini per-run skills (gemini-53)', () => {
         'skills for adapter "gemini" cannot be delivered while its native sandbox is enabled',
     },
     {
-      // gemini-34, gemini-55: the user layer the trust check reads is
-      // evaluated, so folder trust is off, the workspace is trusted, and its
-      // request counts.
+      // gemini-34, gemini-51: coerced, folder trust is off, the workspace is
+      // trusted, and its request counts; as written, folder trust is on and
+      // no rule trusts the workspace, so its request drops out.
       label:
         'user settings setting folder trust to "false" beside a workspace sandbox request under file-based trust with no rule',
       setup: (): AgentOptions<GeminiEffort> => {
@@ -1892,8 +2434,46 @@ describe('Gemini per-run skills (gemini-53)', () => {
         });
         return {};
       },
-      message:
-        'skills for adapter "gemini" cannot be delivered while its native sandbox is enabled',
+      message: (): string =>
+        coercionRefusal(
+          `user settings at ${join(realGemini, 'settings.json')}`,
+          'security.folderTrust.enabled',
+          'whether its native sandbox starts',
+        ),
+    },
+    {
+      // gemini-34, gemini-51: coerced, the string disables the sandbox; as
+      // written, it names a sandbox command.
+      label: 'a user sandbox of "FALSE"',
+      setup: (): AgentOptions<GeminiEffort> => {
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: 'FALSE' },
+        });
+        return {};
+      },
+      message: (): string =>
+        coercionRefusal(
+          `user settings at ${join(realGemini, 'settings.json')}`,
+          'tools.sandbox',
+          'whether its native sandbox starts',
+        ),
+    },
+    {
+      // gemini-34, gemini-51: coerced, the object is disabled; as written,
+      // its truthy enabled turns it on.
+      label: 'a user sandbox object whose enabled is "false"',
+      setup: (): AgentOptions<GeminiEffort> => {
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: { enabled: 'false' } },
+        });
+        return {};
+      },
+      message: (): string =>
+        coercionRefusal(
+          `user settings at ${join(realGemini, 'settings.json')}`,
+          'tools.sandbox.enabled',
+          'whether its native sandbox starts',
+        ),
     },
     {
       // Nothing exists at the override relative to the parent's cwd.
@@ -1951,7 +2531,7 @@ describe('Gemini per-run skills (gemini-53)', () => {
       },
       platform: 'win32' as const,
       message: (): string =>
-        `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system defaults at ${process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!} and the Gemini system settings at ${process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!} would change whether its native sandbox starts, because this adapter does not run the runtime's PowerShell check of those files' ownership and write access`,
+        `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system defaults at ${process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!} and the runtime's admission of the Gemini system settings at ${process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!} would change whether its native sandbox starts, because this adapter does not run the runtime's PowerShell check of those files' ownership and write access`,
     },
     {
       // gemini-34, gemini-51: counted, the system defaults disable folder
@@ -2009,6 +2589,76 @@ describe('Gemini per-run skills (gemini-53)', () => {
         `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system defaults at ${process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!} would change its policy sources, because this adapter does not run the runtime's PowerShell check of that file's ownership and write access`,
     },
     {
+      // gemini-34, gemini-51: read by its truthiness, "TRUE" reads alike as
+      // written and coerced, so only the sandbox string is named.
+      label:
+        'a user sandbox of "FALSE" beside advanced.ignoreLocalEnv of "TRUE"',
+      setup: (): AgentOptions<GeminiEffort> => {
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: 'FALSE' },
+          advanced: { ignoreLocalEnv: 'TRUE' },
+        });
+        return {};
+      },
+      message: (): string =>
+        coercionRefusal(
+          `user settings at ${join(realGemini, 'settings.json')}`,
+          'tools.sandbox',
+          'whether its native sandbox starts',
+        ),
+    },
+    {
+      // gemini-51: skipped, the system settings leave the user settings'
+      // string to decide; under the coerced string, counting them requests
+      // the sandbox. The files are named in merge order.
+      label:
+        'a user sandbox of "FALSE" beside system settings requesting the sandbox under Windows admission',
+      setup: (): AgentOptions<GeminiEffort> => {
+        writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
+          tools: { sandbox: true },
+        });
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: 'FALSE' },
+        });
+        return {};
+      },
+      platform: 'win32' as const,
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the runtime's coercion of tools.sandbox in the Gemini user settings at ${join(realGemini, 'settings.json')} and the runtime's admission of the Gemini system settings at ${process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!} would change whether its native sandbox starts, because the runtime coerces that string only where the whole file validates, which this adapter does not check, and this adapter does not run the runtime's PowerShell check of that file's ownership and write access`,
+    },
+    {
+      // gemini-51: skipping and coercing the file each drop the request its
+      // string makes as written, so it is named once for both.
+      label:
+        'system defaults with a sandbox of "FALSE" under Windows admission',
+      setup: (): AgentOptions<GeminiEffort> => {
+        writeJson(process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!, {
+          tools: { sandbox: 'FALSE' },
+        });
+        return {};
+      },
+      platform: 'win32' as const,
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system defaults at ${process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!} and its coercion of tools.sandbox there would change whether its native sandbox starts, because this adapter does not run the runtime's PowerShell check of that file's ownership and write access, and the runtime coerces that string only where the whole file validates, which this adapter does not check`,
+    },
+    {
+      // gemini-51: the default GEMINI_CLI_TRUST_WORKSPACE trusts the
+      // workspace however the folder-trust string reads, so only skipping
+      // the file changes the result and its coercion goes unnamed.
+      label:
+        'system settings requesting the sandbox and setting folder trust to "false" under the default trust and Windows admission',
+      setup: (): AgentOptions<GeminiEffort> => {
+        writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
+          tools: { sandbox: true },
+          security: { folderTrust: { enabled: 'false' } },
+        });
+        return {};
+      },
+      platform: 'win32' as const,
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system settings at ${process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!} would change whether its native sandbox starts, because this adapter does not run the runtime's PowerShell check of that file's ownership and write access`,
+    },
+    {
       label: 'user settings disabling skills',
       setup: (): AgentOptions<GeminiEffort> => {
         writeJson(join(realGemini, 'settings.json'), {
@@ -2019,6 +2669,8 @@ describe('Gemini per-run skills (gemini-53)', () => {
       message: 'set skills.enabled to false',
     },
     {
+      // gemini-34: the runtime makes the string false only where the whole
+      // file validates.
       label: 'user settings setting skills.enabled to "false"',
       setup: (): AgentOptions<GeminiEffort> => {
         writeJson(join(realGemini, 'settings.json'), {
@@ -2026,7 +2678,8 @@ describe('Gemini per-run skills (gemini-53)', () => {
         });
         return {};
       },
-      message: 'set skills.enabled to false',
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the Gemini user settings at ${join(realGemini, 'settings.json')} set skills.enabled to "false", a string the runtime coerces to false only where the whole file validates, which this adapter does not check`,
     },
     {
       label: 'a skill path that fails preparation',

@@ -2158,6 +2158,14 @@ describe('GeminiAdapter', () => {
       { user: { sandbox: { enabled: false } } },
       true,
     ],
+    [
+      // gemini-34: read as written, the string enables the object, so a run
+      // without skills takes the sandbox as requested.
+      'a user settings object enabled by the string "false"',
+      {},
+      { user: { sandbox: { enabled: 'false', command: 'docker' } } },
+      false,
+    ],
   ] satisfies Array<
     [
       string,
@@ -2238,6 +2246,58 @@ describe('GeminiAdapter', () => {
     );
 
     // Its sandbox request counts, so no alias is delivered.
+    expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+    expect(modelArg(invocations[0]!.args)).toBe('gemini-3-pro');
+    expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBe(realHome);
+    expect(overlaysLeft()).toEqual([]);
+  });
+
+  it('sends the concrete model without an overlay where a trusted workspace .gemini/.env sets GEMINI_SANDBOX (gemini-34)', async () => {
+    const cwd = join(fixtureRoot, 'work');
+    mkdirSync(join(cwd, '.gemini'), { recursive: true });
+    // The runtime loads the file after its settings, before it decides.
+    writeFileSync(join(cwd, '.gemini', '.env'), 'GEMINI_SANDBOX=docker\n');
+    const { spawnProcess, invocations } = makeSpawn((child) => {
+      writeEventsAndClose(child, [successResult()], 0, null);
+    });
+
+    const events = await collect(
+      new GeminiAdapter({ spawnProcess }).run('prompt', {
+        model: 'gemini-3-pro',
+        effort: 'medium',
+        cwd,
+      }),
+    );
+
+    expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+    expect(modelArg(invocations[0]!.args)).toBe('gemini-3-pro');
+    expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBe(realHome);
+    expect(overlaysLeft()).toEqual([]);
+  });
+
+  it('sends the concrete model without an overlay where a project .env sets GEMINI_SANDBOX beside a user advanced.ignoreLocalEnv of "false" (gemini-34)', async () => {
+    const cwd = join(fixtureRoot, 'work');
+    mkdirSync(cwd);
+    writeFileSync(join(cwd, '.env'), 'GEMINI_SANDBOX=docker\n');
+    mkdirSync(join(realHome, '.gemini'));
+    // As written, the string ignores the file; coerced, the file loads and
+    // requests the sandbox, which a run without skills takes as requested.
+    writeFileSync(
+      join(realHome, '.gemini', 'settings.json'),
+      JSON.stringify({ advanced: { ignoreLocalEnv: 'false' } }),
+    );
+    const { spawnProcess, invocations } = makeSpawn((child) => {
+      writeEventsAndClose(child, [successResult()], 0, null);
+    });
+
+    const events = await collect(
+      new GeminiAdapter({ spawnProcess }).run('prompt', {
+        model: 'gemini-3-pro',
+        effort: 'medium',
+        cwd,
+      }),
+    );
+
     expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
     expect(modelArg(invocations[0]!.args)).toBe('gemini-3-pro');
     expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBe(realHome);
