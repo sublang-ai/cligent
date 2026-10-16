@@ -15,7 +15,6 @@ import {
   mkdir,
   readdir,
   readFile,
-  readlink,
   realpath,
   rename,
   rm,
@@ -62,7 +61,7 @@ export const SKILL_SUPPORT = Object.freeze({
   gemini: Object.freeze({
     carrier: 'run-private',
     notes:
-      "User-tier skills in the per-run settings home with an activate_skill allow rule and the runtime's merged policy sources beside a skills-only policy. Rejects a working directory equal to the real home, a native sandbox, user settings disabling skills, or a tool list excluding activate_skill. A same-named skill in the user's .agents/skills or a trusted workspace shadows a run skill, an extension skill whose name differs only in case captures its activation, and another settings scope's skill disables can suppress it. The carrier is removed with the settings overlay under that overlay's own cleanup contract. No delivery evidence before the first model turn.",
+      "User-tier skills in the per-run settings home with an activate_skill allow rule and the runtime's merged policy sources beside a skills-only policy. Rejects a working directory resolving to the real home, a native sandbox, user settings disabling skills, a tool list excluding activate_skill, or a system settings or system-defaults file of unknown Windows admission that would change the run's sandbox or policy sources. A same-named skill in the user's .agents/skills or a trusted workspace shadows a run skill, an extension skill whose name differs only in case captures its activation, and another settings scope's skill disables can suppress it. The carrier is removed with the settings overlay under that overlay's own cleanup contract. No delivery evidence before the first model turn.",
   }),
   kimi: Object.freeze({
     carrier: 'workspace',
@@ -394,58 +393,81 @@ async function copyTree(
   target: string,
   skillRoot: string,
   signal?: AbortSignal,
+  // The real directories whose copies are in progress, so a link copied as
+  // its target on a host without links never recurses into one of them.
+  active: Set<string> = new Set(),
 ) {
   const sourceStats = await lstat(source);
-  // Populate first: a read-only source directory would otherwise refuse its
-  // own children. Owner read, write, and search stay set on the copy so the
-  // snapshot remains removable.
-  await mkdir(target);
-  const entries = await readdir(source, { withFileTypes: true });
-  for (const entry of entries) {
-    signal?.throwIfAborted();
-    const from = join(source, entry.name);
-    const to = join(target, entry.name);
-    if (entry.isSymbolicLink()) {
-      await copyLink(from, to, skillRoot, signal);
-    } else if (entry.isDirectory()) {
-      if (isOwnedCarrierRoot(from)) continue;
-      await copyTree(from, to, skillRoot, signal);
-    } else {
-      const stats = await lstat(from);
-      await copyFile(from, to);
-      await chmod(to, stats.mode & 0o777);
+  const real = await realpath(source);
+  active.add(real);
+  try {
+    // Populate first: a read-only source directory would otherwise refuse its
+    // own children. Owner read, write, and search stay set on the copy so the
+    // snapshot remains removable.
+    await mkdir(target);
+    const entries = await readdir(source, { withFileTypes: true });
+    // Code-unit order, so the entry a rejection names is the same everywhere.
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      signal?.throwIfAborted();
+      const from = join(source, entry.name);
+      const to = join(target, entry.name);
+      if (entry.isSymbolicLink()) {
+        await copyLink(from, to, skillRoot, signal, active);
+      } else if (entry.isDirectory()) {
+        if (isOwnedCarrierRoot(from)) continue;
+        await copyTree(from, to, skillRoot, signal, active);
+      } else {
+        const stats = await lstat(from);
+        await copyFile(from, to);
+        await chmod(to, stats.mode & 0o777);
+      }
     }
+    await chmod(target, (sourceStats.mode & 0o777) | 0o700);
+  } finally {
+    active.delete(real);
   }
-  await chmod(target, (sourceStats.mode & 0o777) | 0o700);
 }
 
 async function copyLink(
   from: string,
   to: string,
   skillRoot: string,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  active: Set<string>,
 ) {
-  const raw = await readlink(from);
   // Every link is re-expressed relative to its copied location through its
   // resolved target, on real paths for both sides: the skill may be reached
   // through a linked ancestor (macOS /var is /private/var) or through an
   // alias whose physical name differs, and a link written against either
-  // spelling would otherwise climb out of the copy or miss inside it.
-  // skills-2 already rejected targets outside the skill.
+  // spelling would otherwise climb out of the copy or miss inside it. The
+  // target is the filesystem's own resolution of the link, never a lexical
+  // collapse of its text: a `..` after a linked segment steps out of that
+  // link's target, not out of the segment's name. skills-2 already rejected
+  // targets that do not resolve or resolve outside the skill.
   const realDir = await realpath(dirname(from));
-  const target = await realpath(resolve(realDir, raw));
+  const target = await realpath(from);
   const link = relative(realDir, target) || '.';
+  // Windows needs the link's kind, which it cannot infer from a target that
+  // is copied later; other hosts ignore it.
+  const targetStats = await stat(target);
   try {
-    await symlink(link, to);
+    await symlink(link, to, targetStats.isDirectory() ? 'dir' : 'file');
     return;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== 'EPERM' && code !== 'ENOSYS' && code !== 'EACCES') throw error;
   }
   // The host cannot create a link: copy the resolved target's content instead.
-  const targetStats = await stat(target);
   if (targetStats.isDirectory()) {
-    await copyTree(target, to, skillRoot, signal);
+    if (active.has(target)) {
+      // The target's copy is in progress around this link, directly or
+      // through other links, so no copy of it would end.
+      throw new Error(
+        `skill link ${from} cannot be copied because the host creates no links and a copy of its target ${target} would contain the link`,
+      );
+    }
+    await copyTree(target, to, skillRoot, signal, active);
   } else {
     await copyFile(target, to);
     await chmod(to, targetStats.mode & 0o777);

@@ -269,6 +269,10 @@ beforeEach(() => {
   vi.stubEnv('TEMP', overlayTmp);
   vi.stubEnv('GEMINI_SANDBOX', undefined);
   vi.stubEnv('SANDBOX', undefined);
+  // Workspace trust decides whether workspace settings count (gemini-55).
+  vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', undefined);
+  vi.stubEnv('GEMINI_RESTRICTED_MODE', undefined);
+  vi.stubEnv('GEMINI_CLI_TRUSTED_FOLDERS_PATH', undefined);
   vi.stubEnv(
     'GEMINI_CLI_SYSTEM_SETTINGS_PATH',
     join(fixtureRoot, 'system', 'settings.json'),
@@ -2072,6 +2076,34 @@ describe('GeminiAdapter', () => {
     },
   );
 
+  // The operating system applies a `..` after a symbolic link to the link's
+  // target, so the child runs in the real home while lexical resolution of
+  // the run cwd lands outside it (gemini-34).
+  it.skipIf(process.platform === 'win32')(
+    'sends the concrete model without an overlay when a `..` after a symbolic link lands in the real home',
+    async () => {
+      mkdirSync(join(realHome, 'sub'));
+      symlinkSync(join(realHome, 'sub'), join(fixtureRoot, 'link'), 'dir');
+      const { spawnProcess, invocations } = makeSpawn((child) => {
+        writeEventsAndClose(child, [successResult()], 0, null);
+      });
+
+      const events = await collect(
+        new GeminiAdapter({ spawnProcess }).run('prompt', {
+          model: 'gemini-3-pro',
+          effort: 'high',
+          cwd: `${join(fixtureRoot, 'link')}/..`,
+        }),
+      );
+
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+      expect(modelArg(invocations[0]!.args)).toBe('gemini-3-pro');
+      expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBe(realHome);
+      expect(existsSync(join(realHome, '.gemini'))).toBe(false);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
   it.each([
     ['GEMINI_SANDBOX=true', { GEMINI_SANDBOX: 'true' }, {}, false],
     [
@@ -2093,6 +2125,13 @@ describe('GeminiAdapter', () => {
       'workspace settings over user settings',
       {},
       { user: { sandbox: true }, workspace: { sandbox: false } },
+      true,
+    ],
+    [
+      // Gemini merges no workspace settings into an untrusted workspace.
+      'the workspace settings of a workspace GEMINI_CLI_TRUST_WORKSPACE=false distrusts',
+      { GEMINI_CLI_TRUST_WORKSPACE: 'false' },
+      { workspace: { sandbox: true } },
       true,
     ],
     [
@@ -2157,7 +2196,7 @@ describe('GeminiAdapter', () => {
       await collect(
         new GeminiAdapter({
           spawnProcess,
-          admitsSystemSettingsFile: async () => true,
+          admitsSystemSettingsFile: async () => 'admitted' as const,
         }).run('prompt', {
           model: 'gemini-3-pro',
           effort: 'medium',
@@ -2178,6 +2217,32 @@ describe('GeminiAdapter', () => {
       expect(overlaysLeft()).toEqual([]);
     },
   );
+
+  it('counts a system settings file of unknown Windows admission on a run without skills (gemini-34)', async () => {
+    const cwd = join(fixtureRoot, 'work');
+    mkdirSync(cwd);
+    const systemPath = process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!;
+    mkdirSync(dirname(systemPath), { recursive: true });
+    writeFileSync(systemPath, JSON.stringify({ tools: { sandbox: true } }));
+    const { spawnProcess, invocations } = makeSpawn((child) => {
+      writeEventsAndClose(child, [successResult()], 0, null);
+    });
+
+    // The adapter's own check applies the Windows admission rule, under
+    // which an existing system file's admission is unknown.
+    const events = await collect(
+      new GeminiAdapter({ spawnProcess, admissionPlatform: 'win32' }).run(
+        'prompt',
+        { model: 'gemini-3-pro', effort: 'medium', cwd },
+      ),
+    );
+
+    // Its sandbox request counts, so no alias is delivered.
+    expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+    expect(modelArg(invocations[0]!.args)).toBe('gemini-3-pro');
+    expect(invocations[0]!.options.env!.GEMINI_CLI_HOME).toBe(realHome);
+    expect(overlaysLeft()).toEqual([]);
+  });
 
   it.skipIf(process.platform === 'win32')(
     'overlays the operating-system home when GEMINI_CLI_HOME is unset',

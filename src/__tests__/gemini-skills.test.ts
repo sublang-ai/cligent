@@ -13,6 +13,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -23,7 +24,7 @@ import type {
   SpawnOptionsWithoutStdio,
 } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -84,6 +85,7 @@ const settingsPath = join(home, '.gemini', 'settings.json');
 const policies = args.filter((arg) => arg.startsWith('--policy=')).map((arg) => arg.slice('--policy='.length));
 writeFileSync(capture, JSON.stringify({
   args,
+  cwd: process.cwd(),
   home,
   trust: process.env.GEMINI_CLI_TRUST_WORKSPACE ?? null,
   homeEntries: readdirSync(home).sort(),
@@ -124,6 +126,7 @@ interface SkillEntry {
 
 interface Captured {
   args: string[];
+  cwd: string;
   home: string;
   trust: string | null;
   homeEntries: string[];
@@ -174,6 +177,14 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, JSON.stringify(value));
 }
 
+/**
+ * The working directory a child started in `path` reports: its real path,
+ * or the path itself on Windows (gemini-34).
+ */
+function childCwdOf(path: string): string {
+  return process.platform === 'win32' ? path : realpathSync.native(path);
+}
+
 /** The run's skills: alpha with a script and a relative link, beta, my-tool. */
 function runSkills(): string[] {
   const alpha = writeSkill(sources, 'alpha', 'alpha', 'Alpha body\n');
@@ -195,7 +206,9 @@ async function collect(
   return events;
 }
 
-type SystemFileAdmission = (path: string) => Promise<boolean>;
+type SystemFileAdmission = (
+  path: string,
+) => Promise<'admitted' | 'rejected' | 'unknown'>;
 
 /**
  * Admits every system file and records each path checked: a test cannot
@@ -204,16 +217,22 @@ type SystemFileAdmission = (path: string) => Promise<boolean>;
 function admitAll(checked: string[] = []): SystemFileAdmission {
   return async (path) => {
     checked.push(path);
-    return true;
+    return 'admitted';
   };
 }
 
+/**
+ * A fixture-backed adapter; `admissionPlatform` selects the platform whose
+ * admission rule the adapter's own check applies (gemini-34).
+ */
 function fixtureAdapter(
   spawned: string[][] = [],
   admitsSystemSettingsFile?: SystemFileAdmission,
+  admissionPlatform?: NodeJS.Platform,
 ): GeminiAdapter {
   return new GeminiAdapter({
     ...(admitsSystemSettingsFile ? { admitsSystemSettingsFile } : {}),
+    ...(admissionPlatform ? { admissionPlatform } : {}),
     spawnProcess: (
       _command: string,
       args: readonly string[],
@@ -231,12 +250,13 @@ function fixtureAdapter(
 async function runFixture(
   options: AgentOptions<GeminiEffort>,
   admitsSystemSettingsFile?: SystemFileAdmission,
+  admissionPlatform?: NodeJS.Platform,
 ): Promise<{ events: AgentEvent[]; captured: Captured }> {
   const events = await collect(
-    fixtureAdapter([], admitsSystemSettingsFile).run('Use the skills', {
-      cwd,
-      ...options,
-    }),
+    fixtureAdapter([], admitsSystemSettingsFile, admissionPlatform).run(
+      'Use the skills',
+      { cwd, ...options },
+    ),
   );
   expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
   return {
@@ -471,7 +491,7 @@ describe('Gemini per-run skills (gemini-53)', () => {
         join(realHome, 'user-pol'),
         join(policyRoot, 'env-pol'),
         shared,
-        ...(trust === 'trusted' ? [join(cwd, 'ws-pol')] : []),
+        ...(trust === 'trusted' ? [join(childCwdOf(cwd), 'ws-pol')] : []),
         join(fixtureRoot, 'system-pol'),
       ]);
       expect(overlaysLeft()).toEqual([]);
@@ -559,49 +579,550 @@ describe('Gemini per-run skills (gemini-53)', () => {
     // policyPaths between the system defaults' and the system settings'.
     expect(captured.policies.slice(1)).toEqual([
       join(fixtureRoot, 'defaults-pol'),
-      join(cwd, 'ws-pol'),
+      join(childCwdOf(cwd), 'ws-pol'),
       join(fixtureRoot, 'system-pol'),
     ]);
     expect(overlaysLeft()).toEqual([]);
   });
 
-  it('reads relative system and trusted-folders overrides under the run cwd (gemini-34, gemini-55)', async () => {
-    expect(process.cwd()).not.toBe(cwd);
-    vi.stubEnv('GEMINI_CLI_SYSTEM_SETTINGS_PATH', join('sys', 'settings.json'));
-    vi.stubEnv('GEMINI_CLI_SYSTEM_DEFAULTS_PATH', join('sys', 'defaults.json'));
-    vi.stubEnv('GEMINI_CLI_TRUSTED_FOLDERS_PATH', join('sys', 'trusted.json'));
-    vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
-    writeJson(join(cwd, 'sys', 'settings.json'), {
-      policyPaths: [join(fixtureRoot, 'system-pol')],
+  /**
+   * A run cwd at <fixtureRoot>/link, a symbolic link to the directory
+   * <fixtureRoot>/data/proj, so a path climbing out of it with `..` names a
+   * different file for the child, whose working directory is the physical
+   * one, than lexical resolution names (gemini-34).
+   */
+  function linkedRunCwd(): { runCwd: string; data: string } {
+    const data = join(fixtureRoot, 'data');
+    mkdirSync(join(data, 'proj'), { recursive: true });
+    const runCwd = join(fixtureRoot, 'link');
+    symlinkSync(join(data, 'proj'), runCwd, 'dir');
+    return { runCwd, data: realpathSync(data) };
+  }
+
+  // On Windows the child's working directory is the run cwd as given.
+  it.skipIf(process.platform === 'win32')(
+    'resolves relative system, trusted-folders, and home overrides against the physical run cwd (gemini-34, gemini-55)',
+    async () => {
+      const { runCwd, data } = linkedRunCwd();
+      // Each override climbs out of the run cwd; a decoy waits where lexical
+      // resolution from the link lands.
+      vi.stubEnv('GEMINI_CLI_SYSTEM_SETTINGS_PATH', '../sys/settings.json');
+      vi.stubEnv('GEMINI_CLI_SYSTEM_DEFAULTS_PATH', '../sys/defaults.json');
+      vi.stubEnv('GEMINI_CLI_TRUSTED_FOLDERS_PATH', '../trusted.json');
+      vi.stubEnv('GEMINI_CLI_HOME', '../home');
+      vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+      for (const [root, tag] of [
+        [data, 'real'],
+        [fixtureRoot, 'decoy'],
+      ] as const) {
+        writeJson(join(root, 'sys', 'settings.json'), {
+          policyPaths: [join(fixtureRoot, `${tag}-system-pol`)],
+        });
+        writeJson(join(root, 'sys', 'defaults.json'), {
+          policyPaths: [join(fixtureRoot, `${tag}-defaults-pol`)],
+        });
+        writeJson(join(root, 'trusted.json'), {
+          [join(data, 'proj')]:
+            tag === 'real' ? 'TRUST_FOLDER' : 'DO_NOT_TRUST',
+        });
+        writeJson(join(root, 'home', '.gemini', 'settings.json'), {
+          policyPaths: [`~/${tag}-user-pol`],
+        });
+      }
+      writeJson(join(runCwd, '.gemini', 'settings.json'), {
+        policyPaths: ['ws-pol'],
+      });
+      const checked: string[] = [];
+
+      const { captured } = await runFixture(
+        { cwd: runCwd, skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        admitAll(checked),
+      );
+
+      // gemini-34: each system override is read under the physical run cwd.
+      expect(new Set(checked)).toEqual(
+        new Set([
+          join(data, 'sys', 'settings.json'),
+          join(data, 'sys', 'defaults.json'),
+        ]),
+      );
+      // gemini-34, gemini-55: the home and trusted-folders overrides resolve
+      // there too, so the real home's user policyPaths are merged and the
+      // workspace is trusted.
+      expect(captured.policies.slice(1)).toEqual([
+        join(fixtureRoot, 'real-defaults-pol'),
+        join(data, 'home', 'real-user-pol'),
+        join(data, 'proj', 'ws-pol'),
+        join(fixtureRoot, 'real-system-pol'),
+      ]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'resolves trusted-folders keys and policyPaths against the physical run cwd (gemini-55)',
+    async () => {
+      const { runCwd, data } = linkedRunCwd();
+      // Lexical resolution of the key from the link lands on this decoy.
+      mkdirSync(join(fixtureRoot, 'proj'));
+      vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+      mkdirSync(join(realGemini, 'policies'), { recursive: true });
+      writeJson(join(realGemini, 'trustedFolders.json'), {
+        '../proj': 'TRUST_FOLDER',
+      });
+      writeJson(join(runCwd, '.gemini', 'settings.json'), {
+        policyPaths: ['ws-pol', '../ws-pol'],
+      });
+
+      const { captured } = await runFixture({
+        cwd: runCwd,
+        skills: [writeSkill(sources, 'alpha', 'alpha')],
+      });
+
+      // The key trusts the physical run cwd, and each workspace entry resolves
+      // against it.
+      expect(captured.policies.slice(1)).toEqual([
+        join(data, 'proj', 'ws-pol'),
+        join(data, 'ws-pol'),
+      ]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'reads the files of the directory a `..` after a symbolic link names for the child (gemini-34, gemini-55)',
+    async () => {
+      // <fixtureRoot>/link names <fixtureRoot>/data/sub, so the operating
+      // system runs the child of <fixtureRoot>/link/.. in <fixtureRoot>/data,
+      // while lexical resolution lands on <fixtureRoot>, where decoys wait.
+      const data = join(fixtureRoot, 'data');
+      mkdirSync(join(data, 'sub'), { recursive: true });
+      symlinkSync(join(data, 'sub'), join(fixtureRoot, 'link'), 'dir');
+      const physical = realpathSync(data);
+      vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+      vi.stubEnv('GEMINI_CLI_TRUSTED_FOLDERS_PATH', 'trusted.json');
+      mkdirSync(join(realGemini, 'policies'), { recursive: true });
+      writeJson(join(data, 'trusted.json'), { [physical]: 'TRUST_FOLDER' });
+      writeJson(join(data, '.gemini', 'settings.json'), {
+        policyPaths: ['ws-pol'],
+      });
+      writeJson(join(fixtureRoot, 'trusted.json'), {
+        [realpathSync(fixtureRoot)]: 'TRUST_FOLDER',
+      });
+      writeJson(join(fixtureRoot, '.gemini', 'settings.json'), {
+        tools: { sandbox: true },
+        policyPaths: ['decoy-pol'],
+      });
+
+      const { captured } = await runFixture({
+        cwd: `${join(fixtureRoot, 'link')}/..`,
+        skills: [writeSkill(sources, 'alpha', 'alpha')],
+      });
+
+      // gemini-34: the child runs in the physical directory, whose relative
+      // trusted-folders override trusts it, so its workspace policyPaths
+      // merge; the decoy's sandbox request and policyPaths count nowhere
+      // (gemini-55).
+      expect(captured.cwd).toBe(physical);
+      expect(captured.policies.slice(1)).toEqual([join(physical, 'ws-pol')]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  const caseInsensitive =
+    process.platform === 'darwin' || process.platform === 'win32';
+  it.each([
+    {
+      label: 'keyed "."',
+      arrange: () => ({ rules: { '.': 'TRUST_FOLDER' } }),
+      trusted: true,
+    },
+    {
+      label: "keyed the parent process's cwd",
+      arrange: () => {
+        // Only a key resolved against the run cwd, not the parent's, trusts.
+        expect(cwd.startsWith(process.cwd())).toBe(false);
+        return { rules: { [process.cwd()]: 'TRUST_FOLDER' } };
+      },
+      trusted: false,
+    },
+    {
+      // Both keys normalize to one rule, whose level the later one sets.
+      label: 'keyed "." and then the run cwd\'s real path distrusting it',
+      arrange: () => ({
+        rules: { '.': 'TRUST_FOLDER', [childCwdOf(cwd)]: 'DO_NOT_TRUST' },
+      }),
+      trusted: false,
+    },
+    {
+      label: "keyed the run cwd's real path in upper case",
+      arrange: () => ({
+        rules: { [childCwdOf(cwd).toUpperCase()]: 'TRUST_FOLDER' },
+      }),
+      trusted: caseInsensitive,
+    },
+    {
+      // On POSIX the key resolves as one name under the run cwd; replacing
+      // its backslash then lets the real-path reading climb out of it.
+      label: "keyed the run cwd's name below `..` with a backslash",
+      arrange: () => ({
+        rules: { [`..\\${basename(childCwdOf(cwd))}`]: 'TRUST_FOLDER' },
+      }),
+      trusted: true,
+    },
+    {
+      // Absolute only on Windows: on POSIX it is a name under the run cwd.
+      label: "keyed the run cwd's real path with backslash separators",
+      arrange: () => ({
+        rules: { [childCwdOf(cwd).replace(/\//g, '\\')]: 'TRUST_FOLDER' },
+      }),
+      trusted: process.platform === 'win32',
+    },
+    {
+      label: 'keyed a child of the run cwd under TRUST_PARENT',
+      arrange: () => ({
+        rules: { [join(childCwdOf(cwd), 'child')]: 'TRUST_PARENT' },
+      }),
+      trusted: true,
+    },
+    {
+      // The longer key decides, wherever it is listed.
+      label: 'keyed the run cwd distrusting it and then its parent trusting it',
+      arrange: () => ({
+        rules: {
+          [childCwdOf(cwd)]: 'DO_NOT_TRUST',
+          [dirname(childCwdOf(cwd))]: 'TRUST_FOLDER',
+        },
+      }),
+      trusted: false,
+    },
+    {
+      // The runtime's real-path reading keeps the key's spelling, so it
+      // never names a directory spelled in the other Unicode form.
+      label: 'keyed in NFC for a run cwd named in NFD',
+      arrange: () => {
+        const runCwd = join(fixtureRoot, 'cafe\u0301');
+        mkdirSync(runCwd);
+        return {
+          runCwd,
+          rules: {
+            [join(childCwdOf(fixtureRoot), 'caf\u00e9')]: 'TRUST_FOLDER',
+          },
+        };
+      },
+      trusted: false,
+    },
+    {
+      // A Seatbelt sandbox moves the runtime directory under .cache.
+      label: 'keyed the run cwd in the Seatbelt runtime directory',
+      arrange: () => {
+        vi.stubEnv('SANDBOX', 'sandbox-exec');
+        writeJson(join(realGemini, 'trustedFolders.json'), {
+          [cwd]: 'DO_NOT_TRUST',
+        });
+        return {
+          rules: { [cwd]: 'TRUST_FOLDER' },
+          rulesPath: join(realHome, '.cache', '.gemini', 'trustedFolders.json'),
+        };
+      },
+      trusted: true,
+    },
+    {
+      // Only a Seatbelt sandbox moves the runtime directory.
+      label: 'keyed the run cwd in the .gemini file under another SANDBOX',
+      arrange: () => {
+        vi.stubEnv('SANDBOX', 'docker');
+        writeJson(join(realHome, '.cache', '.gemini', 'trustedFolders.json'), {
+          [cwd]: 'DO_NOT_TRUST',
+        });
+        return { rules: { [cwd]: 'TRUST_FOLDER' } };
+      },
+      trusted: true,
+    },
+    {
+      // Rules rank by normalized key, whose `.` segments are gone: the
+      // longer raw key is the shorter normalized one.
+      label:
+        'keyed the run cwd plus `/.` segments distrusting it and then a child of the run cwd under TRUST_PARENT',
+      arrange: () => ({
+        rules: {
+          [`${childCwdOf(cwd)}/./././././././.`]: 'DO_NOT_TRUST',
+          [join(childCwdOf(cwd), 'child')]: 'TRUST_PARENT',
+        },
+      }),
+      trusted: true,
+    },
+    {
+      label: 'keyed the run cwd trusting it beside a rule of an invalid level',
+      arrange: () => ({
+        rules: {
+          [childCwdOf(cwd)]: 'TRUST_FOLDER',
+          [join(fixtureRoot, 'elsewhere')]: 'TRUST_ALWAYS',
+        },
+      }),
+      trusted: false,
+    },
+  ] satisfies {
+    label: string;
+    arrange: () => {
+      runCwd?: string;
+      rules: Record<string, string>;
+      rulesPath?: string;
+    };
+    trusted: boolean;
+  }[])(
+    'matches a trusted-folders rule $label as the runtime does (gemini-55)',
+    async ({ arrange, trusted }) => {
+      // Present but neither 'true' nor 'false': the trusted-folders file
+      // decides, under the default folder-trust setting.
+      vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+      mkdirSync(join(realGemini, 'policies'), { recursive: true });
+      const arranged = arrange();
+      const runCwd = 'runCwd' in arranged ? arranged.runCwd : cwd;
+      writeJson(
+        ('rulesPath' in arranged ? arranged.rulesPath : undefined) ??
+          join(realGemini, 'trustedFolders.json'),
+        arranged.rules,
+      );
+      writeJson(join(runCwd, '.gemini', 'settings.json'), {
+        policyPaths: ['ws-pol'],
+      });
+
+      const { captured } = await runFixture({
+        cwd: runCwd,
+        skills: [writeSkill(sources, 'alpha', 'alpha')],
+      });
+
+      // A trusted run cwd merges its workspace policyPaths; an untrusted one
+      // leaves the user's default policy directory in their place.
+      expect(captured.policies.slice(1)).toEqual(
+        trusted
+          ? [join(childCwdOf(runCwd), 'ws-pol')]
+          : [join(realGemini, 'policies')],
+      );
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32').each([
+    { first: 'TRUST_FOLDER', second: 'DO_NOT_TRUST', trusted: true },
+    { first: 'DO_NOT_TRUST', second: 'TRUST_FOLDER', trusted: false },
+  ] as const)(
+    'lets the first listed of two equally long matching keys decide: the run cwd $first, then a link to it $second (gemini-55)',
+    async ({ first, second, trusted }) => {
+      // Both keys' real paths are the run cwd's, and their normalized keys
+      // are equally long.
+      const real = childCwdOf(cwd);
+      const link = join(dirname(real), 'wlnk');
+      expect(link).toHaveLength(real.length);
+      symlinkSync(real, link, 'dir');
+      vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+      mkdirSync(join(realGemini, 'policies'), { recursive: true });
+      writeJson(join(realGemini, 'trustedFolders.json'), {
+        [real]: first,
+        [link]: second,
+      });
+      writeJson(join(cwd, '.gemini', 'settings.json'), {
+        policyPaths: ['ws-pol'],
+      });
+
+      const { captured } = await runFixture({
+        skills: [writeSkill(sources, 'alpha', 'alpha')],
+      });
+
+      expect(captured.policies.slice(1)).toEqual(
+        trusted ? [join(real, 'ws-pol')] : [join(realGemini, 'policies')],
+      );
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.each([
+    {
+      // GEMINI_RESTRICTED_MODE outranks the default 'true' the child gets.
+      label:
+        'GEMINI_RESTRICTED_MODE=true under the default GEMINI_CLI_TRUST_WORKSPACE, with a rule trusting the run cwd',
+      arrange: () => {
+        vi.stubEnv('GEMINI_RESTRICTED_MODE', 'true');
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', undefined);
+        writeJson(join(realGemini, 'trustedFolders.json'), {
+          '.': 'TRUST_FOLDER',
+        });
+      },
+    },
+    {
+      label:
+        'GEMINI_CLI_TRUST_WORKSPACE=false, with a rule trusting the run cwd',
+      arrange: () => {
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', 'false');
+        writeJson(join(realGemini, 'trustedFolders.json'), {
+          '.': 'TRUST_FOLDER',
+        });
+      },
+    },
+    {
+      // Folder trust merges last-wins, so the user settings turn it back on
+      // and the trusted-folders file, holding no rule, decides.
+      label:
+        'system defaults disabling folder trust and user settings enabling it',
+      arrange: () => {
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+        writeJson(process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!, {
+          security: { folderTrust: { enabled: false } },
+        });
+        writeJson(join(realGemini, 'settings.json'), {
+          security: { folderTrust: { enabled: true } },
+        });
+      },
+    },
+    {
+      label:
+        'user settings disabling folder trust and system settings enabling it',
+      arrange: () => {
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+        writeJson(join(realGemini, 'settings.json'), {
+          security: { folderTrust: { enabled: false } },
+        });
+        writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
+          security: { folderTrust: { enabled: true } },
+        });
+      },
+    },
+    {
+      // A truncated file whose text names a trusting rule.
+      label: 'a malformed trusted-folders file',
+      arrange: () => {
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+        mkdirSync(realGemini, { recursive: true });
+        writeFileSync(
+          join(realGemini, 'trustedFolders.json'),
+          `{${JSON.stringify(childCwdOf(cwd))}: "TRUST_FOLDER"`,
+        );
+      },
+    },
+    {
+      // A directory in its place cannot be read as a file.
+      label: 'an unreadable trusted-folders file',
+      arrange: () => {
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+        mkdirSync(join(realGemini, 'trustedFolders.json'), {
+          recursive: true,
+        });
+      },
+    },
+  ])(
+    'leaves the workspace untrusted under $label (gemini-55)',
+    async ({ arrange }) => {
+      mkdirSync(join(realGemini, 'policies'), { recursive: true });
+      arrange();
+      writeJson(join(cwd, '.gemini', 'settings.json'), {
+        policyPaths: ['ws-pol'],
+      });
+
+      // Admitted system files carry the folder-trust settings.
+      const { captured } = await runFixture(
+        { skills: [writeSkill(sources, 'alpha', 'alpha')] },
+        admitAll(),
+      );
+
+      // The workspace policyPaths stay unmerged, leaving the user's default
+      // policy directory in their place.
+      expect(captured.policies.slice(1)).toEqual([
+        join(realGemini, 'policies'),
+      ]);
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it.each([
+    {
+      label:
+        'a system settings file naming neither policyPaths nor folder trust',
+      arrange: () => {
+        writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
+          ui: { theme: 'Default' },
+        });
+      },
+      workspace: false,
+    },
+    { label: 'absent system files', arrange: () => {}, workspace: false },
+    {
+      // Counted or skipped, it adds no policy path.
+      label: 'a system settings file with empty policyPaths',
+      arrange: () => {
+        writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
+          policyPaths: [],
+        });
+      },
+      workspace: false,
+    },
+    {
+      // GEMINI_CLI_TRUST_WORKSPACE defaults to 'true', so folder trust never
+      // reaches the trust decision and the workspace is trusted either way.
+      label: 'a system-defaults file disabling folder trust',
+      arrange: () => {
+        writeJson(process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!, {
+          security: { folderTrust: { enabled: false } },
+        });
+        writeJson(join(cwd, '.gemini', 'settings.json'), {
+          policyPaths: ['ws-pol'],
+        });
+      },
+      workspace: true,
+    },
+  ])(
+    'delivers skills under Windows admission with $label (gemini-34, gemini-55)',
+    async ({ arrange, workspace }) => {
+      arrange();
+      mkdirSync(join(realGemini, 'policies'), { recursive: true });
+
+      // The adapter's own check applies the Windows admission rule.
+      const { captured } = await runFixture(
+        { skills: runSkills() },
+        undefined,
+        'win32',
+      );
+
+      expect(captured.skills!.map((entry) => entry.name).sort()).toEqual([
+        'alpha',
+        'beta',
+        'my-tool',
+      ]);
+      expect(captured.policy).toBe(ACTIVATE_SKILL_RULE);
+      expect(captured.policies.slice(1)).toEqual(
+        workspace
+          ? [join(childCwdOf(cwd), 'ws-pol')]
+          : [join(realGemini, 'policies')],
+      );
+      expect(overlaysLeft()).toEqual([]);
+    },
+  );
+
+  it('counts a system settings file of unknown Windows admission for a run without skills selecting the browser (gemini-34, gemini-48)', async () => {
+    // Counted, the file disables the sandbox the user settings request.
+    writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
+      tools: { sandbox: false },
     });
-    writeJson(join(cwd, 'sys', 'defaults.json'), {
-      policyPaths: [join(fixtureRoot, 'defaults-pol')],
+    writeJson(join(realGemini, 'settings.json'), { tools: { sandbox: true } });
+    browserPreparation.mockResolvedValue({
+      type: 'stdio',
+      command: 'cligent-browser',
     });
-    writeJson(join(cwd, 'sys', 'trusted.json'), { [cwd]: 'TRUST_FOLDER' });
-    writeJson(join(cwd, '.gemini', 'settings.json'), {
-      policyPaths: ['ws-pol'],
-    });
-    const checked: string[] = [];
 
     const { captured } = await runFixture(
-      { skills: runSkills() },
-      admitAll(checked),
+      { browser: true },
+      undefined,
+      'win32',
     );
 
-    // gemini-34: each system override is resolved against the run cwd.
-    expect(new Set(checked)).toEqual(
-      new Set([
-        join(cwd, 'sys', 'settings.json'),
-        join(cwd, 'sys', 'defaults.json'),
-      ]),
-    );
-    // gemini-55: the trusted-folders file under the run cwd trusts the
-    // workspace, and the system policyPaths under it are merged.
-    expect(captured.policies.slice(1)).toEqual([
-      join(fixtureRoot, 'defaults-pol'),
-      join(cwd, 'ws-pol'),
-      join(fixtureRoot, 'system-pol'),
-    ]);
+    // gemini-48: no sandbox, so the browser is prepared and delivered.
+    expect(browserPreparation).toHaveBeenCalledTimes(1);
+    expect(captured.settings).toMatchObject({
+      mcpServers: {
+        cligent_browser: { command: 'cligent-browser', args: [], trust: true },
+      },
+    });
+    expect(captured.policies).toEqual([]);
     expect(overlaysLeft()).toEqual([]);
   });
 
@@ -751,6 +1272,102 @@ describe('Gemini per-run skills (gemini-53)', () => {
         'skills for adapter "gemini" cannot be delivered while its native sandbox is enabled',
     },
     {
+      // gemini-51: counted, the system settings disable the sandbox the user
+      // settings request; skipped, they leave that request in force. The
+      // existing system defaults change nothing, so they go unnamed.
+      label:
+        'system settings disabling the sandbox user settings request beside inert system defaults under Windows admission',
+      setup: (): AgentOptions<GeminiEffort> => {
+        writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
+          tools: { sandbox: false },
+        });
+        writeJson(process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!, {
+          ui: { theme: 'Default' },
+        });
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: true },
+        });
+        return {};
+      },
+      platform: 'win32' as const,
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system settings at ${process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!} would change whether its native sandbox starts, because this adapter does not run the runtime's PowerShell check of that file's ownership and write access`,
+    },
+    {
+      // gemini-51: skipping the system settings changes the result only
+      // while the system defaults count, and skipping the system defaults
+      // only while the system settings are skipped, so both are named.
+      label:
+        'system settings disabling and system defaults requesting the sandbox under Windows admission',
+      setup: (): AgentOptions<GeminiEffort> => {
+        writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
+          tools: { sandbox: false },
+        });
+        writeJson(process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!, {
+          tools: { sandbox: true },
+        });
+        return {};
+      },
+      platform: 'win32' as const,
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system defaults at ${process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!} and the Gemini system settings at ${process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!} would change whether its native sandbox starts, because this adapter does not run the runtime's PowerShell check of those files' ownership and write access`,
+    },
+    {
+      // gemini-34, gemini-51: counted, the system defaults disable folder
+      // trust, trusting the workspace, whose settings disable the sandbox;
+      // skipped, no trusted-folders rule trusts it, so its settings drop out
+      // and the user settings' request starts the sandbox.
+      label:
+        'system defaults whose folder trust decides whether workspace settings disable the sandbox user settings request, under file-based trust and Windows admission',
+      setup: (): AgentOptions<GeminiEffort> => {
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+        writeJson(process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!, {
+          security: { folderTrust: { enabled: false } },
+        });
+        writeJson(join(cwd, '.gemini', 'settings.json'), {
+          tools: { sandbox: false },
+        });
+        writeJson(join(realGemini, 'settings.json'), {
+          tools: { sandbox: true },
+        });
+        return {};
+      },
+      platform: 'win32' as const,
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system defaults at ${process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!} would change whether its native sandbox starts, because this adapter does not run the runtime's PowerShell check of that file's ownership and write access`,
+    },
+    {
+      label: 'system settings naming policyPaths under Windows admission',
+      setup: (): AgentOptions<GeminiEffort> => {
+        writeJson(process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!, {
+          policyPaths: [join(fixtureRoot, 'system-pol')],
+        });
+        return {};
+      },
+      platform: 'win32' as const,
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system settings at ${process.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH!} would change its policy sources, because this adapter does not run the runtime's PowerShell check of that file's ownership and write access`,
+    },
+    {
+      // gemini-55: under file-based trust with no rule, counting it trusts
+      // the workspace and merges its policyPaths; skipping it does not.
+      label:
+        'system defaults disabling folder trust under file-based trust and Windows admission',
+      setup: (): AgentOptions<GeminiEffort> => {
+        vi.stubEnv('GEMINI_CLI_TRUST_WORKSPACE', '');
+        writeJson(process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!, {
+          security: { folderTrust: { enabled: false } },
+        });
+        writeJson(join(cwd, '.gemini', 'settings.json'), {
+          policyPaths: ['ws-pol'],
+        });
+        return {};
+      },
+      platform: 'win32' as const,
+      message: (): string =>
+        `skills for adapter "gemini" cannot be delivered while the runtime's admission of the Gemini system defaults at ${process.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH!} would change its policy sources, because this adapter does not run the runtime's PowerShell check of that file's ownership and write access`,
+    },
+    {
       label: 'user settings disabling skills',
       setup: (): AgentOptions<GeminiEffort> => {
         writeJson(join(realGemini, 'settings.json'), {
@@ -769,10 +1386,10 @@ describe('Gemini per-run skills (gemini-53)', () => {
     },
   ])(
     'rejects $label before browser preparation (gemini-19, gemini-51)',
-    async ({ setup, message, admits }) => {
+    async ({ setup, message, admits, platform }) => {
       const spawned: string[][] = [];
       const events = await collect(
-        fixtureAdapter(spawned, admits ? admitAll() : undefined).run(
+        fixtureAdapter(spawned, admits ? admitAll() : undefined, platform).run(
           'Use the skills',
           {
             cwd,
@@ -791,9 +1408,9 @@ describe('Gemini per-run skills (gemini-53)', () => {
         code: 'GEMINI_STREAM_ERROR',
         recoverable: false,
       });
-      expect((events[1]!.payload as { message: string }).message).toContain(
-        message,
-      );
+      const reported = (events[1]!.payload as { message: string }).message;
+      if (typeof message === 'function') expect(reported).toBe(message());
+      else expect(reported).toContain(message);
       expect(events[2]!.payload).toMatchObject({ status: 'error' });
       expect(events[2]!.payload).not.toHaveProperty('result');
       expect(spawned).toEqual([]);

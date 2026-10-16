@@ -17,9 +17,16 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
-import type { Stats } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  readlinkSync,
+  realpathSync,
+  type Stats,
+} from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import {
+  basename,
   dirname,
   isAbsolute,
   join,
@@ -118,13 +125,21 @@ interface GeminiAdapterDeps {
   createTelemetryCapture?: () => Promise<GeminiTelemetryCapture>;
   /** Replaces the runtime's system-file admission check (gemini-34). */
   admitsSystemSettingsFile?: GeminiSystemFileAdmission;
+  /**
+   * The platform whose admission rule the default check applies
+   * (gemini-34); defaults to the host's.
+   */
+  admissionPlatform?: NodeJS.Platform;
 }
 
 /**
  * Whether a Gemini child would load the system settings or system defaults
- * file at an absolute path rather than skip it (gemini-34).
+ * file at an absolute path, skip it, or neither can be established here
+ * (gemini-34).
  */
-type GeminiSystemFileAdmission = (path: string) => Promise<boolean>;
+type GeminiSystemFileAdmission = (
+  path: string,
+) => Promise<'admitted' | 'rejected' | 'unknown'>;
 
 const CAPABILITY_TOOL_GROUPS: Record<PermissionCapability, string[]> = {
   fileWrite: ['replace', 'write_file'],
@@ -705,8 +720,17 @@ interface GeminiSettingsOverride {
 }
 
 interface GeminiSettingsOverrideContext {
-  /** The child's effective working directory. */
+  /**
+   * The run cwd resolved lexically, against which the caller's own relative
+   * paths, such as skill paths, resolve.
+   */
   cwd: string;
+  /**
+   * The working directory the child reports and resolves every relative path
+   * it is given against: the real path of the run cwd as given, or the run
+   * cwd resolved on Windows (gemini-34).
+   */
+  childCwd: string;
   /** The environment the child inherits before any override applies. */
   env: NodeJS.ProcessEnv;
   /** Cancels settings setup, including skill materialization. */
@@ -1027,12 +1051,39 @@ function buildGeminiModelAliasSettings(alias: GeminiModelAliasConfig): {
 }
 
 /**
+ * gemini-34: the context a Gemini child's settings are read in. The child
+ * runs in the directory the operating system resolves the run cwd as given
+ * to, a relative one from this process's cwd as spawn resolves it, so its
+ * `process.cwd()` reports that directory's real path except on Windows.
+ * Resolving the run cwd lexically first would drop a `..` that follows a
+ * symbolic link, which the operating system applies to the link's target.
+ */
+async function geminiSettingsOverrideContext(
+  cwd: string,
+  extra: Pick<
+    GeminiSettingsOverrideContext,
+    'signal' | 'admitsSystemSettingsFile'
+  > = {},
+): Promise<GeminiSettingsOverrideContext> {
+  const effective = resolve(cwd);
+  let childCwd = effective;
+  if (process.platform !== 'win32') {
+    try {
+      childCwd = await realpath(cwd);
+    } catch {
+      // No directory to run in; the spawn then fails on its own.
+    }
+  }
+  return { cwd: effective, childCwd, env: process.env, ...extra };
+}
+
+/**
  * gemini-34: the child reads its path overrides verbatim, so a relative one
  * resolves against its working directory.
  */
 function systemSettingsPath(context: GeminiSettingsOverrideContext): string {
   const configured = context.env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
-  if (configured) return resolve(context.cwd, configured);
+  if (configured) return resolve(context.childCwd, configured);
   if (process.platform === 'darwin') {
     return '/Library/Application Support/GeminiCli/settings.json';
   }
@@ -1044,7 +1095,7 @@ function systemSettingsPath(context: GeminiSettingsOverrideContext): string {
 
 function systemDefaultsPath(context: GeminiSettingsOverrideContext): string {
   const configured = context.env.GEMINI_CLI_SYSTEM_DEFAULTS_PATH;
-  if (configured) return resolve(context.cwd, configured);
+  if (configured) return resolve(context.childCwd, configured);
   return join(dirname(systemSettingsPath(context)), 'system-defaults.json');
 }
 
@@ -1094,17 +1145,14 @@ function directoryAndAncestors(directory: string): string[] {
  * Otherwise the file and every directory above it must pass, along both its
  * given and its real path; the runtime's separate root-ownership check of
  * each symbolic-link directory on the given path repeats the per-directory
- * check, so it decides nothing more. On Windows the runtime checks ownership
- * through PowerShell, which cannot be replicated here, so the file is read
- * as before.
+ * check, so it decides nothing more.
  */
-async function defaultAdmitsSystemSettingsFile(path: string): Promise<boolean> {
-  if (process.platform === 'win32') return true;
+const posixSystemFileAdmission: GeminiSystemFileAdmission = async (path) => {
   const given = resolve(path);
   try {
     await stat(given);
   } catch {
-    return true;
+    return 'admitted';
   }
   let real = given;
   try {
@@ -1128,10 +1176,39 @@ async function defaultAdmitsSystemSettingsFile(path: string): Promise<boolean> {
     );
   }
   for (const [checked, expected] of checks) {
-    if (!(await geminiSystemPathSecure(checked, expected))) return false;
+    if (!(await geminiSystemPathSecure(checked, expected))) return 'rejected';
   }
-  return true;
+  return 'admitted';
+};
+
+/**
+ * gemini-34: on Windows the runtime admits an existing file only where a
+ * PowerShell script it runs finds the file and every directory above it
+ * below the drive root owned by, and writable only by, administrator,
+ * system, service, or creator identities; this adapter does not run that
+ * script, so an existing file's admission is unknown. An absent file is
+ * admitted, since nothing loads.
+ */
+const windowsSystemFileAdmission: GeminiSystemFileAdmission = async (path) => {
+  try {
+    await stat(path);
+  } catch {
+    return 'admitted';
+  }
+  return 'unknown';
+};
+
+function geminiSystemFileAdmission(
+  platform: NodeJS.Platform,
+): GeminiSystemFileAdmission {
+  return platform === 'win32'
+    ? windowsSystemFileAdmission
+    : posixSystemFileAdmission;
 }
+
+const defaultAdmitsSystemSettingsFile = geminiSystemFileAdmission(
+  process.platform,
+);
 
 function jsonObject(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -1245,24 +1322,98 @@ function readOptionalGeminiSettings(
   return readGeminiSettingsFile(path, 'settings').catch(() => ({}));
 }
 
+interface GeminiSystemLayer {
+  label: string;
+  path: string;
+  /** The file's settings, empty where the runtime would skip it. */
+  settings: Record<string, unknown>;
+  /** Whether the runtime's admission of the file is unknown here. */
+  unknown: boolean;
+}
+
 /**
  * gemini-34: the system settings and system defaults a Gemini child would
- * load, each empty where the runtime would skip its file.
+ * load, each empty where the runtime would skip its file and read where its
+ * admission is unknown, for each consumer to settle.
  */
 async function readGeminiSystemLayers(
   context: GeminiSettingsOverrideContext,
-): Promise<{
-  system: Record<string, unknown>;
-  systemDefaults: Record<string, unknown>;
-}> {
+): Promise<{ system: GeminiSystemLayer; systemDefaults: GeminiSystemLayer }> {
   const admits =
     context.admitsSystemSettingsFile ?? defaultAdmitsSystemSettingsFile;
-  const read = async (path: string): Promise<Record<string, unknown>> =>
-    (await admits(path)) ? readOptionalGeminiSettings(path) : {};
-  return {
-    system: await read(systemSettingsPath(context)),
-    systemDefaults: await read(systemDefaultsPath(context)),
+  const read = async (
+    path: string,
+    label: string,
+  ): Promise<GeminiSystemLayer> => {
+    const admission = await admits(path);
+    return {
+      label,
+      path,
+      settings:
+        admission === 'rejected' ? {} : await readOptionalGeminiSettings(path),
+      unknown: admission === 'unknown',
+    };
   };
+  return {
+    system: await read(systemSettingsPath(context), 'system settings'),
+    systemDefaults: await read(systemDefaultsPath(context), 'system defaults'),
+  };
+}
+
+/** The system settings and system defaults a decision counts. */
+interface GeminiCountedSystemLayers {
+  system: Record<string, unknown>;
+  systemDefaults: Record<string, unknown>;
+}
+
+/**
+ * A decision drawn from the system layers, with every layer of unknown
+ * admission counted (gemini-34), or, where `settle` is set for a run with
+ * skills, taken for every combination of counting or skipping each such layer
+ * and returned only where all agree; otherwise it rejects, naming each file
+ * whose counting or skipping changes the result under some counting or
+ * skipping of the other (gemini-51).
+ */
+async function decideFromGeminiSystemLayers<T>(
+  layers: { system: GeminiSystemLayer; systemDefaults: GeminiSystemLayer },
+  settle: boolean,
+  decision: string,
+  decide: (counted: GeminiCountedSystemLayers) => T | Promise<T>,
+  same: (left: T, right: T) => boolean,
+): Promise<T> {
+  const counted = (skipped: readonly GeminiSystemLayer[]) => ({
+    system: skipped.includes(layers.system) ? {} : layers.system.settings,
+    systemDefaults: skipped.includes(layers.systemDefaults)
+      ? {}
+      : layers.systemDefaults.settings,
+  });
+  const allCounted = await decide(counted([]));
+  const unknown = [layers.systemDefaults, layers.system].filter(
+    (layer) => layer.unknown,
+  );
+  if (!settle || unknown.length === 0) return allCounted;
+
+  // Bit i of a combination skips unknown[i].
+  const outcomes: T[] = [allCounted];
+  for (let skips = 1; skips < 1 << unknown.length; skips++) {
+    outcomes.push(
+      await decide(
+        counted(unknown.filter((_layer, index) => skips & (1 << index))),
+      ),
+    );
+  }
+  const deciding = unknown.filter((_layer, index) =>
+    outcomes.some(
+      (outcome, skips) => !same(outcome, outcomes[skips ^ (1 << index)]!),
+    ),
+  );
+  if (deciding.length === 0) return allCounted;
+  const files = deciding
+    .map((layer) => `the Gemini ${layer.label} at ${layer.path}`)
+    .join(' and ');
+  throw new Error(
+    `skills for adapter "${AGENT}" cannot be delivered while the runtime's admission of ${files} would change ${decision}, because this adapter does not run the runtime's PowerShell check of ${deciding.length > 1 ? "those files'" : "that file's"} ownership and write access`,
+  );
 }
 
 function mergeGeminiModelAlias(
@@ -1304,7 +1455,7 @@ function mergeGeminiModelAlias(
 /** The home a Gemini child resolves before any Cligent overlay applies. */
 function geminiRealHome(context: GeminiSettingsOverrideContext): string {
   const configured = context.env.GEMINI_CLI_HOME;
-  return configured ? resolve(context.cwd, configured) : homedir();
+  return configured ? resolve(context.childCwd, configured) : homedir();
 }
 
 async function comparablePath(path: string): Promise<string> {
@@ -1317,6 +1468,41 @@ async function comparablePath(path: string): Promise<string> {
   return process.platform === 'win32' || process.platform === 'darwin'
     ? resolved.toLowerCase()
     : resolved;
+}
+
+/**
+ * gemini-34: whether the child's working directory is the real home, where
+ * Gemini reads no workspace settings.
+ */
+async function geminiWorkspaceIsHome(
+  context: GeminiSettingsOverrideContext,
+  realHome: string,
+): Promise<boolean> {
+  return (
+    (await comparablePath(context.childCwd)) ===
+    (await comparablePath(realHome))
+  );
+}
+
+/** The workspace settings file a Gemini child reads from its own cwd. */
+function geminiWorkspaceSettingsPath(
+  context: GeminiSettingsOverrideContext,
+): string {
+  return join(context.childCwd, '.gemini', 'settings.json');
+}
+
+/**
+ * gemini-10, gemini-55: the environment a Gemini child decides workspace
+ * trust in, with the adapter's default `GEMINI_CLI_TRUST_WORKSPACE`.
+ */
+function geminiTrustEnv(
+  context: GeminiSettingsOverrideContext,
+): NodeJS.ProcessEnv {
+  return {
+    ...context.env,
+    GEMINI_CLI_TRUST_WORKSPACE:
+      context.env.GEMINI_CLI_TRUST_WORKSPACE ?? 'true',
+  };
 }
 
 /** Whether a `tools.sandbox` value turns Gemini's sandbox on. */
@@ -1335,33 +1521,52 @@ function sandboxSettingEnables(value: unknown): boolean {
  * Whether the Gemini child would start its own sandbox, which confines writes
  * to paths under the home it is given and so cannot follow the overlay's
  * links. The environment decides when set; otherwise the highest-precedence
- * settings layer that sets `tools.sandbox` does, a system layer counting only
- * where the runtime would admit its file.
+ * settings layer that sets `tools.sandbox` does, the workspace layer only
+ * where the child trusts the workspace, as the runtime merges it, and a
+ * system layer of unknown admission settled on a run with skills (`settle`,
+ * gemini-51) and counted otherwise (gemini-34).
  */
 async function geminiSandboxRequested(
   context: GeminiSettingsOverrideContext,
   userSettings: Record<string, unknown>,
+  settle: boolean,
 ): Promise<boolean> {
   if (context.env.SANDBOX) return false;
   const fromEnv = context.env.GEMINI_SANDBOX?.trim().toLowerCase();
   if (fromEnv) return fromEnv !== '0' && fromEnv !== 'false';
 
-  const { system, systemDefaults } = await readGeminiSystemLayers(context);
-  const layers: Record<string, unknown>[] = [
-    system,
-    await readOptionalGeminiSettings(
-      join(context.cwd, '.gemini', 'settings.json'),
-    ),
-    userSettings,
-    systemDefaults,
-  ];
-  for (const layer of layers) {
-    const tools = layer.tools;
-    if (typeof tools !== 'object' || tools === null) continue;
-    const sandbox = (tools as Record<string, unknown>).sandbox;
-    if (sandbox !== undefined) return sandboxSettingEnables(sandbox);
-  }
-  return false;
+  const realHome = geminiRealHome(context);
+  const env = geminiTrustEnv(context);
+  const workspace = await readOptionalGeminiSettings(
+    geminiWorkspaceSettingsPath(context),
+  );
+  return decideFromGeminiSystemLayers(
+    await readGeminiSystemLayers(context),
+    settle,
+    'whether its native sandbox starts',
+    async ({ system, systemDefaults }) => {
+      // gemini-55: the runtime merges the workspace layer only where it
+      // trusts the workspace, which the counted system layers help decide.
+      const trusted = await geminiWorkspaceTrusted(context, realHome, env, {
+        systemDefaults,
+        user: userSettings,
+        system,
+      });
+      for (const layer of [
+        system,
+        trusted ? workspace : {},
+        userSettings,
+        systemDefaults,
+      ]) {
+        const tools = layer.tools;
+        if (typeof tools !== 'object' || tools === null) continue;
+        const sandbox = (tools as Record<string, unknown>).sandbox;
+        if (sandbox !== undefined) return sandboxSettingEnables(sandbox);
+      }
+      return false;
+    },
+    (left, right) => left === right,
+  );
 }
 
 /** Gemini's `$VAR`, `${VAR}`, and `${VAR:-default}` expansion of settings strings. */
@@ -1386,21 +1591,143 @@ function expandGeminiSettingsString(
   );
 }
 
-/** Gemini's path normalization for case-insensitive platforms. */
-function geminiComparablePath(path: string): string {
-  const absolute = resolve(path);
+/**
+ * gemini-55: Gemini's `normalizePath`, which resolves a path against the
+ * child's working directory, turns every backslash into a forward slash, and
+ * lowercases the result on macOS and Windows.
+ */
+function geminiNormalizedPath(path: string, childCwd: string): string {
+  const absolute = resolve(childCwd, path).replace(/\\/g, '/');
   return process.platform === 'win32' || process.platform === 'darwin'
     ? absolute.toLowerCase()
     : absolute;
 }
 
-function realPathOrSelf(path: string): Promise<string> {
-  return realpath(path).catch(() => path);
+/** A settings layer's `security.folderTrust.enabled`, if it sets one. */
+function folderTrustSetting(layer: Record<string, unknown>): unknown {
+  return asRecord(asRecord(layer.security).folderTrust).enabled;
 }
 
+/**
+ * gemini-55: the runtime's own real-path reading of a trust path, which
+ * resolves the symbolic links of an existing path and otherwise keeps its
+ * spelling, where the C library's realpath also corrects case and Unicode
+ * normalization on macOS.
+ */
+function geminiRuntimeRealPath(path: string): string {
+  try {
+    return existsSync(path) ? realpathSync(path) : path;
+  } catch {
+    return path;
+  }
+}
+
+const GEMINI_REALPATH_FALLBACK_CODES = new Set([
+  'ENOENT',
+  'EISDIR',
+  'ENAMETOOLONG',
+  'ENOTDIR',
+]);
+
+/**
+ * gemini-55: Gemini's Windows `robustRealpath`: the native real path, which
+ * expands 8.3 short names, without an extended-length prefix; for a path
+ * that does not resolve, a symbolic link's target taken the same way, or
+ * else its parent's real path joined to its name.
+ */
+function geminiRobustRealpath(path: string, visited: Set<string>): string {
+  const key = path.toLowerCase();
+  if (visited.has(key)) {
+    throw new Error(`Infinite recursion detected in robustRealpath: ${path}`);
+  }
+  visited.add(key);
+  try {
+    const resolved = realpathSync.native(path);
+    const upper = resolved.toUpperCase();
+    if (upper.startsWith('\\\\?\\UNC\\')) return `\\\\${resolved.slice(8)}`;
+    if (upper.startsWith('\\\\?\\')) return resolved.slice(4);
+    return resolved;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === undefined || !GEMINI_REALPATH_FALLBACK_CODES.has(code)) {
+      throw error;
+    }
+    try {
+      if (lstatSync(path).isSymbolicLink()) {
+        return geminiRobustRealpath(
+          resolve(dirname(path), readlinkSync(path)),
+          visited,
+        );
+      }
+    } catch (lstatError) {
+      const lstatCode = (lstatError as NodeJS.ErrnoException).code;
+      if (
+        lstatCode === undefined ||
+        !GEMINI_REALPATH_FALLBACK_CODES.has(lstatCode)
+      ) {
+        throw lstatError;
+      }
+    }
+    const parent = dirname(path);
+    if (parent === path) return path;
+    return join(geminiRobustRealpath(parent, visited), basename(path));
+  }
+}
+
+/**
+ * gemini-55: Gemini's `resolveToRealPath` of a resolved path, which never
+ * starts with `file://`: decoded as a URI component where it decodes, then
+ * taken through `robustRealpath`, with any extended-length prefix stripped.
+ */
+function geminiResolveToRealPath(path: string): string {
+  if (path.includes('\0')) throw new Error(`Invalid path: ${path}`);
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    // The runtime keeps a path that does not decode.
+  }
+  const real = geminiRobustRealpath(resolve(decoded), new Set());
+  if (
+    /^\\\\[?][\\/](?:UNC|unc)[\\/]/.test(real) ||
+    /^\/\/[?][\\/](?:UNC|unc)[\\/]/.test(real)
+  ) {
+    return `\\\\${real.slice(8)}`;
+  }
+  if (/^\\\\[?][\\/]/.test(real) || /^\/\/[?][\\/]/.test(real)) {
+    return real.slice(4);
+  }
+  return real;
+}
+
+/**
+ * gemini-55: Gemini's `isSubpath` of two normalized paths, which on Windows
+ * first takes both through `resolveToRealPath` where either holds `~`, as an
+ * 8.3 short name does, keeping what resolved before any failure.
+ */
 function isGeminiSubpath(parent: string, child: string): boolean {
-  const rel = relative(parent, child);
+  let p = resolve(parent);
+  let c = resolve(child);
+  if (process.platform === 'win32' && (p.includes('~') || c.includes('~'))) {
+    try {
+      p = geminiResolveToRealPath(p);
+      c = geminiResolveToRealPath(c);
+    } catch {
+      // The runtime ignores a resolution failure.
+    }
+  }
+  const rel = relative(p, c);
   return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+/**
+ * gemini-55: the directory a Gemini child keeps its runtime state in, moved
+ * under `.cache` inside a macOS Seatbelt sandbox.
+ */
+function geminiRuntimeDir(realHome: string, env: NodeJS.ProcessEnv): string {
+  return env.SANDBOX === 'sandbox-exec'
+    ? join(realHome, '.cache', '.gemini')
+    : join(realHome, '.gemini');
 }
 
 /**
@@ -1408,11 +1735,18 @@ function isGeminiSubpath(parent: string, child: string): boolean {
  * environment, folder-trust setting, and trusted-folders file decide, and so
  * merge the workspace settings.
  */
+/** The settings layers the runtime's initial trust check merges. */
+interface GeminiTrustLayers {
+  systemDefaults: Record<string, unknown>;
+  user: Record<string, unknown>;
+  system: Record<string, unknown>;
+}
+
 async function geminiWorkspaceTrusted(
-  cwd: string,
+  context: GeminiSettingsOverrideContext,
   realHome: string,
   env: NodeJS.ProcessEnv,
-  trustLayers: readonly Record<string, unknown>[],
+  layers: GeminiTrustLayers,
 ): Promise<boolean> {
   if (
     env.GEMINI_RESTRICTED_MODE === 'true' ||
@@ -1423,29 +1757,31 @@ async function geminiWorkspaceTrusted(
   if (env.GEMINI_CLI_TRUST_WORKSPACE === 'true') return true;
 
   let folderTrust: unknown = true;
-  for (const layer of trustLayers) {
-    const enabled = asRecord(asRecord(layer.security).folderTrust).enabled;
+  // Merged in the runtime's order, the last layer setting it deciding.
+  for (const layer of [layers.systemDefaults, layers.user, layers.system]) {
+    const enabled = folderTrustSetting(layer);
     if (enabled !== undefined) folderTrust = enabled;
   }
   if (!folderTrust) return true;
 
+  const { childCwd } = context;
   let rules: Record<string, unknown>;
   try {
     // The child reads the override verbatim, relative to its own cwd.
     rules = await readGeminiSettingsFile(
       env.GEMINI_CLI_TRUSTED_FOLDERS_PATH
-        ? resolve(cwd, env.GEMINI_CLI_TRUSTED_FOLDERS_PATH)
-        : join(realHome, '.gemini', 'trustedFolders.json'),
+        ? resolve(childCwd, env.GEMINI_CLI_TRUSTED_FOLDERS_PATH)
+        : join(geminiRuntimeDir(realHome, env), 'trustedFolders.json'),
       'trusted folders',
     );
   } catch {
     // Gemini refuses to start on an unreadable trusted-folders file.
     return false;
   }
-  const location = geminiComparablePath(await realPathOrSelf(cwd));
-  let longest = -1;
-  let level: unknown;
-  for (const [rulePath, trustLevel] of Object.entries(rules)) {
+  // Gemini keys its rules by normalized path, so a later key normalizing to
+  // an earlier one replaces that rule's level.
+  const levels = new Map<string, unknown>();
+  for (const [key, trustLevel] of Object.entries(rules)) {
     if (
       trustLevel !== 'TRUST_FOLDER' &&
       trustLevel !== 'TRUST_PARENT' &&
@@ -1453,12 +1789,23 @@ async function geminiWorkspaceTrusted(
     ) {
       return false;
     }
-    const normalized = geminiComparablePath(rulePath);
+    levels.set(geminiNormalizedPath(key, childCwd), trustLevel);
+  }
+  const location = geminiNormalizedPath(
+    geminiRuntimeRealPath(childCwd),
+    childCwd,
+  );
+  let longest = -1;
+  let level: unknown;
+  for (const [rulePath, trustLevel] of levels) {
     const effective =
-      trustLevel === 'TRUST_PARENT' ? dirname(normalized) : normalized;
-    const comparable = geminiComparablePath(await realPathOrSelf(effective));
-    if (isGeminiSubpath(comparable, location) && normalized.length > longest) {
-      longest = normalized.length;
+      trustLevel === 'TRUST_PARENT' ? dirname(rulePath) : rulePath;
+    const comparable = geminiNormalizedPath(
+      geminiRuntimeRealPath(effective),
+      childCwd,
+    );
+    if (isGeminiSubpath(comparable, location) && rulePath.length > longest) {
+      longest = rulePath.length;
       level = trustLevel;
     }
   }
@@ -1469,74 +1816,79 @@ async function geminiWorkspaceTrusted(
  * gemini-55: the user-tier policy sources a Gemini child loads when no
  * `--policy` is given, which a `--policy` value replaces: the `policyPaths`
  * it merges across system defaults, user, trusted workspace, and system
- * settings, each system layer only where the runtime would admit its file,
- * expanded and resolved as it resolves them, or else the real home's policy
- * directory where it exists.
+ * settings, each system layer counted as gemini-34 reads it and settled as
+ * gemini-51 requires, expanded and resolved as it resolves them, or else the
+ * real home's policy directory where it exists.
  */
 async function geminiRuntimePolicySources(
   context: GeminiSettingsOverrideContext,
 ): Promise<string[]> {
   const realHome = geminiRealHome(context);
-  const env: NodeJS.ProcessEnv = {
-    ...context.env,
-    GEMINI_CLI_TRUST_WORKSPACE:
-      context.env.GEMINI_CLI_TRUST_WORKSPACE ?? 'true',
-  };
-  const { system, systemDefaults } = await readGeminiSystemLayers(context);
+  const env = geminiTrustEnv(context);
   const user = await readOptionalGeminiSettings(
     join(realHome, '.gemini', 'settings.json'),
   );
   const workspace = await readOptionalGeminiSettings(
-    join(context.cwd, '.gemini', 'settings.json'),
+    geminiWorkspaceSettingsPath(context),
   );
-  const trusted = await geminiWorkspaceTrusted(context.cwd, realHome, env, [
-    systemDefaults,
-    user,
-    system,
-  ]);
+  return decideFromGeminiSystemLayers(
+    await readGeminiSystemLayers(context),
+    true,
+    'its policy sources',
+    async ({ system, systemDefaults }) => {
+      const trusted = await geminiWorkspaceTrusted(context, realHome, env, {
+        systemDefaults,
+        user,
+        system,
+      });
 
-  // Gemini unions `policyPaths` in merge order, a lone value counting as a
-  // one-entry list.
-  const merged = new Set<unknown>();
-  for (const layer of [
-    systemDefaults,
-    user,
-    trusted ? workspace : {},
-    system,
-  ]) {
-    const value = layer.policyPaths;
-    if (value === undefined) continue;
-    for (const entry of Array.isArray(value) ? value : [value]) {
-      merged.add(
-        typeof entry === 'string'
-          ? expandGeminiSettingsString(entry, env)
-          : entry,
-      );
-    }
-  }
-
-  if (merged.size > 0) {
-    const sources: string[] = [];
-    for (const entry of merged) {
-      if (typeof entry !== 'string' || entry.length === 0) continue;
-      let expanded = entry;
-      if (entry.toLowerCase().startsWith('%userprofile%')) {
-        expanded = realHome + entry.slice('%userprofile%'.length);
-      } else if (entry === '~' || entry.startsWith('~/')) {
-        expanded = realHome + entry.slice(1);
+      // Gemini unions `policyPaths` in merge order, a lone value counting as
+      // a one-entry list.
+      const merged = new Set<unknown>();
+      for (const layer of [
+        systemDefaults,
+        user,
+        trusted ? workspace : {},
+        system,
+      ]) {
+        const value = layer.policyPaths;
+        if (value === undefined) continue;
+        for (const entry of Array.isArray(value) ? value : [value]) {
+          merged.add(
+            typeof entry === 'string'
+              ? expandGeminiSettingsString(entry, env)
+              : entry,
+          );
+        }
       }
-      sources.push(resolve(context.cwd, normalize(expanded)));
-    }
-    return sources;
-  }
 
-  const userPolicies = join(realHome, '.gemini', 'policies');
-  try {
-    await stat(userPolicies);
-    return [userPolicies];
-  } catch {
-    return [];
-  }
+      if (merged.size > 0) {
+        const sources: string[] = [];
+        for (const entry of merged) {
+          if (typeof entry !== 'string' || entry.length === 0) continue;
+          let expanded = entry;
+          if (entry.toLowerCase().startsWith('%userprofile%')) {
+            expanded = realHome + entry.slice('%userprofile%'.length);
+          } else if (entry === '~' || entry.startsWith('~/')) {
+            expanded = realHome + entry.slice(1);
+          }
+          sources.push(resolve(context.childCwd, normalize(expanded)));
+        }
+        return sources;
+      }
+
+      const userPolicies = join(realHome, '.gemini', 'policies');
+      try {
+        await stat(userPolicies);
+        return [userPolicies];
+      } catch {
+        return [];
+      }
+    },
+    (left, right) =>
+      left.length === right.length &&
+      left.every((source, index) => source === right[index]),
+  );
 }
 
 const POLICY_ARG_PREFIX = '--policy=';
@@ -1595,9 +1947,7 @@ async function assertGeminiSkillsContext(
   context: GeminiSettingsOverrideContext,
 ): Promise<void> {
   const realHome = geminiRealHome(context);
-  if (
-    (await comparablePath(context.cwd)) === (await comparablePath(realHome))
-  ) {
+  if (await geminiWorkspaceIsHome(context, realHome)) {
     throw new CapabilityError('workspace-is-home', SKILLS_HOME_REFUSAL);
   }
   const settingsPath = join(realHome, '.gemini', 'settings.json');
@@ -1605,7 +1955,7 @@ async function assertGeminiSkillsContext(
     settingsPath,
     'user settings',
   );
-  if (await geminiSandboxRequested(context, userSettings)) {
+  if (await geminiSandboxRequested(context, userSettings, true)) {
     throw new CapabilityError('native-sandbox', SKILLS_SANDBOX_REFUSAL);
   }
   assertGeminiSkillsEnabled(userSettings, settingsPath);
@@ -1645,10 +1995,7 @@ function enableRunSkills(
  */
 async function defaultCreateSettingsOverride(
   settingsConfig: GeminiSettingsConfig,
-  context: GeminiSettingsOverrideContext = {
-    cwd: process.cwd(),
-    env: process.env,
-  },
+  givenContext?: GeminiSettingsOverrideContext,
 ): Promise<GeminiSettingsOverride> {
   const servers = normalizeMcpServers(settingsConfig.mcpServers);
   const hasMcpServers = Object.keys(servers ?? {}).length > 0;
@@ -1657,13 +2004,13 @@ async function defaultCreateSettingsOverride(
   if (!settingsConfig.modelAlias && !hasMcpServers && !hasSkills) {
     return NOOP_SETTINGS_OVERRIDE;
   }
+  const context =
+    givenContext ?? (await geminiSettingsOverrideContext(process.cwd()));
 
   const realHome = geminiRealHome(context);
   // Gemini reads a workspace that is its home as neither workspace nor
   // project; a separate home would make it load the real settings twice.
-  if (
-    (await comparablePath(context.cwd)) === (await comparablePath(realHome))
-  ) {
+  if (await geminiWorkspaceIsHome(context, realHome)) {
     if (hasMcpServers)
       throw new Error(
         'Gemini per-run MCP servers require a working directory different from its user home',
@@ -1677,7 +2024,7 @@ async function defaultCreateSettingsOverride(
     settingsPath,
     'user settings',
   );
-  if (await geminiSandboxRequested(context, userSettings)) {
+  if (await geminiSandboxRequested(context, userSettings, hasSkills)) {
     if (hasMcpServers)
       throw new Error(
         'Gemini per-run MCP servers cannot be delivered while its native sandbox is enabled',
@@ -2017,15 +2364,12 @@ async function assertGeminiBrowserContext(
   options: AgentOptions<GeminiEffort> | undefined,
   admitsSystemSettingsFile: GeminiSystemFileAdmission,
 ): Promise<void> {
-  const context: GeminiSettingsOverrideContext = {
-    cwd: resolve(options?.cwd ?? process.cwd()),
-    env: process.env,
-    admitsSystemSettingsFile,
-  };
+  const context = await geminiSettingsOverrideContext(
+    options?.cwd ?? process.cwd(),
+    { admitsSystemSettingsFile },
+  );
   const realHome = geminiRealHome(context);
-  if (
-    (await comparablePath(context.cwd)) === (await comparablePath(realHome))
-  ) {
+  if (await geminiWorkspaceIsHome(context, realHome)) {
     throw new CapabilityError(
       'workspace-is-home',
       'Gemini per-run MCP servers require a working directory different from its user home',
@@ -2035,7 +2379,7 @@ async function assertGeminiBrowserContext(
     join(realHome, '.gemini', 'settings.json'),
     'user settings',
   );
-  if (await geminiSandboxRequested(context, userSettings)) {
+  if (await geminiSandboxRequested(context, userSettings, false)) {
     throw new CapabilityError(
       'native-sandbox',
       'Gemini per-run MCP servers cannot be delivered while its native sandbox is enabled',
@@ -2074,7 +2418,8 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     this.createTelemetryCapture =
       deps.createTelemetryCapture ?? defaultCreateTelemetryCapture;
     this.admitsSystemSettingsFile =
-      deps.admitsSystemSettingsFile ?? defaultAdmitsSystemSettingsFile;
+      deps.admitsSystemSettingsFile ??
+      geminiSystemFileAdmission(deps.admissionPlatform ?? process.platform);
   }
 
   async getCapabilities(options?: Parameters<GeminiAdapter['run']>[1]) {
@@ -2199,12 +2544,13 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     }
 
     try {
-      const context: GeminiSettingsOverrideContext = {
-        cwd: resolve(mapped.spawnOptions.cwd?.toString() ?? process.cwd()),
-        env: process.env,
-        ...(options?.abortSignal ? { signal: options.abortSignal } : {}),
-        admitsSystemSettingsFile: this.admitsSystemSettingsFile,
-      };
+      const context = await geminiSettingsOverrideContext(
+        mapped.spawnOptions.cwd?.toString() ?? process.cwd(),
+        {
+          ...(options?.abortSignal ? { signal: options.abortSignal } : {}),
+          admitsSystemSettingsFile: this.admitsSystemSettingsFile,
+        },
+      );
       // skills-2, gemini-51: the whole list and its delivery context are
       // checked before attachments are staged or the browser is prepared.
       const skills = await prepareSkills(
@@ -2217,6 +2563,11 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         throw new Error('Gemini run aborted during skill preparation');
       }
       if (skills.length > 0) await assertGeminiSkillsContext(context);
+      // gemini-55: the runtime's own policy sources are settled before
+      // attachments are staged or the browser is prepared.
+      const runtimePolicySources = mapped.toolConfig.skillsOnlyPolicy
+        ? await geminiRuntimePolicySources(context)
+        : [];
       const attachmentStage = await prepareGeminiAttachments(
         prompt,
         options?.attachments,
@@ -2279,9 +2630,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
           : mapped.args;
       policyOverride = await this.createPolicyOverride(
         mapped.toolConfig,
-        mapped.toolConfig.skillsOnlyPolicy
-          ? await geminiRuntimePolicySources(context)
-          : [],
+        runtimePolicySources,
       );
       // gemini-55: the per-run file and the runtime's own sources must reach
       // Gemini as the paths they name.

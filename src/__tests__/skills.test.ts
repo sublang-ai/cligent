@@ -1070,3 +1070,134 @@ describe('read-only directories and aliased sources (skills-3)', () => {
     }
   });
 });
+describe('links through a linked segment (skills-3)', () => {
+  it.skipIf(linksUnsupported)(
+    'resolves a link whose text steps out of a linked segment through the filesystem, not lexically',
+    async () => {
+      const { mkdtemp, mkdir, writeFile, symlink, readlink, readFile, rm } =
+        await import('node:fs/promises');
+      const { tmpdir } = await import('node:os');
+      const { join, dirname, resolve, sep } = await import('node:path');
+      const { prepareSkills, materializeSkills } = await import('../skills.js');
+      const base = await mkdtemp(join(tmpdir(), 'cligent-skills-jump-'));
+      const skill = join(base, 'jumpy');
+      await mkdir(join(skill, 'assets', 'inner'), { recursive: true });
+      await writeFile(
+        join(skill, 'SKILL.md'),
+        '---\nname: jumpy\ndescription: d\n---\n',
+      );
+      await writeFile(join(skill, 'assets', 'data.txt'), 'inside assets');
+      // A root-level decoy that a lexical collapse of `jump/../data.txt` would select.
+      await writeFile(join(skill, 'data.txt'), 'decoy at root');
+      await symlink(join('assets', 'inner'), join(skill, 'jump'));
+      // The link text keeps its `..` (path.join would collapse it lexically).
+      await symlink(['jump', '..', 'data.txt'].join(sep), join(skill, 'doc'));
+      expect(await readlink(join(skill, 'doc'))).toBe(
+        ['jump', '..', 'data.txt'].join(sep),
+      );
+      const prepared = await prepareSkills('kimi', [skill]);
+      const root = join(base, 'carrier');
+      await materializeSkills(prepared, {
+        root,
+        staging: join(base, '.staging'),
+      });
+      const copiedDoc = join(root, 'jumpy', 'doc');
+      expect(await readlink(copiedDoc)).toBe(join('assets', 'data.txt'));
+      expect(
+        await readFile(
+          resolve(dirname(copiedDoc), await readlink(copiedDoc)),
+          'utf8',
+        ),
+      ).toBe('inside assets');
+      await rm(base, { recursive: true, force: true });
+    },
+  );
+});
+describe('links to an ancestor (skills-3)', () => {
+  it.skipIf(linksUnsupported)(
+    'keeps a link to an ancestor as a link, and rejects it where the host creates no links',
+    async () => {
+      const { mkdir, writeFile, readlink } = await import('node:fs/promises');
+      const { existsSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const { prepareSkills, materializeSkills } = await import('../skills.js');
+      const skill = join(base, 'loopy');
+      await mkdir(join(skill, 'z'), { recursive: true });
+      await writeFile(join(skill, 'SKILL.md'), skillText('loopy'));
+      await symlink('.', join(skill, 'self'));
+      await symlink('..', join(skill, 'z', 'up'));
+      const prepared = await prepareSkills('kimi', [skill]);
+
+      const linked = join(base, 'linked');
+      await materializeSkills(prepared, {
+        root: linked,
+        staging: join(base, 'staging-linked'),
+      });
+      expect(await readlink(join(linked, 'loopy', 'self'))).toBe('.');
+      expect(await readlink(join(linked, 'loopy', 'z', 'up'))).toBe('..');
+
+      // A copy of the target would hold the link, and so itself, without end.
+      vi.mocked(symlink).mockRejectedValue(
+        Object.assign(new Error('EPERM: operation not permitted, symlink'), {
+          code: 'EPERM',
+        }),
+      );
+      await expect(
+        materializeSkills(prepared, {
+          root: join(base, 'copied'),
+          staging: join(base, 'staging-copied'),
+        }),
+      ).rejects.toThrow(
+        new RegExp(
+          `^skill link .*self cannot be copied because the host creates no links and a copy of its target .*loopy would contain the link$`,
+        ),
+      );
+      expect(existsSync(join(base, 'staging-copied'))).toBe(false);
+    },
+  );
+});
+describe('links through each other (skills-3)', () => {
+  it.skipIf(linksUnsupported)(
+    'rejects links whose directories reach each other where the host creates no links',
+    async () => {
+      const { mkdir, writeFile, readFile } = await import('node:fs/promises');
+      const { join } = await import('node:path');
+      const { prepareSkills, materializeSkills } = await import('../skills.js');
+      const skill = join(base, 'mutual');
+      await mkdir(join(skill, 'a'), { recursive: true });
+      await mkdir(join(skill, 'b'));
+      await writeFile(join(skill, 'SKILL.md'), skillText('mutual'));
+      await writeFile(join(skill, 'b', 'note.md'), 'in b');
+      await symlink(join('..', 'b'), join(skill, 'a', 'l1'));
+      await symlink(join('..', 'a'), join(skill, 'b', 'l2'));
+      const prepared = await prepareSkills('kimi', [skill]);
+
+      const linked = join(base, 'linked');
+      await materializeSkills(prepared, {
+        root: linked,
+        staging: join(base, 'staging-linked'),
+      });
+      expect(
+        await readFile(join(linked, 'mutual', 'a', 'l1', 'note.md'), 'utf8'),
+      ).toBe('in b');
+
+      // Neither directory holds the other's link, yet a copy of `a` would
+      // reach l2 through l1's copy of `b`.
+      vi.mocked(symlink).mockRejectedValue(
+        Object.assign(new Error('EPERM: operation not permitted, symlink'), {
+          code: 'EPERM',
+        }),
+      );
+      await expect(
+        materializeSkills(prepared, {
+          root: join(base, 'copied'),
+          staging: join(base, 'staging-copied'),
+        }),
+      ).rejects.toThrow(
+        new RegExp(
+          `^skill link .*${['mutual', 'b', 'l2'].join('[\\\\/]')} cannot be copied because the host creates no links and a copy of its target .*${['mutual', 'a'].join('[\\\\/]')} would contain the link$`,
+        ),
+      );
+    },
+  );
+});
