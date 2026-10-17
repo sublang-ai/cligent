@@ -1509,7 +1509,10 @@ try {
       'node',
       join(consumerDirectory, 'runtime-consumer.mjs'),
     ],
-    { cwd: consumerDirectory },
+    // The first floor probe downloads a platform-specific Node archive into
+    // the isolated cache. A slow cold transfer can exceed the ordinary
+    // command deadline before any consumer code runs.
+    { cwd: consumerDirectory, timeout: 1_800_000 },
   );
 
   mkdirSync(codexProbeHomeDirectory, { recursive: true });
