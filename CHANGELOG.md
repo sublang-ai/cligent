@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-10-16
+
+### Added
+
+- Caller-supplied skills across Claude Code, Codex, Gemini CLI, Kimi Code, and managed OpenCode through the shared `skills` option, accepting skill directories or their `SKILL.md` files with per-call replacement of instance defaults.
+- Portable skill validation, run-scoped snapshots and cleanup, plus `SKILL_SUPPORT` and `getSkillSupport` for discovering each adapter's carrier, invocation namespace, and delivery limits.
+- tmux-play skills at the top level and per Captain or player, with config-relative paths, role overrides, explicit empty-list opt-out, and complete per-call settings.
+
+### Fixed
+
+- Gemini settings overlays preserve the runtime's admitted settings layers, folder trust, policy sources, environment expansion, and child-home behavior when configuring effort, MCP servers, browsers, or skills; runs whose required settings cannot be reproduced fail explicitly.
+- Claude MCP readiness failures retain an error result when a caller signal or approval handler is present.
+
 ## [0.33.5] - 2026-10-12
 
 ### Fixed
@@ -821,7 +834,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.33.5...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/sublang-ai/cligent/compare/v0.33.5...v0.34.0
 [0.33.5]: https://github.com/sublang-ai/cligent/compare/v0.33.4...v0.33.5
 [0.33.4]: https://github.com/sublang-ai/cligent/compare/v0.33.3...v0.33.4
 [0.33.3]: https://github.com/sublang-ai/cligent/compare/v0.33.2...v0.33.3
