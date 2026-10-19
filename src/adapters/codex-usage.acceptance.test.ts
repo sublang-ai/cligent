@@ -22,6 +22,7 @@ import {
 import { Cligent } from '../index.js';
 import type { CligentEvent, DonePayload } from '../index.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
+import { probeCodexExecutable } from './codex-executable.js';
 import { CodexAdapter, resolveCodexBinPath } from './codex.js';
 
 interface NativeAccounting {
@@ -88,7 +89,10 @@ describe('Codex real resumed token accounting (codex-60)', () => {
       }
 
       const cligent = new Cligent(
-        new CodexAdapter({ loadSdk: async () => ({ Codex: CapturingCodex }) }),
+        new CodexAdapter({
+          probeExecutable: () => probeCodexExecutable(),
+          loadSdk: async () => ({ Codex: CapturingCodex }),
+        }),
         {
           cwd: root,
           model: process.env.CODEX_MODEL ?? 'gpt-6-luna',

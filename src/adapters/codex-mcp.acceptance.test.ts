@@ -12,6 +12,7 @@ import { expect, it } from 'vitest';
 import { Cligent } from '../cligent.js';
 import { AGENT_RUNTIME_TARGETS } from '../runtime-targets.js';
 import type { AgentEvent } from '../types.js';
+import { probeCodexExecutable } from './codex-executable.js';
 import { CodexAdapter, resolveCodexBinPath } from './codex.js';
 
 // A valid two-by-two RGB PNG; native Codex decodes it before model ingestion.
@@ -192,6 +193,7 @@ acceptanceIt(
         }).filter((entry): entry is [string, string] => entry[1] !== undefined),
       );
       const adapter = new CodexAdapter({
+        probeExecutable: () => probeCodexExecutable(),
         loadSdk: async () => ({
           Codex: class extends Codex {
             constructor(options: ConstructorParameters<typeof Codex>[0]) {
