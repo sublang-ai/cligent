@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `nativeSkills: false` turns a runtime's own skill discovery off for a run while the run's `skills` still arrive, on Claude Code, Codex, Gemini CLI, and managed OpenCode; Kimi Code rejects it.
+- `NATIVE_SKILL_SUPPORT` and `getNativeSkillSupport` give each adapter's persistent project and user skill folders, whether it accepts the switch, and what the switch leaves.
+
 ## [0.34.1] - 2026-10-19
 
 ### Fixed

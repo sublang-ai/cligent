@@ -64,11 +64,18 @@ export { ATTACHMENT_SUPPORT, getAttachmentSupport } from './attachments.js';
 export type { Attachment, AttachmentSupport } from './attachments.js';
 
 export {
+  NATIVE_SKILL_SUPPORT,
   SKILL_SUPPORT,
   SKILL_CARRIER_CLEANUP_FAILED,
+  getNativeSkillSupport,
   getSkillSupport,
 } from './skills.js';
-export type { SkillCarrier, SkillSupport } from './skills.js';
+export type {
+  NativeSkillFolders,
+  NativeSkillSupport,
+  SkillCarrier,
+  SkillSupport,
+} from './skills.js';
 
 export {
   FAST_MODE_SUPPORT,

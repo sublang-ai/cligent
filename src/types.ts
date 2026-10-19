@@ -367,6 +367,8 @@ export interface AgentOptions<
   browser?: boolean;
   /** Skill directories, or their SKILL.md files, delivered to the runtime for this run per DR-036; a per-call list replaces the instance list. */
   skills?: readonly string[];
+  /** `false` turns the runtime's own skill discovery off for this run, leaving `skills` delivered, per DR-037; support depends on the adapter. */
+  nativeSkills?: boolean;
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;
@@ -408,6 +410,8 @@ export interface CligentOptions<
   browser?: boolean;
   /** Skill directories, or their SKILL.md files, delivered to the runtime per DR-036; a per-call list replaces this one. */
   skills?: readonly string[];
+  /** `false` turns the runtime's own skill discovery off, leaving `skills` delivered, per DR-037; a per-call value replaces this one. */
+  nativeSkills?: boolean;
   cwd?: string;
   model?: string;
   permissions?: PermissionPolicy;

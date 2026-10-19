@@ -259,6 +259,32 @@ describe('Cligent lifecycle', () => {
     expect(captured).toEqual([false, true, undefined]);
   });
 
+  // engine-103 / engine-3: nativeSkills is a scalar shared by both option
+  // types, so a per-call `true` or `false` replaces the instance default.
+  it('selects the per-call nativeSkills over the instance default in both directions', async () => {
+    const captured: Array<boolean | undefined> = [];
+    const adapter: AgentAdapter = {
+      agent: 'custom-native-skills',
+      async *run(_prompt, options) {
+        captured.push(options?.nativeSkills);
+        yield doneEvent('custom-native-skills');
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+
+    const defaultOn = new Cligent(adapter, { nativeSkills: true });
+    await collectEvents(defaultOn.run('off', { nativeSkills: false }));
+    const defaultOff = new Cligent(adapter, { nativeSkills: false });
+    await collectEvents(defaultOff.run('on', { nativeSkills: true }));
+    await collectEvents(defaultOff.run('kept', { model: 'other' }));
+    const omitted = new Cligent(adapter);
+    await collectEvents(omitted.run('default'));
+
+    expect(captured).toEqual([false, true, false, undefined]);
+  });
+
   // engine-3 / engine-96: subagentModel is a scalar shared by both option
   // types — the per-call value when provided, otherwise the instance default.
   it('selects the per-call subagent model over the instance default', async () => {
@@ -1163,6 +1189,71 @@ describe('Cligent skills forwarding', () => {
       expect(received[index * 2]).toBe(value);
       expect(received[index * 2 + 1]).toBe(value);
     });
+  });
+
+  // engine-133: constructor placement [engine-1] and per-run values reach a
+  // custom adapter unchanged [engine-124], which admits its own value
+  // [engine-132], malformed ones included.
+  it('passes every nativeSkills value to a custom adapter unchanged', async () => {
+    const received: unknown[] = [];
+    const adapter: AgentAdapter = {
+      agent: 'custom-native',
+      async *run(_prompt, options) {
+        received.push(options?.nativeSkills);
+        yield doneEvent('custom-native');
+      },
+      async isAvailable() {
+        return true;
+      },
+    };
+    const values: unknown[] = [false, true, undefined, 'false', 0, {}];
+    for (const value of values) {
+      await collectEvents(
+        new Cligent(adapter, { nativeSkills: value as never }).run('default'),
+      );
+      await collectEvents(
+        new Cligent(adapter).run('per-call', { nativeSkills: value as never }),
+      );
+    }
+    expect(received).toHaveLength(values.length * 2);
+    values.forEach((value, index) => {
+      expect(received[index * 2]).toBe(value);
+      expect(received[index * 2 + 1]).toBe(value);
+    });
+
+    const parallel: unknown[] = [];
+    const recorder = (agent: string): AgentAdapter => ({
+      agent,
+      async *run(_prompt, options) {
+        parallel.push([agent, options?.nativeSkills]);
+        yield doneEvent(agent);
+      },
+      async isAvailable() {
+        return true;
+      },
+    });
+    await collectEvents(
+      Cligent.parallel([
+        {
+          agent: new Cligent(recorder('custom-off'), { nativeSkills: false }),
+          prompt: 'a',
+        },
+        {
+          agent: new Cligent(recorder('custom-on'), { nativeSkills: false }),
+          prompt: 'b',
+          overrides: { nativeSkills: true },
+        },
+        { agent: new Cligent(recorder('custom-omitted')), prompt: 'c' },
+      ]),
+    );
+    expect(parallel).toEqual(
+      expect.arrayContaining([
+        ['custom-off', false],
+        ['custom-on', true],
+        ['custom-omitted', undefined],
+      ]),
+    );
+    expect(parallel).toHaveLength(3);
   });
 
   it('forwards independent lists through Cligent.parallel', async () => {
