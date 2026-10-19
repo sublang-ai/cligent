@@ -22,7 +22,10 @@ it('prepares the packaged browser, navigates to a local app, and returns a real 
       '<!doctype html><html><head><title>Cligent UX preview</title></head><body><h1>Browser screenshot acceptance</h1><button>Continue</button></body></html>',
     );
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
   const address = server.address();
   if (!address || typeof address === 'string')
     throw new Error('Missing test server address');
@@ -102,9 +105,15 @@ it('prepares the packaged browser, navigates to a local app, and returns a real 
     await transport?.close();
     if (browserConfig) await releaseBrowserServer(browserConfig);
     if (outputDir) await expect(access(outputDir)).rejects.toThrow();
+    server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
   }
 }, 240_000);
