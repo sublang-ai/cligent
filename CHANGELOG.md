@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- POSIX Codex SDK runs preserve raw Unicode line and paragraph separators in JSONL strings through equivalent wire escaping, without changing decoded output or native configuration.
+
 ## [0.34.0] - 2026-10-16
 
 ### Added

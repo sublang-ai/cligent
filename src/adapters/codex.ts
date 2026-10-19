@@ -1257,54 +1257,151 @@ export { resolveCodexBinPath };
 export type { CodexBinPathResolutionDeps } from './codex-executable.js';
 
 function codexWrapperScript(
-  codexBinPath: string,
+  nativePath: string,
   configOverrides: readonly string[],
   execArgs: readonly string[],
+  dir: string,
 ): string {
-  return `#!/usr/bin/env node
+  return String.raw`#!/usr/bin/env node
 import { spawn } from 'node:child_process';
+import { writeFileSync, renameSync, mkdirSync, statSync } from 'node:fs';
+import { dirname, join, delimiter } from 'node:path';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
-const codexBinPath = ${JSON.stringify(codexBinPath)};
+const nativePath = ${JSON.stringify(nativePath)};
 const configOverrides = ${JSON.stringify(configOverrides)};
 const execArgs = ${JSON.stringify(execArgs)};
-const [subcommand, ...rest] = process.argv.slice(2);
+const dir = ${JSON.stringify(dir)};
+const [electronPresent, electronValue, ...cliArgs] = process.argv.slice(2);
+if (electronPresent !== '' && electronPresent !== 'x') {
+  throw new Error('Invalid owned Codex carrier arguments');
+}
+const childEnv = { ...process.env };
+if (electronPresent === 'x') childEnv.ELECTRON_RUN_AS_NODE = electronValue;
+else delete childEnv.ELECTRON_RUN_AS_NODE;
+// Mirror the SDK's current package layout, without changing its supported
+// native selection or adding the JavaScript launcher's update metadata.
+const helperPath = join(dirname(nativePath), '..', 'codex-path');
+try {
+  if (statSync(helperPath).isDirectory()) {
+    const entries = (childEnv.PATH ?? '').split(delimiter)
+      .filter((entry) => entry.length > 0 && entry !== helperPath);
+    childEnv.PATH = [helperPath, ...entries].join(delimiter);
+  }
+} catch {
+  // Like SDK existingDirs, an unavailable optional helper directory is absent.
+}
+const [subcommand, ...rest] = cliArgs;
 const injectedExecArgs = subcommand === 'exec' ? execArgs : [];
 const injected = configOverrides.flatMap((override) => ['--config', override]);
 const args = subcommand
-  ? [codexBinPath, subcommand, ...injectedExecArgs, ...injected, ...rest]
-  : [codexBinPath, ...injected];
-const child = spawn(process.execPath, args, {
-  env: process.env,
-  stdio: 'inherit',
-});
-
+  ? [subcommand, ...injectedExecArgs, ...injected, ...rest]
+  : [...injected];
+const json = subcommand === 'exec' && rest.some((arg) =>
+  arg === '--json' || arg === '--experimental-json');
+let child;
+let cancellation;
+let escalation;
+let forwardingError;
+const stop = (signal = 'SIGTERM') => {
+  cancellation ??= signal;
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  child.kill(signal);
+  escalation ??= setTimeout(() => child.kill('SIGKILL'), 1000);
+};
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => child.kill(signal));
+  process.on(signal, () => stop(signal));
 }
-
-child.on('exit', (code, signal) => {
-  if (signal) {
-    process.exit(1);
-  }
-  process.exit(code ?? 0);
-});
-
-child.on('error', (error) => {
-  console.error(error);
-  process.exit(1);
-});
+process.stdout.on('error', () => stop());
+const record = (name, value) => {
+  const temporary = dir + '/' + name + '.' + process.pid + '.tmp';
+  writeFileSync(temporary, JSON.stringify(value));
+  renameSync(temporary, dir + '/' + name + '.json');
+};
+// Cleanup and startup compete for this same exclusive claim. A retired
+// carrier cannot cross this boundary into native execution.
+mkdirSync(dir + '/claimed');
+record('started', { pid: process.pid });
+let exit = { code: 1, signal: null };
+let closed;
+let forwarded;
+try {
+  child = spawn(nativePath, args, {
+    env: childEnv,
+    stdio: ['inherit', 'pipe', 'inherit'],
+  });
+  closed = new Promise((resolve) => {
+    child.on('error', (error) => { forwardingError = error; });
+    child.on('close', (code, signal) => resolve({ code, signal }));
+  });
+  let tail = Buffer.alloc(0);
+  const wire = new Transform({
+    transform(chunk, _encoding, callback) {
+      if (!json) return callback(null, chunk);
+      const bytes = Buffer.concat([tail, chunk]);
+      const parts = [];
+      let start = 0;
+      let index = 0;
+      while (index < bytes.length) {
+        if (bytes[index] !== 0xe2) { index++; continue; }
+        if (index + 2 >= bytes.length) break;
+        if (bytes[index + 1] === 0x80 &&
+            (bytes[index + 2] === 0xa8 || bytes[index + 2] === 0xa9)) {
+          parts.push(bytes.subarray(start, index),
+            Buffer.from(bytes[index + 2] === 0xa8 ? '\\u2028' : '\\u2029'));
+          index += 3;
+          start = index;
+        } else index++;
+      }
+      parts.push(bytes.subarray(start, index));
+      tail = bytes.subarray(index);
+      callback(null, Buffer.concat(parts));
+    },
+    flush(callback) { callback(null, tail); },
+  });
+  forwarded = pipeline(child.stdout, wire, process.stdout).catch((error) => {
+    forwardingError = error;
+    stop();
+  });
+  if (cancellation) stop(cancellation);
+} catch (error) {
+  forwardingError = error;
+  stop();
+} finally {
+  if (closed) exit = await closed;
+  if (forwarded) await forwarded;
+  clearTimeout(escalation);
+  if (forwardingError && !cancellation) console.error(forwardingError);
+  process.exitCode = forwardingError ? 1 : exit.signal ? 1 : (exit.code ?? 1);
+  record('settled', {
+    pid: process.pid, childPid: child?.pid, nativeClosed: true,
+    code: exit.code, signal: exit.signal,
+    forwardingFailed: Boolean(forwardingError),
+  });
+}
 `;
 }
 
+/** The optional native target is the already-probed SDK-owned executable. */
 export async function createCodexConfigOverrideWrapper(
   configOverrides: readonly string[],
   execArgs: readonly string[] = [],
+  selectedNativePath?: string,
 ): Promise<CodexConfigOverrideWrapper | undefined> {
-  if (configOverrides.length === 0 && execArgs.length === 0) {
+  if (
+    process.platform === 'win32' &&
+    configOverrides.length === 0 &&
+    execArgs.length === 0
+  ) {
     return undefined;
   }
 
-  const codexBinPath = resolveCodexBinPath();
+  const executable =
+    selectedNativePath === undefined
+      ? probeCodexExecutable()
+      : { state: 'present' as const, path: selectedNativePath };
+  if (executable.state !== 'present') throw codexExecutableRefusal(executable);
   const dir = await mkdtemp(join(tmpdir(), 'cligent-codex-config-'));
   const scriptPath = join(dir, 'codex-wrapper.mjs');
   if (process.platform === 'win32') {
@@ -1316,25 +1413,66 @@ export async function createCodexConfigOverrideWrapper(
   }
   const wrapperPath = join(dir, 'codex-wrapper.sh');
 
-  await writeFile(
-    scriptPath,
-    codexWrapperScript(codexBinPath, configOverrides, execArgs),
-    'utf8',
-  );
+  try {
+    await writeFile(
+      scriptPath,
+      codexWrapperScript(executable.path, configOverrides, execArgs, dir),
+      'utf8',
+    );
 
-  const environment = Object.entries(nodeChildEnvironment())
-    .map(([key, value]) => `${key}=${quoteShellArgument(value)} `)
-    .join('');
-  await writeFile(
-    wrapperPath,
-    `#!/bin/sh\n${environment}exec ${quoteShellArgument(process.execPath)} ${quoteShellArgument(scriptPath)} "$@"\n`,
-    'utf8',
-  );
-  await chmod(wrapperPath, 0o700);
+    const environment = Object.entries(nodeChildEnvironment())
+      .map(([key, value]) => `${key}=${quoteShellArgument(value)} `)
+      .join('');
+    await writeFile(
+      wrapperPath,
+      `#!/bin/sh\n${environment}exec ${quoteShellArgument(process.execPath)} ${quoteShellArgument(scriptPath)} "\${ELECTRON_RUN_AS_NODE+x}" "\${ELECTRON_RUN_AS_NODE-}" "$@"\n`,
+      'utf8',
+    );
+    await chmod(wrapperPath, 0o700);
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
 
   return {
     path: wrapperPath,
     cleanup: async () => {
+      // An exclusive claim prevents an absence check from racing startup.
+      // Winning cleanup retires an unused carrier before any native spawn.
+      try {
+        await mkdir(join(dir, 'claimed'));
+        await rm(dir, { recursive: true, force: true });
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') return;
+        if (code !== 'EEXIST') throw error;
+      }
+      const deadline = Date.now() + 5000;
+      while (
+        !existsSync(join(dir, 'started.json')) ||
+        !existsSync(join(dir, 'settled.json'))
+      ) {
+        if (!existsSync(dir)) return;
+        if (Date.now() >= deadline) {
+          throw new Error('Codex wrapper cleanup incomplete; retained ' + dir);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const started = JSON.parse(
+        readFileSync(join(dir, 'started.json'), 'utf8'),
+      ) as { pid?: unknown };
+      const settled = JSON.parse(
+        readFileSync(join(dir, 'settled.json'), 'utf8'),
+      ) as { pid?: unknown; nativeClosed?: unknown };
+      if (
+        typeof started.pid !== 'number' ||
+        started.pid <= 0 ||
+        settled.pid !== started.pid ||
+        settled.nativeClosed !== true
+      ) {
+        throw new Error('Codex wrapper cleanup unproven; retained ' + dir);
+      }
       await rm(dir, { recursive: true, force: true });
     },
   };
@@ -1850,6 +1988,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       codexConfigWrapper = await createCodexConfigOverrideWrapper(
         [],
         codexCliExecArgs ?? [],
+        executable.path,
       );
     } catch (err) {
       // Executable resolution and wrapper setup run before any event, so

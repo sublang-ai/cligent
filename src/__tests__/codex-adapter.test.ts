@@ -3379,7 +3379,7 @@ describe('CodexAdapter', () => {
             Object.keys(expectedConfig).length > 0 ? expectedConfig : undefined,
           );
           expect(constructorOptions?.codexPathOverride === undefined).toBe(
-            !isolated,
+            process.platform === 'win32' && !isolated,
           );
           expect(threadOptions?.modelReasoningEffort).toBe(
             effort === 'high' ? 'high' : undefined,
