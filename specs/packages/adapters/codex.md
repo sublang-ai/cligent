@@ -556,6 +556,34 @@ When the adapter locates the native binary the Codex CLI entry spawns, it shall 
 Where executable resolution or wrapper setup fails while starting a run, the adapter shall release that run's abort registration before propagating the error so repeated failures on one long-lived caller signal accumulate no listeners.
 
 
+### JSONL Transport
+
+### codex-79
+
+When a run starts through the SDK, the adapter shall select its transport from this host and command matrix:
+
+| Input or host                                       | Transport behavior                                                                                                                                                                 |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POSIX `exec` with `--json` or `--experimental-json` | escape only raw UTF-8 U+2028 and U+2029 in stdout as the equivalent JSON Unicode escapes, including separators split across chunks, leaving every other byte unchanged             |
+| POSIX other commands or output modes                | forward stdout unchanged                                                                                                                                                           |
+| POSIX permission policy absent                      | retain native configuration and environment under [[codex-31](#codex-31)] without adding isolation arguments                                                                       |
+| POSIX supplied policy                               | preserve [[codex-31](#codex-31)]'s isolation arguments and [[codex-12](#codex-12)]'s SDK-owned entry as resolution anchor for [[codex-64](#codex-64)]'s selected native executable |
+| native Windows without policy                       | retain direct SDK execution without separator protection                                                                                                                           |
+| native Windows with policy                          | retain [[codex-31](#codex-31)]'s rejection                                                                                                                                         |
+
+The transport executes that selected native binary directly, prepends its existing modern `codex-path` helper directory as the SDK does, and preserves stdin, stderr, argument order, authentication, session state, the caller's original `ELECTRON_RUN_AS_NODE` presence and value, and decoded JSON values; malformed JSON and actual child failures remain failures under [[codex-24](#codex-24)] through [[codex-27](#codex-27)].
+
+### codex-80
+
+When [[codex-79](#codex-79)]'s owned wrapper terminates or its SDK consumer closes early, the wrapper and adapter shall complete their owned lifecycle before removing the carrier:
+
+- arbitrate startup and unused-carrier retirement through one exclusive claim directory, with a cleanup winner preventing any later native spawn and a wrapper winner requiring cleanup to await both atomic lifecycle records;
+- register signal and output-error handling before claiming startup, atomically publish the wrapper's started identity before spawning the selected native executable, and forward cancellation or a closed stdout only to that exact owned native child;
+- await child close and output drain, preserve child nonzero exits and forwarding failures, and avoid an immediate process exit that truncates output;
+- bound cancellation escalation to that exact native child and bound adapter cleanup waiting for the matching atomically published wrapper completion record after native close and output drain, without terminating or claiming cleanup of intentional tool descendants;
+- remove an unused carrier normally when setup, SDK construction or cancellation ends before any wrapper starts; and
+- retain the carrier and report a cleanup failure when a started wrapper's completion cannot be established within the cleanup bound, without claiming the child exited.
+
 ## Verification
 
 ### codex-74
@@ -564,7 +592,7 @@ Where the exact native Codex conformance target is installed, when the real engi
 
 ### codex-71
 
-When a run supplies both MCP transports with quotes, whitespace, and newlines, the integration check shall exercise the installed SDK directly into a fixture subprocess and verify exact complete-entry arguments, scoped approval and required-server flags, unchanged prompt, successful terminal, and no generated wrapper for MCP-only calls [[codex-70](#codex-70)].
+When a run supplies both MCP transports with quotes, whitespace, and newlines, the integration check shall exercise the installed SDK directly into a fixture subprocess and verify exact complete-entry arguments, scoped approval and required-server flags, unchanged prompt, successful terminal, and no MCP-generated carrier or isolation argument for MCP-only calls beside the POSIX transport wrapper [[codex-70](#codex-70)], [[codex-79](#codex-79)].
 
 ### codex-73
 
@@ -643,7 +671,7 @@ Given a missing policy and the complete supplied-policy mode and capability matr
 
 ### codex-205
 
-Where the packed tarball and exact Codex SDK target are installed in turn into a global-style prefix and a nested-strategy consumer, with neither layout leaving `@openai/codex` at its install root, when the installed adapter resolves the executable, creates a permission-managed wrapper, and runs until a scheduled abort, it shall return the SDK-owned executable in both layouts, embed that path in the wrapper, terminate the invocation without a module-resolution failure, and exercise the nested-strategy case on the Node 18.3.0 floor without an ESM loader resolution surface [[codex-10](#codex-10)], [[codex-12](#codex-12)], [[codex-31](#codex-31)].
+Where the packed tarball and exact Codex SDK target are installed in turn into a global-style prefix and a nested-strategy consumer, with neither layout leaving `@openai/codex` at its install root, when the installed adapter resolves the executable, creates a permission-managed wrapper, and runs until a scheduled abort, it shall resolve the SDK-owned entry in both layouts, embed the native path independently resolved through the public executable locator in the wrapper, terminate the invocation without a module-resolution failure, and exercise the nested-strategy case on the Node 18.3.0 floor without an ESM loader resolution surface [[codex-10](#codex-10)], [[codex-12](#codex-12)], [[codex-31](#codex-31)], [[codex-64](#codex-64)], [[codex-79](#codex-79)].
 
 ### codex-51
 
@@ -786,6 +814,19 @@ When skill fixtures run with the installed Codex SDK recorded into a fixture sub
 ### codex-77
 
 Where [[codex-219](#codex-219)]'s credential, retry, and skip preconditions hold, when a run supplies a fixture skill whose body directs a unique token reply and the prompt mentions `$cligent:<name>`, the acceptance check shall verify against the real runtime that the reply carries the token [[codex-75](#codex-75)] and that the plugin cache entry is gone once the adapter's own event stream completes [[codex-78](#codex-78)].
+
+### codex-81
+
+Where POSIX recording CLI fixtures run through the installed real Codex SDK and the adapter's wrapper, when [the installed-SDK transport matrix](../../../src/__tests__/codex-jsonl.test.ts) executes, verification shall assert the following outcomes without replacing the SDK parser [[codex-79](#codex-79)], [[codex-80](#codex-80)]:
+
+| Case                                                                                                                 | Assertions                                                                                                 |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| raw and escaped U+2028/U+2029, nested strings, LF/CRLF, final unterminated record, byte-split UTF-8 and large output | exact decoded event strings and unchanged other wire data, with complete output under backpressure         |
+| no policy, managed policy and resumed thread                                                                         | exact prompt, arguments, configuration and environment, with only the declared policy isolation difference |
+| malformed JSON, nonzero child exit and `turn.failed`                                                                 | original failure classification under [[codex-24](#codex-24)] and [[codex-26](#codex-26)]                  |
+| abort, early iterator return, closed stdout, already-aborted request and startup/cleanup race                                                                       | finite child termination, closed/drained wrapper, no leaked carrier and no unhandled forwarding error      |
+| original Electron flag absent, empty or set, and existing helper PATH | exact native environment presence/value and SDK-equivalent helper precedence |
+| non-JSON command                                                                                                     | unchanged stdout bytes                                                                                     |
 
 ## References
 

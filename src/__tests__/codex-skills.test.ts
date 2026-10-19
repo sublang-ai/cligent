@@ -195,6 +195,7 @@ async function setup() {
   const state: FixtureState = { mode: 'success', catalog: false };
   const constructed: unknown[] = [];
   const adapter = new CodexAdapter({
+    probeExecutable: () => ({ state: 'present', path: fixturePaths.codex }),
     loadSdk: async () => ({
       Codex: class extends Codex {
         constructor(options?: ConstructorParameters<typeof Codex>[0]) {
@@ -202,8 +203,8 @@ async function setup() {
           const executable = probeCodexExecutable();
           super({
             ...options,
-            // A permission policy runs through the generated wrapper, which
-            // launches the fixture in place of the Codex CLI entry.
+            // The transport wrapper launches the recording native fixture;
+            // supplied policy arguments travel through that same carrier.
             codexPathOverride: options?.codexPathOverride ?? fixturePaths.codex,
             env: {
               ...inheritedEnvironment(),

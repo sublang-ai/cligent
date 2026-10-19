@@ -961,11 +961,13 @@ const {
   classifyRuntime,
   describeRuntimeReadiness,
   readRuntimeVersion,
+  locateAgentExecutable,
 } = rootModule;
 for (const [label, value] of [
   ['CodexAdapter', CodexAdapter],
   ['createCodexConfigOverrideWrapper', createCodexConfigOverrideWrapper],
   ['resolveCodexBinPath', resolveCodexBinPath],
+  ['locateAgentExecutable', locateAgentExecutable],
 ]) {
   if (typeof value !== 'function') {
     throw new Error(\`missing adapter export \${label}\`);
@@ -1042,9 +1044,17 @@ if (expectation === 'missing') {
     );
   }
 
+  const native = locateAgentExecutable('codex');
+  if (native.state !== 'present' || !existsSync(native.path)) {
+    throw new Error('SDK-owned native Codex executable is unavailable: ' + JSON.stringify(native));
+  }
+  if (sdkOwnedPrefix && !native.path.startsWith(sdkOwnedPrefix)) {
+    throw new Error('Resolved native Codex executable is outside the SDK-owned tree: ' + native.path);
+  }
   const wrapper = await createCodexConfigOverrideWrapper(
     ['permissions.cligent_probe="resolution"'],
     ['--ignore-user-config'],
+    native.path,
   );
   if (!wrapper) throw new Error('config override wrapper was not created');
   try {
@@ -1052,8 +1062,8 @@ if (expectation === 'missing') {
       ? join(dirname(wrapper.path), 'codex-wrapper.mjs')
       : wrapper.path;
     const script = readFileSync(scriptPath, 'utf8');
-    if (!script.includes(JSON.stringify(binPath))) {
-      throw new Error(\`wrapper does not embed resolved Codex entry \${binPath}\`);
+    if (!script.includes(JSON.stringify(native.path))) {
+      throw new Error(\`wrapper does not embed resolved native Codex executable \${native.path}\`);
     }
   } finally {
     await wrapper.cleanup();
