@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-10-19
+
 ### Fixed
 
 - POSIX Codex SDK runs preserve raw Unicode line and paragraph separators in JSONL strings through equivalent wire escaping, without changing decoded output or native configuration.
@@ -838,7 +840,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.34.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.34.1...HEAD
+[0.34.1]: https://github.com/sublang-ai/cligent/compare/v0.34.0...v0.34.1
 [0.34.0]: https://github.com/sublang-ai/cligent/compare/v0.33.5...v0.34.0
 [0.33.5]: https://github.com/sublang-ai/cligent/compare/v0.33.4...v0.33.5
 [0.33.4]: https://github.com/sublang-ai/cligent/compare/v0.33.3...v0.33.4
