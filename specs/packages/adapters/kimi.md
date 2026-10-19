@@ -391,6 +391,10 @@ Where a run supplies skills [[kimi-49](#kimi-49)], when session setup [[kimi-4](
 
 When a run with skills [[kimi-49](#kimi-49)] ends, after its child has exited or containment has given up on a child surviving its final grace [[kimi-25](#kimi-25)], or before spawning, the adapter shall release its hold on the carrier root and, once no other Kimi run with skills of the process holds it, remove that root with every entry in it and each parent of it the process created while empty, including one an earlier holder's failed removal left, through the shared carrier removal [[skills-4](../skills.md#skills-4)].
 
+### kimi-54
+
+When a run supplies `nativeSkills`, the adapter shall prepare it [[skills-10](../skills.md#skills-10)] before browser preparation and before spawning `kimi acp`, rejecting `false` per [DR-037](../../decisions/037-per-run-native-skill-switch.md), because `kimi acp` takes no skill directory and its project skill roots, which hold the carrier [[kimi-49](#kimi-49)], come from one project-root scan [[21]], leaving no per-run lever that drops native skills [[26]].
+
 ## Internal Behavior
 
 ### Protocol Dependency
@@ -653,6 +657,10 @@ Where a scripted ACP peer and real git projects on the real filesystem are used,
 
 Where [[kimi-219](#kimi-219)]'s credential, retry, and skip preconditions hold, when a run supplies a fixture skill whose body directs a unique token reply and the prompt names the skill, the acceptance check shall verify against the real runtime that the command list names `skill:<name>` [[kimi-50](#kimi-50)], that the reply carries the token [[kimi-49](#kimi-49)], and that the carrier is gone after `done` [[kimi-53](#kimi-53)].
 
+### kimi-55
+
+When the adapter runs with `nativeSkills` `false`, `true`, and omitted before a spawner and a browser preparation that record whether they were reached, the integration check shall verify that `false` rejects before either, naming the adapter and `nativeSkills`, and that `true` and omitted reach the spawn [[kimi-54](#kimi-54)].
+
 ## References
 
 [1]: https://github.com/MoonshotAI/kimi-code "MoonshotAI Kimi Code"
@@ -681,3 +689,4 @@ Where [[kimi-219](#kimi-219)]'s credential, retry, and skip preconditions hold, 
 [23]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/features/skill/catalog/fileSkillDiscovery.ts "Kimi Code 2.1.1 skill registration order within a root"
 [24]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/features/skill/catalog/parser.ts#L152-L154 "Kimi Code 2.1.1 trimmed skill description"
 [25]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/packages/agent-core-v2/src/features/skill/catalog/userFileSkillSource.ts#L78-L79 "Kimi Code 2.1.1 user skill roots"
+[26]: https://github.com/MoonshotAI/kimi-code/blob/f67e6398fb3210ad8ace970e2dfd5bcc984ed61f/apps/kimi-code/src/cli/sub/acp.ts "Kimi Code 2.1.1 ACP subcommand taking only --login and --region"

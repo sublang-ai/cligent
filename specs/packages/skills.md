@@ -5,9 +5,9 @@
 
 ## Intent
 
-This package defines caller-supplied skill directories, their validation, their run-scoped snapshot and removal, and transport discovery, per [DR-036](../decisions/036-cross-agent-skill-installation.md).
-Its project-specific vocabulary is the public `skills` option and the `SkillSupport`, `SKILL_SUPPORT`, and `getSkillSupport` API.
-It owns input validation and snapshot layout, leaving each adapter the native carrier that makes a snapshot discoverable and invocable.
+This package defines caller-supplied skill directories, their validation, their run-scoped snapshot and removal, and transport discovery, per [DR-036](../decisions/036-cross-agent-skill-installation.md), and the per-run switch that turns a runtime's own skill discovery off, with discovery of each runtime's persistent skill folders, per [DR-037](../decisions/037-per-run-native-skill-switch.md).
+Its project-specific vocabulary is the public `skills` and `nativeSkills` options and the `SkillSupport`, `SKILL_SUPPORT`, `getSkillSupport`, `NativeSkillFolders`, `NativeSkillSupport`, `NATIVE_SKILL_SUPPORT`, and `getNativeSkillSupport` API.
+It owns input validation and snapshot layout, leaving each adapter the native carrier that makes a snapshot discoverable and invocable and the native levers that turn its runtime's own discovery off.
 
 ## External Behavior
 
@@ -69,6 +69,39 @@ The exported `SKILL_SUPPORT` shall expose deeply frozen `SkillSupport` descripto
 
 When `getSkillSupport(agent)` is called, it shall return the matching frozen descriptor [[skills-5](#skills-5)], map `claude` to `claude-code`, and return `undefined` for any unknown adapter, leaving custom adapters responsible for their own skill contract.
 
+### Native Skills
+
+### skills-9
+
+The `nativeSkills` option shall describe an optional boolean selecting, for one run, whether the runtime's own skill discovery stays on: `false` turns it off as far as the adapter's levers reach [[skills-11](#skills-11)], leaving the run's `skills` [[skills-1](#skills-1)] delivered, and `true` or omission leaves it as the runtime configures it.
+
+### skills-10
+
+When a built-in adapter prepares a `nativeSkills` value, preparation shall select this result before any provider work, including managed-browser preparation [[mcp-4](mcp.md#mcp-4)]:
+
+| Input | Result |
+| --- | --- |
+| absent or `true` | native discovery unchanged |
+| `false` on an adapter whose descriptor sets `disableSupported` [[skills-11](#skills-11)] | native discovery off for the run |
+| `false` on an adapter whose descriptor clears `disableSupported` | reject with its adapter and `nativeSkills`, stating that its runtime offers no per-run lever |
+| any other value | reject with its adapter and `nativeSkills` validation path |
+
+### skills-11
+
+The exported `NATIVE_SKILL_SUPPORT` shall expose deeply frozen `NativeSkillSupport` descriptors with readonly `folders` holding `project` and `user` strings, `disableSupported`, and explanatory `notes` members through this matrix, `project` naming the folder relative to a run's working directory where the runtime, under its default trust and settings, discovers a persistent skill for a run whose working directory is the root of its repository, `user` naming the folder relative to the user's home, written with a leading `~/`, and the notes disclosing what `nativeSkills: false` leaves and which runs reject it, without promising that a runtime offers no other skill:
+
+| Adapter | `project` | `user` | `disableSupported` | Notes |
+| --- | --- | --- | --- | --- |
+| `claude-code` | `.claude/skills` | `~/.claude/skills` | `true` | project, user, and synced skills dropped through a parent policy, bundled skills turned off, and the main thread filtered to the run's skills [[claude-code-90](adapters/claude-code.md#claude-code-90)]; subagents still list enabled marketplace plugins' skills and managed policy skills, and, where an administrator's policy tier does not merge parent settings, the project and user skills too; no evidence before the first model turn |
+| `codex` | `.agents/skills` | `~/.agents/skills` | `true` | bundled skills off and every native `SKILL.md` found before the run disabled by its path [[codex-79](adapters/codex.md#codex-79)]; skills of plugins enabled in the user configuration, which loads only without a permission policy, and of account-installed plugins stay, as does a skill written after the run starts; every disabled path appears in the process arguments; rejects a run where a native skill root cannot be read; no evidence before the first model turn |
+| `gemini` | `.agents/skills` | `~/.agents/skills` | `true` | the per-run home without the real user skills or `.agents`, and every workspace skill other than a run skill disabled by name [[gemini-58](adapters/gemini.md#gemini-58)]; extension and built-in skills stay unless named like a disabled workspace skill, and a workspace skill named like a run skill shadows it; rejects a run whose per-run home cannot be built, whose workspace skills cannot be read, whose user settings cannot take the names without changing whether the runtime validates them, or whose workspace skill name the runtime's settings expansion would change; no evidence before the first model turn |
+| `kimi` | `.agents/skills` | `~/.agents/skills` | `false` | no per-run lever reaches Kimi's skill roots [[kimi-54](adapters/kimi.md#kimi-54)] |
+| `opencode` | `.agents/skills` | `~/.agents/skills` | `true` | managed server only, dropping the `.claude/skills` and `.agents/skills` sources and the configured skill paths and URLs [[opencode-72](adapters/opencode.md#opencode-72)]; `.opencode/skill` and `.opencode/skills` folders, the built-in skill, and the caller's own inline skill entries stay; external mode rejects `false` |
+
+### skills-12
+
+When `getNativeSkillSupport(agent)` is called, it shall return the matching frozen descriptor [[skills-11](#skills-11)], map `claude` to `claude-code`, and return `undefined` for any unknown adapter, leaving custom adapters responsible for their own native-skill contract.
+
 ## Verification
 
 ### skills-7
@@ -78,6 +111,14 @@ When filesystem integration tests prepare skill fixtures through accepted and re
 ### skills-8
 
 When a consumer imports skill discovery through the package entry point, the integration check shall verify the descriptor matrix and nested immutability [[skills-5](#skills-5)] and canonical, alias, and unknown lookup results [[skills-6](#skills-6)].
+
+### skills-13
+
+When each real built-in adapter runs with `nativeSkills` omitted, `true`, `false`, and a string, number, and object, before a loader or spawner that records whether it was reached, the integration check shall verify that omitted and `true` reach the backend, that `false` reaches it on every adapter but Kimi, and that `false` on Kimi and each malformed value reject before any reach, naming the adapter and `nativeSkills` [[skills-9](#skills-9)], [[skills-10](#skills-10)].
+
+### skills-14
+
+When a consumer imports native-skill discovery through the package entry point, the integration check shall verify the descriptor matrix and nested immutability [[skills-11](#skills-11)] and canonical, alias, and unknown lookup results [[skills-12](#skills-12)].
 
 ## References
 
