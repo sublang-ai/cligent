@@ -285,6 +285,17 @@ describe('Gemini native skills off (gemini-59)', () => {
       }),
     },
     {
+      // gemini-58 admits what gemini-51 rejects for a skills run: no skill
+      // loads either way.
+      label:
+        'without run skills under user settings turning skills.enabled off',
+      withRunSkills: false,
+      user: { skills: { enabled: false } },
+      expected: (names: string[]) => ({
+        skills: { enabled: false, disabled: names },
+      }),
+    },
+    {
       // gemini-51 first drops the entry naming a run skill, in any case.
       label:
         'with run skills under a user skills.disabled list naming one of them',
