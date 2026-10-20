@@ -147,7 +147,7 @@ export const NATIVE_SKILL_SUPPORT = Object.freeze({
     folders: AGENTS_FOLDERS,
     disableSupported: true,
     notes:
-      "Managed server only, dropping the .claude/skills and .agents/skills sources and the skill paths and URLs of configuration files. Skill folders of every configuration directory, the global one, OPENCODE_CONFIG_DIR, and .opencode, skill paths and URLs from organization or managed configuration, the built-in skill, and the caller's own inline skill entries stay. A resumed session keeps the native skill listings and bodies already in its history. External mode rejects false.",
+      "Managed server only, dropping the .claude/skills and .agents/skills sources and the skill paths and URLs of configuration files. Skill folders of every configuration directory (the global one, OPENCODE_CONFIG_DIR, and .opencode), skill paths and URLs from organization or managed configuration, the built-in skill, and the caller's own inline skill entries stay. A resumed session keeps the native skill listings and bodies already in its history. External mode rejects false.",
   }),
 }) satisfies Readonly<Record<string, NativeSkillSupport>>;
 
