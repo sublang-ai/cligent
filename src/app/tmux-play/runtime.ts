@@ -26,6 +26,7 @@ import {
   type BuiltinSubagentModelAgent,
 } from '../../subagent-model.js';
 import { normalizeWritablePaths } from '../../permissions.js';
+import { getNativeSkillSupport } from '../../skills.js';
 import { createPermissionPolicyReset } from '../../internal/permission-reset.js';
 import { mapPermissionsToClaudeOptions } from '../../adapters/claude-code.js';
 import { mapPermissionsToCodexOptions } from '../../adapters/codex.js';
@@ -102,6 +103,7 @@ interface RunCligentCallOptions {
   readonly browser?: boolean;
   readonly mcpServers?: McpServers;
   readonly skills?: readonly string[];
+  readonly nativeSkills?: boolean;
   readonly resetPermissionPolicy?: boolean;
   readonly signal: AbortSignal;
   readonly resume?: string | false;
@@ -139,6 +141,8 @@ const SKILL_TOOL_BY_ADAPTER: Readonly<Record<string, string>> = {
 };
 
 interface EffectiveAgentCallSettings extends ConfiguredAgentCallSettings {
+  // tmux-play-93 / DR-038: supplied settings only; no configured default.
+  readonly nativeSkills?: boolean;
   readonly explicit: boolean;
   readonly modelUsesProviderDefault: boolean;
   readonly effortUsesProviderDefault: boolean;
@@ -542,6 +546,9 @@ export class TmuxPlayRuntime {
         browser: settings.browser,
         mcpServers: settings.mcpServers,
         skills: settings.skills,
+        ...(settings.nativeSkills !== undefined
+          ? { nativeSkills: settings.nativeSkills }
+          : {}),
         resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
         resume,
@@ -632,6 +639,9 @@ export class TmuxPlayRuntime {
         browser: settings.browser,
         mcpServers: settings.mcpServers,
         skills,
+        ...(settings.nativeSkills !== undefined
+          ? { nativeSkills: settings.nativeSkills }
+          : {}),
         resetPermissionPolicy: settings.resetPermissionPolicy,
         signal,
         resume,
@@ -1051,6 +1061,9 @@ async function runCligentCall(
       browser: options.browser,
       mcpServers: options.mcpServers,
       skills: options.skills,
+      ...(options.nativeSkills !== undefined
+        ? { nativeSkills: options.nativeSkills }
+        : {}),
       attachments: options.attachments,
       ...(options.resetPermissionPolicy
         ? { permissions: createPermissionPolicyReset() }
@@ -1160,6 +1173,7 @@ function resolveAgentCallSettings(
       browser: snapshot.browser ?? false,
       mcpServers: snapshot.mcpServers ?? Object.freeze({}),
       skills: snapshot.skills ?? NO_SKILLS,
+      nativeSkills: snapshot.nativeSkills,
       explicit: true,
       modelUsesProviderDefault,
       effortUsesProviderDefault,
@@ -1206,7 +1220,8 @@ function snapshotAgentCallSettings(
       key !== 'permissions' &&
       key !== 'browser' &&
       key !== 'mcpServers' &&
-      key !== 'skills',
+      key !== 'skills' &&
+      key !== 'nativeSkills',
   );
   if (unknown.length > 0) {
     throw new TypeError(
@@ -1248,6 +1263,12 @@ function snapshotAgentCallSettings(
   }
   const permissions = snapshotPermissionPolicy(fields.permissions);
   const skills = snapshotSkills(fields.skills);
+  const nativeSkills = fields.nativeSkills;
+  if (nativeSkills !== undefined && typeof nativeSkills !== 'boolean') {
+    throw new TypeError(
+      'tmux-play call settings nativeSkills must be a boolean',
+    );
+  }
   return Object.freeze({
     model,
     effort,
@@ -1261,6 +1282,7 @@ function snapshotAgentCallSettings(
     ...(browser !== undefined ? { browser } : {}),
     ...(mcpServers !== undefined ? { mcpServers } : {}),
     ...(skills !== undefined ? { skills } : {}),
+    ...(nativeSkills !== undefined ? { nativeSkills } : {}),
   });
 }
 
@@ -1355,6 +1377,16 @@ function assertCompleteSettingsEnforceable(
     assertSubagentModelSupported(
       adapter,
       'tmux-play call settings subagentModel',
+    );
+  }
+  // tmux-play-93 / DR-038: only an adapter whose NATIVE_SKILL_SUPPORT
+  // descriptor accepts the switch takes `false`; Kimi has no per-run lever.
+  if (
+    settings.nativeSkills === false &&
+    getNativeSkillSupport(adapter)?.disableSupported !== true
+  ) {
+    throw new Error(
+      `tmux-play call settings nativeSkills: false is not supported for adapter "${adapter}"`,
     );
   }
   // tmux-play-93 / tmux-play-216: the adapter, the call's own subagent
