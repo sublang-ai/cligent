@@ -62,7 +62,8 @@ meta.md       The spec of specs
 | [DR-034](decisions/034-live-host-tool-approvals.md) | 034-live-host-tool-approvals.md | Per-invocation native tool approval handlers, bounded lifecycle and honest transport capabilities |
 | [DR-035](decisions/035-deterministic-claude-session-title.md) | 035-deterministic-claude-session-title.md | Deterministic fresh Claude native titles using the existing session UUID, preserving resumed titles |
 | [DR-036](decisions/036-cross-agent-skill-installation.md) | 036-cross-agent-skill-installation.md | Shared `skills` option, portable validation, run-scoped snapshot carriers per runtime, opened invocation |
-| [DR-037](decisions/037-per-run-native-skill-switch.md) | 037-per-run-native-skill-switch.md | Shared `nativeSkills` switch turning a runtime's own skill discovery off per run, per-adapter levers and disclosed residue, frozen install folders |
+| [DR-037](decisions/037-per-run-native-skill-switch.md) | 037-per-run-native-skill-switch.md | Shared `nativeSkills` switch turning a runtime's own skill discovery off per run, per-adapter levers and disclosed residue, frozen install folders; Captain call settings amended by DR-038 |
+| [DR-038](decisions/038-native-skills-in-tmux-play-call-settings.md) | 038-native-skills-in-tmux-play-call-settings.md | `nativeSkills` in tmux-play call settings: admitted, snapshotted and forwarded unchanged, Kimi's `false` rejected before the prompt record, no configured default |
 
 ## Packages
 

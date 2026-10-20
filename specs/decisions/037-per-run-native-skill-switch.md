@@ -10,6 +10,7 @@ Amends the engine option forwarding of [[engine-124](../packages/engine.md#engin
 Amends the Codex carrier of [[codex-75](../packages/adapters/codex.md#codex-75)]: user-level and project skills stay unchanged only while native discovery stays on, and the run's own `skills.config` rules follow the user's.
 Amends the overlay `.gemini/skills` row of [[gemini-51](../packages/adapters/gemini.md#gemini-51)] and the reconciliation of [[gemini-45](../packages/adapters/gemini.md#gemini-45)]: with native discovery off the overlay links no real user skill, and its `.gemini/skills` takes the same reconciliation.
 Amends the OpenCode child environment of [[opencode-67](../packages/adapters/opencode.md#opencode-67)]: a run with native discovery off sets both configured skill arrays inline.
+Amended by [DR-038](038-native-skills-in-tmux-play-call-settings.md): tmux-play call settings carry `nativeSkills`, while tmux-play configuration stays out of scope.
 Field-list extensions of [[engine-1](../packages/engine.md#engine-1)], [[engine-3](../packages/engine.md#engine-3)], and [[engine-103](../packages/engine.md#engine-103)] add `nativeSkills` beside the existing options.
 
 ## Context
