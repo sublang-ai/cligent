@@ -315,66 +315,42 @@ describe('native skill support metadata (skills-14)', () => {
       project: string;
       user: string;
       disableSupported: boolean;
-      notes: string[];
+      notes: string;
     }
   > = {
     'claude-code': {
       project: '.claude/skills',
       user: '~/.claude/skills',
       disableSupported: true,
-      notes: [
-        'parent policy',
-        'bundled skills',
-        'main thread',
-        'Subagents',
-        'marketplace plugins',
-        "administrator's policy tier",
-        'No evidence before the first model turn',
-      ],
+      notes:
+        "Project, user, and synced skills dropped through a parent policy, which also adopts no plugin placed in a project or user skill folder, so that plugin's agents, hooks, MCP servers, and commands go too, bundled skills and workflows turned off, and the main thread filtered to the run's skills. Subagents still list enabled marketplace plugins' skills and managed policy skills, and, where an administrator's policy tier does not merge parent settings, the project and user skills too. A resumed session keeps the native skill listings and bodies already in its history. No evidence before the first model turn.",
     },
     codex: {
       project: '.agents/skills',
       user: '~/.agents/skills',
       disableSupported: true,
-      notes: [
-        'Bundled skills off',
-        'by its path',
-        'permission policy',
-        'account-installed plugins',
-        'process arguments',
-        'No evidence before the first model turn',
-      ],
+      notes:
+        'Bundled skills off and every native SKILL.md found before the run disabled by its path. Skills of plugins enabled in the user configuration, which loads only without a permission policy, and of account-installed plugins stay, as does a skill written after the run starts. A resumed session keeps the native skill listings and bodies already in its history. Every disabled path appears in the process arguments. Rejects a run where a native skill root cannot be read or the disabled paths exceed the process-argument bound. No evidence before the first model turn.',
     },
     gemini: {
       project: '.agents/skills',
       user: '~/.agents/skills',
       disableSupported: true,
-      notes: [
-        'per-run home',
-        'disabled by name',
-        'Extension and built-in skills stay',
-        'shadows',
-        'settings expansion',
-        'No evidence before the first model turn',
-      ],
+      notes:
+        "The per-run home without the real user skills or .agents, and every workspace skill other than a run skill disabled by name. Extension and built-in skills stay unless named like a disabled workspace skill, a workspace skill with a run skill's exact name shadows it, and one whose name differs only in letter case stays listed beside it. A resumed session keeps the native skill listings and bodies already in its history. Rejects a run whose per-run home cannot be built, whose workspace skills cannot be read, whose user settings cannot take the names without changing whether the runtime validates them, or whose workspace skill name the runtime's settings expansion would change. No evidence before the first model turn.",
     },
     kimi: {
       project: '.agents/skills',
       user: '~/.agents/skills',
       disableSupported: false,
-      notes: ['No per-run lever'],
+      notes: "No per-run lever reaches Kimi's skill roots.",
     },
     opencode: {
       project: '.agents/skills',
       user: '~/.agents/skills',
       disableSupported: true,
-      notes: [
-        'Managed server only',
-        '.claude/skills',
-        '.opencode/skills',
-        'built-in skill',
-        'External mode rejects false',
-      ],
+      notes:
+        "Managed server only, dropping the .claude/skills and .agents/skills sources and the skill paths and URLs of configuration files. Skill folders of every configuration directory, the global one, OPENCODE_CONFIG_DIR, and .opencode, skill paths and URLs from organization or managed configuration, the built-in skill, and the caller's own inline skill entries stay. A resumed session keeps the native skill listings and bodies already in its history. External mode rejects false.",
     },
   };
 
@@ -393,9 +369,8 @@ describe('native skill support metadata (skills-14)', () => {
         user: expected.user,
       });
       expect(descriptor.disableSupported).toBe(expected.disableSupported);
-      for (const phrase of expected.notes) {
-        expect(descriptor.notes).toContain(phrase);
-      }
+      // skills-11: every clause of the matrix's notes, in full.
+      expect(descriptor.notes).toBe(expected.notes);
     }
     expect(() => {
       (NATIVE_SKILL_SUPPORT as Record<string, unknown>).custom = {};

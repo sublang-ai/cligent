@@ -92,7 +92,10 @@ export interface NativeSkillFolders {
    * there at least when that directory is the root of its repository.
    */
   readonly project: string;
-  /** Relative to the user's home, written with a leading `~/`. */
+  /**
+   * Relative to the user's home under the runtime's default environment,
+   * written with a leading `~/`.
+   */
   readonly user: string;
 }
 
@@ -100,7 +103,10 @@ export interface NativeSkillSupport {
   readonly folders: NativeSkillFolders;
   /** Whether `nativeSkills: false` is accepted; the notes name runs that still reject it. */
   readonly disableSupported: boolean;
-  /** What `nativeSkills: false` leaves, without promising the runtime offers no other skill. */
+  /**
+   * What `nativeSkills: false` leaves, what else it removes, and which runs
+   * reject it, without promising the runtime offers no other skill.
+   */
   readonly notes: string;
 }
 
@@ -118,19 +124,19 @@ export const NATIVE_SKILL_SUPPORT = Object.freeze({
     }),
     disableSupported: true,
     notes:
-      "Project, user, and synced skills dropped through a parent policy, bundled skills turned off, and the main thread filtered to the run's skills. Subagents still list enabled marketplace plugins' skills and managed policy skills, and, where an administrator's policy tier does not merge parent settings, the project and user skills too. No evidence before the first model turn.",
+      "Project, user, and synced skills dropped through a parent policy, which also adopts no plugin placed in a project or user skill folder, so that plugin's agents, hooks, MCP servers, and commands go too, bundled skills and workflows turned off, and the main thread filtered to the run's skills. Subagents still list enabled marketplace plugins' skills and managed policy skills, and, where an administrator's policy tier does not merge parent settings, the project and user skills too. A resumed session keeps the native skill listings and bodies already in its history. No evidence before the first model turn.",
   }),
   codex: Object.freeze({
     folders: AGENTS_FOLDERS,
     disableSupported: true,
     notes:
-      'Bundled skills off and every native SKILL.md found before the run disabled by its path. Skills of plugins enabled in the user configuration, which loads only without a permission policy, and of account-installed plugins stay, as does a skill written after the run starts. Every disabled path appears in the process arguments. No evidence before the first model turn.',
+      'Bundled skills off and every native SKILL.md found before the run disabled by its path. Skills of plugins enabled in the user configuration, which loads only without a permission policy, and of account-installed plugins stay, as does a skill written after the run starts. A resumed session keeps the native skill listings and bodies already in its history. Every disabled path appears in the process arguments. Rejects a run where a native skill root cannot be read or the disabled paths exceed the process-argument bound. No evidence before the first model turn.',
   }),
   gemini: Object.freeze({
     folders: AGENTS_FOLDERS,
     disableSupported: true,
     notes:
-      "The per-run home without the real user skills or .agents, and every workspace skill other than a run skill disabled by name. Extension and built-in skills stay, and a workspace skill named like a run skill shadows it. Rejects a run whose per-run home cannot be built, whose user settings cannot take the names without changing whether the runtime validates them, or whose workspace skill name the runtime's settings expansion would change. No evidence before the first model turn.",
+      "The per-run home without the real user skills or .agents, and every workspace skill other than a run skill disabled by name. Extension and built-in skills stay unless named like a disabled workspace skill, a workspace skill with a run skill's exact name shadows it, and one whose name differs only in letter case stays listed beside it. A resumed session keeps the native skill listings and bodies already in its history. Rejects a run whose per-run home cannot be built, whose workspace skills cannot be read, whose user settings cannot take the names without changing whether the runtime validates them, or whose workspace skill name the runtime's settings expansion would change. No evidence before the first model turn.",
   }),
   kimi: Object.freeze({
     folders: AGENTS_FOLDERS,
@@ -141,7 +147,7 @@ export const NATIVE_SKILL_SUPPORT = Object.freeze({
     folders: AGENTS_FOLDERS,
     disableSupported: true,
     notes:
-      "Managed server only, dropping the .claude/skills and .agents/skills sources and the configured skill paths and URLs. .opencode/skill and .opencode/skills folders, the built-in skill, and the caller's own inline skill entries stay. External mode rejects false.",
+      "Managed server only, dropping the .claude/skills and .agents/skills sources and the skill paths and URLs of configuration files. Skill folders of every configuration directory, the global one, OPENCODE_CONFIG_DIR, and .opencode, skill paths and URLs from organization or managed configuration, the built-in skill, and the caller's own inline skill entries stay. A resumed session keeps the native skill listings and bodies already in its history. External mode rejects false.",
   }),
 }) satisfies Readonly<Record<string, NativeSkillSupport>>;
 
