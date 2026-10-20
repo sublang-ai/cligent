@@ -16,6 +16,7 @@ import {
   mkdir,
   mkdtemp,
   readdir,
+  realpath,
   rm,
   stat,
   writeFile,
@@ -44,6 +45,7 @@ import {
   formatRemovalFailures,
   isStaleCarrierName,
   materializeSkills,
+  prepareNativeSkills,
   prepareSkills,
   removeCarrierPaths,
   type PreparedSkill,
@@ -1565,6 +1567,171 @@ function createdAncestors(path: string, firstCreated: string | undefined) {
   return created;
 }
 
+/** How deep below a root the runtime reads directories for skills (codex-82). */
+const CODEX_SKILL_SCAN_DEPTH = 6;
+/**
+ * codex-82: the longest `skills.config` override a run passes, in UTF-8
+ * bytes: what fills, with a terminator, the 32 pages of 4 KiB Linux allows
+ * one argument string, or on Windows under half its 32,767-character command
+ * line, so that no host refuses to start the runtime.
+ */
+const CODEX_SKILLS_CONFIG_BOUND =
+  process.platform === 'win32' ? 16_000 : 131_071;
+const CODEX_SKILL_FILE = 'SKILL.md';
+
+function isMissingEntry(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+function codexSkillReadFailure(path: string, error: unknown): Error {
+  return new Error(
+    `nativeSkills: false for adapter "${AGENT}" cannot be honored: failed to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
+
+/**
+ * codex-82: the roots to walk, a superset of those the runtime scans:
+ * `.agents/skills` and `.codex/skills` in the working directory and each
+ * ancestor, the Codex home's `skills`, the user's `.agents/skills`, and the
+ * administrator's skills.
+ */
+async function codexNativeSkillRoots(
+  cwd: string | undefined,
+  codexHome: string,
+): Promise<string[]> {
+  const given = resolve(cwd ?? process.cwd());
+  let current: string;
+  try {
+    current = await realpath(given);
+  } catch {
+    current = given;
+  }
+  const roots: string[] = [];
+  for (;;) {
+    roots.push(join(current, '.agents', 'skills'));
+    roots.push(join(current, '.codex', 'skills'));
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  roots.push(join(codexHome, 'skills'));
+  roots.push(join(homedir(), '.agents', 'skills'));
+  roots.push(
+    process.platform === 'win32'
+      ? join(
+          process.env.ProgramData ?? 'C:\\ProgramData',
+          'OpenAI',
+          'Codex',
+          'skills',
+        )
+      : '/etc/codex/skills',
+  );
+  return roots;
+}
+
+/**
+ * codex-82: every regular `SKILL.md` in one root or a directory at most six
+ * levels below it, following directory links once by real path and entering
+ * no dot-directory below the root, as the runtime walks a root.
+ */
+async function walkCodexSkillRoot(
+  root: string,
+  found: string[],
+  seen: Set<string>,
+): Promise<void> {
+  let rootReal: string;
+  try {
+    if (!(await stat(root)).isDirectory()) return;
+    rootReal = await realpath(root);
+  } catch (error) {
+    if (isMissingEntry(error)) return;
+    throw codexSkillReadFailure(root, error);
+  }
+  const walked = new Set([rootReal]);
+  const queue: Array<{ dir: string; depth: number }> = [
+    { dir: root, depth: 0 },
+  ];
+  while (queue.length > 0) {
+    const { dir, depth } = queue.shift()!;
+    let entries: Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (isMissingEntry(error)) continue;
+      throw codexSkillReadFailure(dir, error);
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      if (entry.isFile()) {
+        if (entry.name !== CODEX_SKILL_FILE) continue;
+        let real: string;
+        try {
+          real = await realpath(path);
+        } catch (error) {
+          if (isMissingEntry(error)) continue;
+          throw codexSkillReadFailure(path, error);
+        }
+        if (!seen.has(real)) {
+          seen.add(real);
+          found.push(real);
+        }
+        continue;
+      }
+      if (entry.name.startsWith('.') || depth >= CODEX_SKILL_SCAN_DEPTH) {
+        continue;
+      }
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      let real: string;
+      try {
+        if (!(await stat(path)).isDirectory()) continue;
+        real = await realpath(path);
+      } catch (error) {
+        // A dangling link names no directory to walk.
+        if (isMissingEntry(error)) continue;
+        throw codexSkillReadFailure(path, error);
+      }
+      if (walked.has(real)) continue;
+      walked.add(real);
+      queue.push({ dir: path, depth: depth + 1 });
+    }
+  }
+}
+
+/**
+ * codex-82: the overrides that turn native skill discovery off: bundled
+ * skills off, and every native `SKILL.md` found disabled by its real path in
+ * one `skills.config` override, since a later one replaces an earlier one,
+ * rejecting the run where that override exceeds the process-argument bound.
+ */
+async function codexNativeSkillOverrides(
+  cwd: string | undefined,
+): Promise<string[]> {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const root of await codexNativeSkillRoots(
+    cwd,
+    await resolveCodexHome(),
+  )) {
+    await walkCodexSkillRoot(root, found, seen);
+  }
+  const overrides = ['skills.bundled.enabled=false'];
+  if (found.length > 0) {
+    const listing = `skills.config=[${found
+      .map((path) => `{path=${codexTomlString(path)},enabled=false}`)
+      .join(',')}]`;
+    const bytes = Buffer.byteLength(listing, 'utf8');
+    if (bytes > CODEX_SKILLS_CONFIG_BOUND) {
+      throw new Error(
+        `nativeSkills: false for adapter "${AGENT}" cannot be honored: the paths of ${found.length} native skills make a skills.config override of ${bytes} bytes, beyond the ${CODEX_SKILLS_CONFIG_BOUND}-byte process-argument bound`,
+      );
+    }
+    overrides.push(listing);
+  }
+  return overrides;
+}
+
 async function openCodexSkillCarrier(): Promise<CodexSkillCarrier> {
   const cache = join(await resolveCodexHome(), 'plugins', 'cache');
   await sweepStaleCodexMarketplaces(cache);
@@ -1858,6 +2025,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     let sdkPrompt: Parameters<NonNullable<CodexThread['runStreamed']>>[0] =
       prompt;
     let skills: PreparedSkill[] = [];
+    let nativeSkillOverrides: string[] = [];
     try {
       // attachments-2: the cheap attachment check precedes MCP preparation,
       // which may download and launch the managed browser.
@@ -1884,6 +2052,13 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
         options?.cwd,
         options?.abortSignal,
       );
+      // skills-10: so is the native-skill switch, and codex-82 enumerates
+      // native skills here too, so a run its roots reject neither prepares
+      // the browser nor opens its plugin root.
+      if (prepareNativeSkills(AGENT, options?.nativeSkills)) {
+        nativeSkillOverrides = await codexNativeSkillOverrides(options?.cwd);
+        options?.abortSignal?.throwIfAborted();
+      }
       const mcpServers = await prepareMcpServers(options);
       if (mcpServers !== undefined) options = { ...options, mcpServers };
     } catch (error) {
@@ -1977,10 +2152,12 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       }
     }
 
-    // codex-75: the enable override travels beside codex-70's MCP entries.
+    // codex-75: the enable override travels beside codex-70's MCP entries,
+    // and codex-82's native-skill overrides beside it.
     const codexCliConfigOverrides = [
       ...(mapped.codexCliConfigOverrides ?? []),
       ...(skillCarrier ? [skillCarrier.override] : []),
+      ...nativeSkillOverrides,
     ];
 
     let codexConfigWrapper: CodexConfigOverrideWrapper | undefined;

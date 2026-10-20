@@ -648,6 +648,71 @@ console.log(getSkillSupport('claude')?.namespace); // 'cligent'
 console.log(getSkillSupport('my-agent')); // undefined
 ```
 
+### Native skills
+
+Each runtime also discovers skills by itself: from folders in the project and
+in your home, and from plugins, extensions, or skills it ships with.
+`skills: []` clears only the run's own skills. To keep a call's decisions
+independent of the skills installed around it, such as a routing or judging
+call, or a call whose inputs must be recorded, set `nativeSkills: false`. The
+runtime then offers the run's `skills` and, as far as each adapter can reach,
+nothing else. `true` or omitting the option leaves native discovery as the
+runtime configures it, and a per-run value replaces the constructor default.
+
+```ts
+import { Cligent } from '@sublang/cligent';
+import { CodexAdapter } from '@sublang/cligent/adapters/codex';
+
+const judge = new Cligent(new CodexAdapter(), {
+  cwd: '/path/to/project',
+  nativeSkills: false,
+});
+
+for await (const event of judge.run('Pick the better patch')) {
+  // ...
+}
+```
+
+| Adapter       | How native discovery goes off                                                                                                                                                                                                                                    | What stays                                                                                                                                                                                                                         |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude-code` | a parent policy blocking `.claude/skills` and `~/.claude/skills`, which also leaves out any plugin placed there with its agents, hooks, MCP servers, and commands, bundled skills and workflows off, and the main thread filtered to the run's `cligent:` skills | subagents still list enabled marketplace plugins' skills and managed policy skills, and the project and user skills where an admin policy tier drops parent policy                                                                 |
+| `codex`       | bundled skills off, and every native `SKILL.md` found before the run disabled by its path                                                                                                                                                                        | skills of plugins your user configuration enables, which loads only without a permission policy, and of account-installed plugins                                                                                                  |
+| `gemini`      | the per-run home without your user skills or `~/.agents`, and every workspace skill other than a run skill's disabled by name                                                                                                                                    | extension and built-in skills; a workspace skill with a run skill's exact name still shadows it, and one whose name differs only in letter case stays listed beside it                                                             |
+| `kimi`        | rejected: `kimi acp` offers no per-run lever                                                                                                                                                                                                                     | —                                                                                                                                                                                                                                  |
+| `opencode`    | managed server only: `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`, and inline skill paths and URLs that replace those of your configuration files                                                                                                                        | skill folders in every configuration directory (the global one such as `~/.config/opencode`, `OPENCODE_CONFIG_DIR`, and each `.opencode`), skill paths and URLs from organization or managed configuration, and the built-in skill |
+
+A value other than a boolean is rejected before any provider work. Codex
+rejects the switch where a native skill folder cannot be read or the disabled
+paths would exceed the process-argument limit. Gemini rejects it where the
+child's environment names no home, the working directory resolves to your real
+home, the native sandbox would be on, or a settings layer's reading cannot be
+established; where its workspace skills cannot be read; where your user
+settings hold `skills` or `skills.disabled` in a shape that cannot take more
+names; and where a workspace skill's name would change under Gemini's `$VAR`
+settings expansion. OpenCode's external mode rejects it. No runtime reports
+what the model is offered before the first model turn, so the switch has no
+delivery check; a disabled skill's files stay readable through file tools.
+
+A resumed session keeps the native skill listings and skill bodies already in
+its history, so for an isolated call pass `resume: false`, or resume only a
+session every turn of which used `nativeSkills: false`.
+
+`NATIVE_SKILL_SUPPORT` and `getNativeSkillSupport` give, for each adapter,
+the `folders` where a skill installed persistently is discovered — `project`
+relative to the working directory and `user` relative to your home under the
+runtime's default environment — whether `disableSupported`, and `notes` on
+what `nativeSkills: false` leaves, what else it removes, and which runs reject
+it. A host that installs skills for a runtime can read the folder from there
+instead of hard-coding it.
+
+```ts
+import { NATIVE_SKILL_SUPPORT, getNativeSkillSupport } from '@sublang/cligent';
+
+console.log(NATIVE_SKILL_SUPPORT['claude-code'].folders.project); // '.claude/skills'
+console.log(getNativeSkillSupport('codex')?.folders.user); // '~/.agents/skills'
+console.log(getNativeSkillSupport('kimi')?.disableSupported); // false
+```
+
 ## Session continuity
 
 When an adapter's `done` event includes a `resumeToken`, `Cligent` stores it

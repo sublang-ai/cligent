@@ -21,6 +21,7 @@ import { mediaFromMcpContent } from '../media.js';
 import {
   formatRemovalFailures,
   materializeSkills,
+  prepareNativeSkills,
   prepareSkills,
   removeCarrierPaths,
   type PreparedSkill,
@@ -91,6 +92,8 @@ interface ClaudeSettings {
   fastMode?: boolean;
   disableClaudeAiConnectors?: boolean;
   attribution?: ClaudeAttributionSettings;
+  disableBundledSkills?: boolean;
+  strictPluginOnlyCustomization?: boolean | Array<'skills'>;
   [key: string]: unknown;
 }
 
@@ -219,6 +222,8 @@ interface ClaudeQueryOptions {
   strictMcpConfig?: boolean;
   mcpServers?: Record<string, ClaudeMcpServer>;
   plugins?: ClaudeLocalPlugin[];
+  skills?: string[];
+  managedSettings?: ClaudeSettings;
   permissionMode?: ClaudePermissionMode;
   allowDangerouslySkipPermissions?: boolean;
   canUseTool?: ClaudeCanUseTool;
@@ -1334,6 +1339,9 @@ export function mapAgentOptionsToClaudeQueryOptions(
   );
   const permissionOptions = mapPermissionsToClaudeOptions(options?.permissions);
   const effortOptions = mapEffortToClaudeOptions(options?.effort);
+  // claude-code-90: native skills off adds bundled skills to the flag
+  // settings below and a parent policy and main-thread skill list.
+  const nativeSkillsOff = prepareNativeSkills(AGENT, options?.nativeSkills);
   // claude-code-70: a run's MCP surface is the servers the query passes,
   // never the account's auto-fetched claude.ai connectors, whose
   // "connectors need authorizing" reminder otherwise reaches the transcript.
@@ -1347,6 +1355,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
     attribution: { commit: '', pr: '', sessionUrl: false },
     ...effortOptions.settings,
     ...(options?.fastMode !== undefined ? { fastMode: options.fastMode } : {}),
+    ...(nativeSkillsOff ? { disableBundledSkills: true } : {}),
   };
 
   let cleanupAbort = () => {};
@@ -1427,6 +1436,17 @@ export function mapAgentOptionsToClaudeQueryOptions(
               },
             ],
           }),
+      // claude-code-90: the parent policy drops the project, user, and
+      // synced skill directories in every thread; the SDK skill list filters
+      // the main thread to the run's own skills.
+      ...(nativeSkillsOff
+        ? {
+            managedSettings: { strictPluginOnlyCustomization: ['skills'] },
+            skills: (skillPlugin?.names ?? []).map(
+              (name) => `${SKILL_PLUGIN_NAME}:${name}`,
+            ),
+          }
+        : {}),
       permissionMode: permissionOptions.permissionMode,
       allowDangerouslySkipPermissions:
         permissionOptions.allowDangerouslySkipPermissions,
@@ -1695,6 +1715,8 @@ export class ClaudeCodeAdapter implements AgentAdapter<
           skills.map((skill) => skill.name),
         );
       }
+      // skills-10 / claude-code-90: settled before browser preparation.
+      prepareNativeSkills(AGENT, options?.nativeSkills);
       const attachments = await prepareAttachments(
         AGENT,
         options?.attachments,

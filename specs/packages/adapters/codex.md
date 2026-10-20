@@ -418,12 +418,29 @@ When a run supplies skills, the adapter shall deliver the prepared list [[skills
 | stale marketplace | a cache directory whose name parses from the right as `cligent-<host>-<pid>-<suffix>` with this host's segment and a process identifier the operating system reports as not running on this host, removed before materializing; one that disappears concurrently or whose removal fails is left without failing the run |
 | enable override | one native `plugins.cligent@<marketplace>.enabled=true` override, its key unquoted because the runtime splits an override key at every `.` and the marketplace name holds none, through the SDK constructor's raw `configOverrides` array, as [[codex-70](#codex-70)] carries MCP entries, leaving every other `plugins` entry as configuration loading selects it |
 | listed name | `cligent:<name>`, namespaced by the manifest name [[16]], whose body a `$cligent:<name>` prompt mention injects [[14]] |
-| user-level and project skills, `skills.config` filters, and `--ignore-user-config` | unchanged, because the plugin adds a root beside them |
+| user-level and project skills | unchanged, because the plugin adds a root beside them, unless [[codex-82](#codex-82)] disables them by path |
+| `skills.config` filters and `--ignore-user-config` | unchanged, [[codex-82](#codex-82)] only adding its own rules after the user's |
 | workspace and Codex configuration | no `.codex` or `.agents` workspace entry and no `config.toml` write, the Codex home keeping its authentication and session state as [[codex-31](#codex-31)] preserves them |
 
 ### codex-78
 
 When a run with skills [[codex-75](#codex-75)] ends, the adapter shall remove the plugin root, its marketplace directory, and each parent the run created while empty, through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after terminal `done` once the SDK event iterator has settled, the point at which the SDK stops exposing its child and the only evidence of that child's exit the SDK gives, wherever `runStreamed()` was invoked, including the [[codex-24](#codex-24)], [[codex-25](#codex-25)], [[codex-26](#codex-26)], and [[codex-27](#codex-27)] paths, and otherwise before its terminal or rejection leaves the adapter, even where the run's executable-wrapper cleanup fails first, the rejection then keeping the run's own error.
+
+### codex-82
+
+When a run selects `nativeSkills: false` [[skills-10](../skills.md#skills-10)], the adapter shall enumerate native skills before SDK invocation and add native configuration overrides through the SDK constructor's raw `configOverrides` array, as [[codex-70](#codex-70)] carries MCP entries, through this matrix per [DR-037](../../decisions/037-per-run-native-skill-switch.md), [[10]], [[17]], [[18]], and [[19]]:
+
+| Step or override | Outcome |
+| --- | --- |
+| bundled skills | one `skills.bundled.enabled=false` override, which drops the bundled system skills and keeps plugins |
+| native roots | `.agents/skills` and `.codex/skills` in the real path of the effective working directory, or that directory resolved where it has none, and in each of its ancestors to the filesystem root, `skills` in the Codex home [[codex-75](#codex-75)], `.agents/skills` in the user's home directory, and `/etc/codex/skills`, or `%ProgramData%\OpenAI\Codex\skills` on Windows, a superset of the roots the runtime scans |
+| walk of one root | every regular file named exactly `SKILL.md` in the root or in a directory at most six levels below it, following a link to a directory unless its real path was already walked from that root and entering no directory below the root whose name starts with `.`, as the runtime walks a root; a root that is absent or not a directory contributing nothing |
+| a read failure other than a missing or non-directory entry | reject before managed-browser preparation, any plugin root [[codex-75](#codex-75)], or SDK invocation, naming the path |
+| one or more files found | one `skills.config=[…]` override holding `{path=<real path>,enabled=false}` for each distinct real path in walk order, each path a TOML string as [[codex-70](#codex-70)] writes one, because the runtime disables a skill only by its exact canonical `SKILL.md` path or name, a later `skills.config` override replaces an earlier one, and a rule naming a path it does not load does nothing |
+| no file found | no `skills.config` override |
+| a `skills.config` override longer than 131,071 UTF-8 bytes, which with a terminator fill the 32 pages of 4 KiB that Linux allows one argument string [[20]], or on Windows longer than 16,000 UTF-8 bytes, under half the 32,767 characters of its command line [[21]] | reject before managed-browser preparation, any plugin root, or SDK invocation, naming `nativeSkills`, the number of native skills, and the bound, so that no host refuses to start the runtime |
+| plugin skills, the run's `cligent:<name>` [[codex-75](#codex-75)] included, and the user configuration's own `skills.config` rules | unchanged, the runtime applying the run's rules after the user's |
+| caller abort before or during enumeration | the interrupted terminal [[codex-69](#codex-69)] selects for preparation, without a plugin root or SDK invocation |
 
 ## Internal Behavior
 
@@ -811,6 +828,20 @@ When skill fixtures run with the installed Codex SDK recorded into a fixture sub
 | SDK construction failure, then thread-start failure, each with a forced executable-wrapper cleanup failure | the run's own error as the rejection and a removed marketplace directory [[codex-78](#codex-78)] |
 | forced plugin-root and marketplace removal failures after a successful run, then before a construction-failure rejection | no error event after `done`, then the unremoved path appended to the rejection's message [[codex-78](#codex-78)] |
 
+### codex-83
+
+When native-skill fixtures run with the installed Codex SDK recorded into a fixture subprocess and a throwaway Codex home [[codex-76](#codex-76)], and a throwaway `HOME`, the integration check shall verify each case of this matrix:
+
+| Case | Assertions |
+| --- | --- |
+| `nativeSkills: false` with a run skill, in a working directory two levels below a repository root, where the root and the directory between hold `.agents/skills` and `.codex/skills` skills, one skill six levels below its root, one seven levels below, one under a dot-directory, one through a linked directory, one in the Codex home's `skills`, and one in `HOME`'s `.agents/skills` | the bundled override and one `skills.config` override listing exactly the real path of each skill at most six levels below a root outside a dot-directory, and, through the installed executable's offline prompt-input rendering, a catalog listing only `cligent:<name>` under the run's overrides and every native skill without the two native-skill overrides [[codex-82](#codex-82)] |
+| `nativeSkills: false` without run skills, in a directory without native skills | the bundled override, and no disabled path inside the fixture, any listed path lying under a root outside it [[codex-82](#codex-82)] |
+| `nativeSkills` omitted | neither native-skill override [[codex-82](#codex-82)] |
+| `nativeSkills: false` with a run skill, `browser: true`, and an unreadable directory below a native root | rejection naming that directory without managed-browser preparation, a plugin root, or SDK invocation [[codex-82](#codex-82)] |
+| `nativeSkills: false` with a run skill, `browser: true`, and native skills whose real paths make the `skills.config` override longer than the bound | rejection naming `nativeSkills`, the number of native skills, and the bound without managed-browser preparation, a plugin root, or SDK invocation [[codex-82](#codex-82)] |
+| `nativeSkills: false` without run skills and the caller signal aborted before the run | the interrupted terminal without SDK invocation [[codex-82](#codex-82)] |
+| `nativeSkills: false` with a run skill and the caller signal aborted while enumeration reads a native root | the interrupted terminal without a plugin root or SDK invocation [[codex-82](#codex-82)] |
+
 ### codex-77
 
 Where [[codex-219](#codex-219)]'s credential, retry, and skip preconditions hold, when a run supplies a fixture skill whose body directs a unique token reply and the prompt mentions `$cligent:<name>`, the acceptance check shall verify against the real runtime that the reply carries the token [[codex-75](#codex-75)] and that the plugin cache entry is gone once the adapter's own event stream completes [[codex-78](#codex-78)].
@@ -847,3 +878,8 @@ Where POSIX recording CLI fixtures run through the installed real Codex SDK and 
 [14]: https://learn.chatgpt.com/docs/build-skills "Codex skills, their roots, and skill mentions"
 [15]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/core-plugins/src/store.rs#L85 "Codex 0.159.0 plugin cache under the Codex home"
 [16]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/core-plugins/src/loader.rs#L905 "Codex 0.159.0 plugin skill namespace from the manifest name"
+[17]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/ext/skills/src/host_roots.rs "Codex 0.159.0 skill roots"
+[18]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/ext/skills/src/loader/discovery.rs "Codex 0.159.0 skill root walk"
+[19]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/config/src/skills_config.rs "Codex 0.159.0 skills.config rules"
+[20]: https://man7.org/linux/man-pages/man2/execve.2.html "Linux execve: each argument string limited to 32 pages, MAX_ARG_STRLEN"
+[21]: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw "Windows CreateProcessW: a command line of at most 32,767 characters"

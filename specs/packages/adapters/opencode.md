@@ -582,7 +582,7 @@ When a run supplies skills, the adapter shall deliver the prepared list [[skills
 | --- | --- |
 | external-server mode with a non-empty list | reject before browser preparation because the server's configuration and skill discovery cache are fixed outside the run |
 | carrier root | a `skills` directory, materialized under [[skills-3](../skills.md#skills-3)], inside a new private (`0700`) temporary directory whose `staging` sibling holds the temporary-name writes of [[skills-3](../skills.md#skills-3)], both removed with that directory [[opencode-71](#opencode-71)] |
-| child environment | the parent environment with `OPENCODE_CONFIG_CONTENT` set to the caller's `OPENCODE_CONFIG_CONTENT`, an empty value treated as absent and any other parsed as JSONC into an object, with the run's `<carrier root>/<name>` paths appended to the caller's `skills` array where it is one and otherwise to `skills.paths`, every caller entry kept ahead of the run's and otherwise unchanged, placeholders included, because the runtime substitutes variables in that text before it parses and classifies a `skills` array [[29]][[30]]; a non-empty caller value whose parse is not an object, or whose present `skills` is neither an array nor an object with an absent or array `paths`, is a setup failure before spawn naming that variable, because the run's paths would otherwise replace a caller entry |
+| child environment | the parent environment with `OPENCODE_CONFIG_CONTENT` set to the caller's `OPENCODE_CONFIG_CONTENT`, an empty value treated as absent and any other parsed as JSONC into an object, with the run's `<carrier root>/<name>` paths appended to the caller's `skills` array where it is one and otherwise to `skills.paths`, every caller entry kept ahead of the run's and otherwise unchanged, placeholders included, because the runtime substitutes variables in that text before it parses and classifies a `skills` array [[29]][[30]]; a non-empty caller value whose parse is not an object, or whose present `skills` is neither an array nor an object with an absent or array `paths`, is a setup failure before spawn naming that variable, because the run's paths would otherwise replace a caller entry; [[opencode-72](#opencode-72)] adds its arrays where it turns native discovery off |
 | configured `skills.paths` in the user's or project's configuration files | replaced for the run, because inline configuration replaces arrays [[25]] |
 | listed name | `<name>`; a same-named skill the server discovers elsewhere wins or loses nondeterministically [[26]], which [[opencode-69](#opencode-69)] detects |
 | `skill` permission | unchanged, because [[opencode-7](#opencode-7)] emits no rule for it, so the native default allow applies [[27]] and a user `permission.skill` rule retains native authority |
@@ -600,6 +600,18 @@ Where a managed run supplies skills [[opencode-67](#opencode-67)], when the serv
 ### opencode-71
 
 When a run with skills [[opencode-67](#opencode-67)] ends, the adapter shall remove the carrier root, its `staging` sibling, and their temporary directory through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after [[opencode-36](#opencode-36)]'s teardown completes where the server was spawned, and otherwise before its terminal or rejection leaves the adapter.
+
+### opencode-72
+
+When a run selects `nativeSkills: false` [[skills-10](../skills.md#skills-10)], the adapter shall select this matrix before managed spawn per [DR-037](../../decisions/037-per-run-native-skill-switch.md), [[25]], [[30]], [[31]], and [[32]]:
+
+| State or entry | Outcome |
+| --- | --- |
+| external-server mode | reject before browser preparation, naming `nativeSkills`, because the server's environment, configuration, and skill discovery are fixed outside the run |
+| child environment's `OPENCODE_DISABLE_EXTERNAL_SKILLS` | `1`, replacing any inherited value, which drops the `.claude/skills` and `.agents/skills` sources in the home and in every directory from the working directory to the worktree, and nothing else, and which the runtime reads as a strict boolean whose other spellings fail the server's start |
+| child environment's `OPENCODE_CONFIG_CONTENT` | the value [[opencode-67](#opencode-67)] builds for a run with skills, otherwise the caller's value as [[opencode-67](#opencode-67)] parses it, or `{}` where absent or empty, holding a `skills` the runtime reads as both a path and a URL array, so that inline configuration replaces the arrays of the configuration files: an array `skills` kept, because the runtime classifies its entries into both, and otherwise an object `skills` whose `paths` and `urls` keep the caller's arrays and are empty arrays where absent |
+| a caller value whose parse is not an object, or whose present `skills` is neither an array nor an object whose present `paths` and `urls` are arrays | setup failure before spawn naming that variable, as [[opencode-67](#opencode-67)] fails one |
+| skill folders of every configuration directory (the global configuration directory, `OPENCODE_CONFIG_DIR`, and each `.opencode`) [[33]], `skills.paths` and `skills.urls` from the account organization, managed, or macOS managed-preferences configuration, the built-in skill, and `permission.skill` | unchanged, because no per-run lever short of redirecting configuration reaches those folders, those configuration layers merge after inline configuration [[34]], and nothing reaches the built-in |
 
 ## Internal Behavior
 
@@ -1146,6 +1158,14 @@ When the installed SDK and a recording `opencode serve` fixture, which closes 50
 | spawn failure | no carrier when the error and terminal arrive [[opencode-71](#opencode-71)] |
 | unremovable carrier after a spawn failure, after a spawn failure under caller abort, and after a spawned successful run's teardown | one error ending with a `SKILL_CARRIER_CLEANUP_FAILED` note naming the carrier root; an interrupted `done` and no note; an unchanged success terminal and no error [[opencode-71](#opencode-71)] |
 
+### opencode-73
+
+When the installed SDK and a recording `opencode serve` fixture [[opencode-68](#opencode-68)] receive managed runs selecting `nativeSkills` `false` and omitted, with and without run skills, under a caller `OPENCODE_CONFIG_CONTENT` absent, holding an object `skills` with `paths`, holding an array `skills`, malformed, and holding a non-array `skills.urls`, beside an inherited `OPENCODE_DISABLE_EXTERNAL_SKILLS=TRUE`, the integration check shall verify the spawned environment's flag and inline `skills` arrays with the caller's entries ahead of the run's, the external-mode rejection before browser preparation, the malformed value's setup failure before spawn, and an omitted run's unchanged environment [[opencode-72](#opencode-72)].
+
+### opencode-74
+
+Where the installed OpenCode CLI is on the path, when a managed run selecting `nativeSkills: false` with a run skill, in a working directory holding `.agents/skills`, `.claude/skills`, and `.opencode/skills` skills under a throwaway home whose configuration lists a skill path, reaches its spawn, the acceptance check shall start the CLI's server with the recorded environment and working directory and verify that its skill list holds the run skill, the `.opencode/skills` skill, and the built-in skill, and no `.agents/skills`, `.claude/skills`, or configured-path skill [[opencode-72](#opencode-72)].
+
 ### opencode-70
 
 Where [[opencode-219](#opencode-219)]'s credential, retry, and skip preconditions hold in managed mode, when a run supplies a fixture skill whose body directs a unique token reply and the prompt names the skill, the acceptance check shall verify against the real server that its skill list carries the skill at the carrier location [[opencode-69](#opencode-69)], that the reply carries the token [[opencode-67](#opencode-67)], and that the carrier root is gone once the adapter's own event stream completes [[opencode-71](#opencode-71)].
@@ -1182,3 +1202,7 @@ Where [[opencode-219](#opencode-219)]'s credential, retry, and skip precondition
 [28]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/sdk/js/src/v2/gen/sdk.gen.ts 'OpenCode 1.18.33 SDK app.skills listing'
 [29]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/config/config.ts#L227-L257 'OpenCode 1.18.33 variable substitution before configuration parsing'
 [30]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/config/v2-compat.ts#L154-L162 'OpenCode 1.18.33 skills array classification by URL scheme'
+[31]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/skill/index.ts#L173-L233 "OpenCode 1.18.33 skill sources, the .claude and .agents scan gated by disableExternalSkills"
+[32]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/effect/runtime-flags.ts#L21-L30 "OpenCode 1.18.33 OPENCODE_DISABLE_EXTERNAL_SKILLS read as a strict boolean"
+[33]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/config/paths.ts#L23-L41 "OpenCode 1.18.33 configuration directories: the global one, each .opencode to the worktree and in the home, and OPENCODE_CONFIG_DIR"
+[34]: https://github.com/anomalyco/opencode/blob/v1.18.33/packages/opencode/src/config/config.ts#L482-L548 "OpenCode 1.18.33 organization, managed, and macOS managed-preferences configuration merged after OPENCODE_CONFIG_CONTENT"

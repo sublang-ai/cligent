@@ -3,9 +3,12 @@
 
 // Caller-supplied Agent Skills directories: validation (skills-2), the
 // run-scoped snapshot (skills-3), removal (skills-4), and transport discovery
-// (skills-5, skills-6), per DR-036. Each adapter owns the native carrier that
-// makes a snapshot discoverable; this module owns everything the carriers
-// share, including the carrier name form every adapter's stale sweep parses.
+// (skills-5, skills-6), per DR-036, and the per-run native-skill switch and
+// persistent skill folders (skills-9 to skills-12), per DR-037. Each adapter
+// owns the native carrier that makes a snapshot discoverable and the levers
+// that turn its runtime's own discovery off; this module owns everything the
+// carriers share, including the carrier name form every adapter's stale
+// sweep parses.
 
 import { randomBytes } from 'node:crypto';
 import {
@@ -80,6 +83,99 @@ export function getSkillSupport(agent: string): SkillSupport | undefined {
   return Object.hasOwn(SKILL_SUPPORT, canonical)
     ? SKILL_SUPPORT[canonical as keyof typeof SKILL_SUPPORT]
     : undefined;
+}
+
+/** Where a host installs a persistent skill so a runtime discovers it natively (skills-11). */
+export interface NativeSkillFolders {
+  /**
+   * Relative to a run's working directory; the runtime discovers a skill
+   * there at least when that directory is the root of its repository.
+   */
+  readonly project: string;
+  /**
+   * Relative to the user's home under the runtime's default environment,
+   * written with a leading `~/`.
+   */
+  readonly user: string;
+}
+
+export interface NativeSkillSupport {
+  readonly folders: NativeSkillFolders;
+  /** Whether `nativeSkills: false` is accepted; the notes name runs that still reject it. */
+  readonly disableSupported: boolean;
+  /**
+   * What `nativeSkills: false` leaves, what else it removes, and which runs
+   * reject it, without promising the runtime offers no other skill.
+   */
+  readonly notes: string;
+}
+
+const AGENTS_FOLDERS = Object.freeze({
+  project: '.agents/skills',
+  user: '~/.agents/skills',
+});
+
+/** Persistent skill folders and the per-run native-skill switch (DR-037). */
+export const NATIVE_SKILL_SUPPORT = Object.freeze({
+  'claude-code': Object.freeze({
+    folders: Object.freeze({
+      project: '.claude/skills',
+      user: '~/.claude/skills',
+    }),
+    disableSupported: true,
+    notes:
+      "Project, user, and synced skills dropped through a parent policy, which also adopts no plugin placed in a project or user skill folder, so that plugin's agents, hooks, MCP servers, and commands go too, bundled skills and workflows turned off, and the main thread filtered to the run's skills. Subagents still list enabled marketplace plugins' skills and managed policy skills, and, where an administrator's policy tier does not merge parent settings, the project and user skills too. A resumed session keeps the native skill listings and bodies already in its history. No evidence before the first model turn.",
+  }),
+  codex: Object.freeze({
+    folders: AGENTS_FOLDERS,
+    disableSupported: true,
+    notes:
+      'Bundled skills off and every native SKILL.md found before the run disabled by its path. Skills of plugins enabled in the user configuration, which loads only without a permission policy, and of account-installed plugins stay, as does a skill written after the run starts. A resumed session keeps the native skill listings and bodies already in its history. Every disabled path appears in the process arguments. Rejects a run where a native skill root cannot be read or the disabled paths exceed the process-argument bound. No evidence before the first model turn.',
+  }),
+  gemini: Object.freeze({
+    folders: AGENTS_FOLDERS,
+    disableSupported: true,
+    notes:
+      "The per-run home without the real user skills or .agents, and every workspace skill other than a run skill disabled by name. Extension and built-in skills stay unless named like a disabled workspace skill, a workspace skill with a run skill's exact name shadows it, and one whose name differs only in letter case stays listed beside it. A resumed session keeps the native skill listings and bodies already in its history. Rejects a run whose per-run home cannot be built, whose workspace skills cannot be read, whose user settings cannot take the names without changing whether the runtime validates them, or whose workspace skill name the runtime's settings expansion would change. No evidence before the first model turn.",
+  }),
+  kimi: Object.freeze({
+    folders: AGENTS_FOLDERS,
+    disableSupported: false,
+    notes: "No per-run lever reaches Kimi's skill roots.",
+  }),
+  opencode: Object.freeze({
+    folders: AGENTS_FOLDERS,
+    disableSupported: true,
+    notes:
+      "Managed server only, dropping the .claude/skills and .agents/skills sources and the skill paths and URLs of configuration files. Skill folders of every configuration directory (the global one, OPENCODE_CONFIG_DIR, and .opencode), skill paths and URLs from organization or managed configuration, the built-in skill, and the caller's own inline skill entries stay. A resumed session keeps the native skill listings and bodies already in its history. External mode rejects false.",
+  }),
+}) satisfies Readonly<Record<string, NativeSkillSupport>>;
+
+export function getNativeSkillSupport(
+  agent: string,
+): NativeSkillSupport | undefined {
+  const canonical = agent === 'claude' ? 'claude-code' : agent;
+  return Object.hasOwn(NATIVE_SKILL_SUPPORT, canonical)
+    ? NATIVE_SKILL_SUPPORT[canonical as keyof typeof NATIVE_SKILL_SUPPORT]
+    : undefined;
+}
+
+/**
+ * skills-10: whether a built-in adapter's run turns its runtime's own skill
+ * discovery off, settled before any provider work. Rejects a value other
+ * than a boolean, and `false` where the adapter has no lever.
+ */
+export function prepareNativeSkills(agent: string, value: unknown): boolean {
+  if (value === undefined || value === true) return false;
+  if (value !== false) {
+    throw new Error(`nativeSkills for adapter "${agent}" must be a boolean`);
+  }
+  if (!getNativeSkillSupport(agent)?.disableSupported) {
+    throw new Error(
+      `nativeSkills: false for adapter "${agent}" cannot be honored: its runtime offers no per-run lever that turns its own skill discovery off`,
+    );
+  }
+  return true;
 }
 
 /** The error code a carrier removal failure reports before the terminal (skills-4). */

@@ -35,6 +35,7 @@ import { mapWritablePathsPermission } from '../permissions.js';
 import {
   formatRemovalFailures,
   materializeSkills,
+  prepareNativeSkills,
   prepareSkills,
   removeCarrierPaths,
   SKILL_CARRIER_CLEANUP_FAILED,
@@ -95,6 +96,8 @@ const PERMISSION_REPLY_TIMEOUT_MS = 5_000;
 const STREAM_CONNECT_GRACE_MS = 250;
 const SKILL_LISTING_TIMEOUT_MS = 5_000;
 const OPENCODE_CONFIG_CONTENT = 'OPENCODE_CONFIG_CONTENT';
+// opencode-72: drops the `.claude/skills` and `.agents/skills` sources only.
+const OPENCODE_DISABLE_EXTERNAL_SKILLS = 'OPENCODE_DISABLE_EXTERNAL_SKILLS';
 const CLIGENT_SESSION_TITLE = 'Cligent run';
 let lastPromptTimestamp = 0;
 let promptIdCounter = 0;
@@ -1213,11 +1216,15 @@ function describeJsonValue(value: unknown): string {
  * write, and return how the run's skill paths join it (opencode-67): after
  * the caller's own `skills` array where it is one, otherwise after
  * `skills.paths`, keeping every caller entry, placeholders included, for the
- * runtime's own substitution and classification.
+ * runtime's own substitution and classification. With native skills off
+ * (opencode-72), an object `skills` also carries `paths` and `urls` arrays,
+ * so the configuration files' arrays are replaced.
  */
 function prepareOpenCodeSkillConfig(
   value: string | undefined,
+  nativeSkillsOff = false,
 ): (paths: readonly string[]) => string {
+  const subject = nativeSkillsOff ? 'OpenCode nativeSkills' : 'OpenCode skills';
   let config: Record<string, unknown> = {};
   if (value !== undefined && value !== '') {
     let parsed: unknown;
@@ -1225,14 +1232,14 @@ function prepareOpenCodeSkillConfig(
       parsed = parseJsonc(value);
     } catch (error) {
       throw new Error(
-        `OpenCode skills cannot extend ${OPENCODE_CONFIG_CONTENT}: it does not parse as JSONC (${
+        `${subject} cannot extend ${OPENCODE_CONFIG_CONTENT}: it does not parse as JSONC (${
           error instanceof Error ? error.message : String(error)
         })`,
       );
     }
     if (!isJsonObject(parsed)) {
       throw new Error(
-        `OpenCode skills cannot extend ${OPENCODE_CONFIG_CONTENT}: it parses to ${describeJsonValue(parsed)}, not an object`,
+        `${subject} cannot extend ${OPENCODE_CONFIG_CONTENT}: it parses to ${describeJsonValue(parsed)}, not an object`,
       );
     }
     config = parsed;
@@ -1240,20 +1247,34 @@ function prepareOpenCodeSkillConfig(
   const skills = config.skills;
   let place: (paths: readonly string[]) => unknown;
   if (skills === undefined) {
-    place = (paths) => ({ paths: [...paths] });
+    place = (paths) =>
+      nativeSkillsOff ? { paths: [...paths], urls: [] } : { paths: [...paths] };
   } else if (Array.isArray(skills)) {
     place = (paths) => [...(skills as unknown[]), ...paths];
   } else if (!isJsonObject(skills)) {
     throw new Error(
-      `OpenCode skills cannot extend ${OPENCODE_CONFIG_CONTENT}: its skills is ${describeJsonValue(skills)} rather than an array or an object`,
+      `${subject} cannot extend ${OPENCODE_CONFIG_CONTENT}: its skills is ${describeJsonValue(skills)} rather than an array or an object`,
     );
-  } else if (skills.paths === undefined || Array.isArray(skills.paths)) {
-    const existing = (skills.paths as unknown[] | undefined) ?? [];
-    place = (paths) => ({ ...skills, paths: [...existing, ...paths] });
-  } else {
+  } else if (skills.paths !== undefined && !Array.isArray(skills.paths)) {
     throw new Error(
-      `OpenCode skills cannot extend ${OPENCODE_CONFIG_CONTENT}: its skills.paths is ${describeJsonValue(skills.paths)} rather than an array`,
+      `${subject} cannot extend ${OPENCODE_CONFIG_CONTENT}: its skills.paths is ${describeJsonValue(skills.paths)} rather than an array`,
     );
+  } else if (
+    nativeSkillsOff &&
+    skills.urls !== undefined &&
+    !Array.isArray(skills.urls)
+  ) {
+    throw new Error(
+      `${subject} cannot extend ${OPENCODE_CONFIG_CONTENT}: its skills.urls is ${describeJsonValue(skills.urls)} rather than an array`,
+    );
+  } else {
+    const existing = (skills.paths as unknown[] | undefined) ?? [];
+    const urls = (skills.urls as unknown[] | undefined) ?? [];
+    place = (paths) => ({
+      ...skills,
+      paths: [...existing, ...paths],
+      ...(nativeSkillsOff ? { urls: [...urls] } : {}),
+    });
   }
   return (paths) => JSON.stringify({ ...config, skills: place(paths) });
 }
@@ -2941,6 +2962,13 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
       throw new Error(
         "OpenCode skills require managed mode; an external server's configuration and skill discovery cache are fixed outside the run",
       );
+    // skills-10 / opencode-72: the switch is settled before browser
+    // preparation, and an external server's environment is not the run's.
+    const nativeSkillsOff = prepareNativeSkills(AGENT, options?.nativeSkills);
+    if (this.mode === 'external' && nativeSkillsOff)
+      throw new Error(
+        "OpenCode nativeSkills: false requires managed mode; an external server's environment, configuration, and skill discovery are fixed outside the run",
+      );
     if (
       options?.browser === true ||
       Object.keys(normalizeMcpServers(options?.mcpServers) ?? {}).length > 0
@@ -4537,11 +4565,28 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
         );
         const managedArgs = createManagedServerArgs(this.serverUrl);
         let managedEnv: NodeJS.ProcessEnv | undefined;
+        // opencode-72: native skills off drops the `.claude` and `.agents`
+        // sources through the runtime flag, which it parses strictly, and the
+        // configured skill arrays through inline configuration.
+        const nativeSkillsEnv: NodeJS.ProcessEnv = nativeSkillsOff
+          ? { [OPENCODE_DISABLE_EXTERNAL_SKILLS]: '1' }
+          : {};
+        if (nativeSkillsOff && skills.length === 0) {
+          managedEnv = {
+            ...process.env,
+            ...nativeSkillsEnv,
+            [OPENCODE_CONFIG_CONTENT]: prepareOpenCodeSkillConfig(
+              process.env[OPENCODE_CONFIG_CONTENT],
+              true,
+            )([]),
+          };
+        }
         if (skills.length > 0) {
           // opencode-67: the caller's inline configuration is read before
           // any carrier write, so a value the run cannot extend fails here.
           const composeConfig = prepareOpenCodeSkillConfig(
             process.env[OPENCODE_CONFIG_CONTENT],
+            nativeSkillsOff,
           );
           const carrier = await createOpenCodeSkillCarrier();
           skillCarrier = carrier;
@@ -4556,6 +4601,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
           }
           managedEnv = {
             ...process.env,
+            ...nativeSkillsEnv,
             [OPENCODE_CONFIG_CONTENT]: composeConfig(
               skills.map((skill) => join(carrier.root, skill.name)),
             ),

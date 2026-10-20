@@ -67,6 +67,7 @@ import {
   isPathWithin,
   isStaleCarrierName,
   materializeSkills,
+  prepareNativeSkills,
   prepareSkills,
   processCarrierSuffix,
   removeCarrierPaths,
@@ -1332,6 +1333,9 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
       `npm install -g ${AGENT_RUNTIME_TARGETS.kimi[0]!.repairSpec}`,
     );
     const mapped = mapAgentOptionsToKimiOptions(options);
+    // kimi-54: no per-run lever reaches Kimi's skill roots, so
+    // `nativeSkills: false` rejects before any workspace write or spawn.
+    prepareNativeSkills(AGENT, options?.nativeSkills);
     const promptContent: ContentBlock[] = [{ type: 'text', text: prompt }];
     if (options?.attachments !== undefined) {
       try {

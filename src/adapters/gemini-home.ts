@@ -38,6 +38,8 @@ const REGISTRY_FILE = 'projects.json';
 // that carries a run's skills.
 const SKILLS_DIR = 'skills';
 const SKILL_FILE = 'SKILL.md';
+// gemini-58: the home directory the runtime reads only for user-tier skills.
+const AGENTS_DIR = '.agents';
 // Temporary-name writes for the run's skills: in the overlay home, which no
 // Gemini skill scan reaches, on the same filesystem as the skills directory.
 const SKILL_STAGING = '.cligent-staging';
@@ -59,6 +61,11 @@ const REGISTRY_SLUG = /^[a-z0-9-]+$/;
 export interface GeminiHomeOverlayOptions {
   /** gemini-51: the run's prepared skills, delivered as user-tier skills. */
   readonly skills?: readonly PreparedSkill[];
+  /**
+   * gemini-58: native skills off, so the user tier holds only the run's
+   * skills: no link to the real user skills or the real `.agents`.
+   */
+  readonly isolateSkills?: boolean;
   /** Cancels skill materialization. */
   readonly signal?: AbortSignal;
   /**
@@ -219,6 +226,66 @@ async function geminiSkillName(path: string, entry: string): Promise<string> {
   } catch {
     return entry;
   }
+}
+
+function isMissing(error: unknown): boolean {
+  const code = errorCode(error);
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
+function readFailure(path: string, error: unknown): Error {
+  return new Error(
+    `failed to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
+
+/**
+ * gemini-58: the names Gemini gives the skills one workspace skills
+ * directory holds, as its discovery glob loads them: each entry not named
+ * with a leading `.` that is a directory holding `SKILL.md`, or is itself a
+ * file named `SKILL.md`, whose frontmatter parses. A missing directory holds
+ * none; another read failure rejects, naming the path.
+ */
+export async function geminiSkillNamesIn(dir: string): Promise<string[]> {
+  let entries: string[];
+  try {
+    if (!(await stat(dir)).isDirectory()) return [];
+    entries = await readdir(dir);
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw readFailure(dir, error);
+  }
+  entries.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const names: string[] = [];
+  for (const entry of entries) {
+    if (entry.startsWith('.')) continue;
+    const path = join(dir, entry);
+    let file: string | undefined;
+    try {
+      const stats = await stat(path);
+      if (stats.isDirectory()) {
+        const nested = join(path, SKILL_FILE);
+        file = (await stat(nested)).isFile() ? nested : undefined;
+      } else if (stats.isFile() && isSkillFileName(entry)) {
+        file = path;
+      }
+    } catch (error) {
+      if (isMissing(error)) continue;
+      throw readFailure(path, error);
+    }
+    if (file === undefined) continue;
+    let content: string;
+    try {
+      content = await readFile(file, 'utf8');
+    } catch (error) {
+      if (isMissing(error)) continue;
+      throw readFailure(file, error);
+    }
+    const match = SKILL_FRONTMATTER.exec(content);
+    const name = match ? parseSkillFrontmatter(match[1]!) : undefined;
+    if (name !== undefined) names.push(name.replace(SKILL_NAME_UNSAFE, '-'));
+  }
+  return names;
 }
 
 /**
@@ -545,8 +612,13 @@ export async function createGeminiHomeOverlay(
   const realGeminiDir = join(realHome, GEMINI_DIR);
   const skills = options.skills ?? [];
   const runSkillNames = new Set(skills.map((skill) => skill.name));
+  const isolate = options.isolateSkills === true;
+  // gemini-51 / gemini-58: the overlay owns a real skills directory.
+  const ownsSkillsDir = skills.length > 0 || isolate;
   const geminiSkip = new Set([SETTINGS_FILE]);
-  if (skills.length > 0) geminiSkip.add(SKILLS_DIR);
+  if (ownsSkillsDir) geminiSkip.add(SKILLS_DIR);
+  const homeSkip = new Set([GEMINI_DIR]);
+  if (isolate) homeSkip.add(AGENTS_DIR);
 
   const home = options.home ?? (await reserveGeminiHome());
   const links = new Map<string, string>();
@@ -558,18 +630,20 @@ export async function createGeminiHomeOverlay(
       await mkdir(join(realGeminiDir, name), { recursive: true });
     }
     await mkdir(overlayGeminiDir, { mode: 0o700 });
-    if (skills.length > 0) {
+    if (ownsSkillsDir) {
       // The run's skills first, so no link can take one of their names.
       await mkdir(overlaySkillsDir, { mode: 0o700 });
-      await materializeSkills(skills, {
-        root: overlaySkillsDir,
-        staging: join(home, SKILL_STAGING),
-        signal: options.signal,
-      });
+      if (skills.length > 0) {
+        await materializeSkills(skills, {
+          root: overlaySkillsDir,
+          staging: join(home, SKILL_STAGING),
+          signal: options.signal,
+        });
+      }
     }
-    await linkEntries(realHome, home, new Set([GEMINI_DIR]), links);
+    await linkEntries(realHome, home, homeSkip, links);
     await linkEntries(realGeminiDir, overlayGeminiDir, geminiSkip, links);
-    if (skills.length > 0) {
+    if (skills.length > 0 && !isolate) {
       await linkSkillEntries(
         realSkillsDir,
         overlaySkillsDir,
@@ -618,7 +692,7 @@ export async function createGeminiHomeOverlay(
       // gemini-45: the run's skills and the links beside them stay behind;
       // every other entry Gemini created there reaches the real skills.
       if (
-        skills.length > 0 &&
+        ownsSkillsDir &&
         (await lstatOrUndefined(overlaySkillsDir))?.isDirectory()
       ) {
         await reconcileEntries(

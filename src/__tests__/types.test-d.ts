@@ -12,11 +12,13 @@ import {
   Cligent,
   EFFORT_SUPPORT,
   FAST_MODE_SUPPORT,
+  NATIVE_SKILL_SUPPORT,
   SKILL_SUPPORT,
   SUBAGENT_MODEL_SUPPORT,
   assertFastModeSupported,
   assertSubagentModelSupported,
   assertSupportedEffort,
+  getNativeSkillSupport,
   getSkillSupport,
   isFastModeSupported,
   isEffortSupported,
@@ -48,6 +50,7 @@ import type {
   InputTokenUsage,
   KimiEffort,
   ModelDiscovery,
+  NativeSkillSupport,
   OpenCodeEffort,
   OutputTokenUsage,
   PermissionCapability,
@@ -868,6 +871,59 @@ describe('core types', () => {
     let asserted: string = 'claude-code';
     assertSubagentModelSupported(asserted);
     expectTypeOf(asserted).toMatchTypeOf<'claude' | 'claude-code'>();
+  });
+});
+
+describe('nativeSkills option', () => {
+  // skills-9 and engine-1: an optional boolean on every option type, typed
+  // for every built-in adapter and engine entry point; adapters without a
+  // lever reject `false` at run time (skills-10).
+  it('places an optional boolean on every option type', () => {
+    expectTypeOf<AgentOptions['nativeSkills']>().toEqualTypeOf<
+      boolean | undefined
+    >();
+    expectTypeOf<CligentOptions['nativeSkills']>().toEqualTypeOf<
+      boolean | undefined
+    >();
+    expectTypeOf<RunOptions['nativeSkills']>().toEqualTypeOf<
+      boolean | undefined
+    >();
+
+    const claude = new Cligent(new ClaudeCodeAdapter(), {
+      nativeSkills: false,
+    });
+    void claude.run('prompt', { nativeSkills: true });
+    void new CodexAdapter().run('prompt', { nativeSkills: false });
+    void new GeminiAdapter().run('prompt', { nativeSkills: false });
+    void new KimiAdapter().run('prompt', { nativeSkills: true });
+    void new OpenCodeAdapter().run('prompt', { nativeSkills: false });
+    void runAgent(
+      'codex',
+      'prompt',
+      { nativeSkills: false },
+      new AdapterRegistry(),
+    );
+    void Cligent.parallel([
+      { agent: claude, prompt: 'prompt', overrides: { nativeSkills: true } },
+    ]);
+
+    // @ts-expect-error - the switch is a boolean, never a string
+    const spelled: AgentOptions = { nativeSkills: 'off' };
+    void spelled;
+  });
+
+  // skills-11 and skills-12: readonly descriptors keyed by built-in adapter.
+  it('types the frozen native-skill descriptors and their lookup', () => {
+    expectTypeOf(NATIVE_SKILL_SUPPORT.codex).toMatchTypeOf<NativeSkillSupport>();
+    expectTypeOf(
+      NATIVE_SKILL_SUPPORT['claude-code'].folders.project,
+    ).toEqualTypeOf<'.claude/skills'>();
+    expectTypeOf(
+      NATIVE_SKILL_SUPPORT.kimi.disableSupported,
+    ).toEqualTypeOf<false>();
+    expectTypeOf(getNativeSkillSupport).returns.toEqualTypeOf<
+      NativeSkillSupport | undefined
+    >();
   });
 });
 

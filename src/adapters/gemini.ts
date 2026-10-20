@@ -72,10 +72,15 @@ import type {
 import {
   createGeminiHomeOverlay,
   foldGeminiSkillName,
+  geminiSkillNamesIn,
   reserveGeminiHome,
   spellGeminiHome,
 } from './gemini-home.js';
-import { prepareSkills, type PreparedSkill } from '../skills.js';
+import {
+  prepareNativeSkills,
+  prepareSkills,
+  type PreparedSkill,
+} from '../skills.js';
 import { parseNDJSON } from './ndjson.js';
 import { doneResumeTokenPayload } from './resume-token.js';
 import { ordinaryErrorCode } from './session-resume.js';
@@ -716,6 +721,11 @@ export interface GeminiSettingsConfig {
   mcpServers?: McpServers;
   /** gemini-51: the run's prepared skills. */
   skills?: readonly PreparedSkill[];
+  /**
+   * gemini-58: native skills off, with the workspace skill names to add to
+   * the user-scope `skills.disabled`.
+   */
+  nativeSkillsOff?: { readonly disabled: readonly string[] };
 }
 
 interface GeminiSettingsOverride {
@@ -727,6 +737,7 @@ interface GeminiSettingsOverride {
   deliversAlias?: boolean;
   deliversMcp?: boolean;
   deliversSkills?: boolean;
+  deliversNativeSkillsOff?: boolean;
   cleanup: () => Promise<void>;
 }
 
@@ -1790,6 +1801,7 @@ async function settleGeminiLayers<T>(
   decision: string,
   decide: (settings: GeminiLayerSettings) => Promise<T>,
   same: (left: T, right: T) => boolean,
+  refusal: string = SKILLS_SETTLE_REFUSAL,
 ): Promise<T> {
   const { readings, combinations, outcomes } = await geminiLayerOutcomes(
     layers,
@@ -1851,7 +1863,7 @@ async function settleGeminiLayers<T>(
       : `the runtime coerces ${coerced.length > 1 ? 'those strings' : 'that string'} only where the whole file validates, which this adapter does not check`,
   );
   throw new Error(
-    `skills for adapter "${AGENT}" cannot be delivered while ${named.join(' and ')} would change ${decision}, because ${reasons.join(', and ')}`,
+    `${refusal} while ${named.join(' and ')} would change ${decision}, because ${reasons.join(', and ')}`,
   );
 }
 
@@ -2224,6 +2236,7 @@ async function geminiSandboxRequested(
   context: GeminiSettingsOverrideContext,
   userSettings: Record<string, unknown>,
   settle: boolean,
+  refusal?: string,
 ): Promise<boolean> {
   // A child already in a sandbox starts none, whatever its `.env` holds.
   if (context.runtimeEnv.get('SANDBOX')) return false;
@@ -2271,6 +2284,7 @@ async function geminiSandboxRequested(
       'whether its native sandbox starts',
       decide,
       (left, right) => left === right,
+      refusal,
     );
   }
   return (
@@ -2661,6 +2675,11 @@ const UNDELIVERED_ALIAS_OVERRIDE: GeminiSettingsOverride = {
 };
 
 const SKILLS_HOME_REFUSAL = `skills for adapter "${AGENT}" require a working directory different from its user home`;
+const SKILLS_SETTLE_REFUSAL = `skills for adapter "${AGENT}" cannot be delivered`;
+// gemini-58: the refusals of a run turning native skills off.
+const NATIVE_SKILLS_REFUSAL = `nativeSkills: false for adapter "${AGENT}" cannot be honored`;
+const NATIVE_SKILLS_HOME_REFUSAL = `nativeSkills: false for adapter "${AGENT}" requires a working directory different from its user home`;
+const NATIVE_SKILLS_SANDBOX_REFUSAL = `${NATIVE_SKILLS_REFUSAL} while its native sandbox is enabled`;
 const SKILLS_SANDBOX_REFUSAL = `skills for adapter "${AGENT}" cannot be delivered while its native sandbox is enabled`;
 
 /**
@@ -2900,6 +2919,131 @@ function enableRunSkills(
 }
 
 /**
+ * gemini-58: the user settings, after gemini-51's rewrite, must take the
+ * workspace names without changing whether the runtime's validation
+ * accepts the file: a `skills` object whose `disabled`, where present, is a
+ * list.
+ */
+function assertGeminiDisabledListWritable(
+  settings: Record<string, unknown>,
+  path: string,
+  written: Record<string, unknown> = settings,
+): void {
+  const section = settings.skills;
+  if (section === undefined) return;
+  if (!isGeminiPlainObject(section)) {
+    throw new Error(
+      `${NATIVE_SKILLS_REFUSAL} while the Gemini user settings at ${path} hold skills as ${JSON.stringify(section)}, because adding names to skills.disabled would change whether the runtime's validation accepts the file`,
+    );
+  }
+  if (section.disabled !== undefined && !Array.isArray(section.disabled)) {
+    // Quote the value as the user wrote it, before gemini-51's rewrite.
+    const value = isGeminiPlainObject(written.skills)
+      ? written.skills.disabled
+      : section.disabled;
+    throw new Error(
+      `${NATIVE_SKILLS_REFUSAL} while the Gemini user settings at ${path} hold skills.disabled as ${JSON.stringify(value)}, because adding names to it would change whether the runtime's validation accepts the file`,
+    );
+  }
+}
+
+/**
+ * gemini-58: a run turning native skills off needs the per-run home, so the
+ * conditions that stop one reject the run, and every workspace skill other
+ * than a run skill is named for the user-scope `skills.disabled`. Returns
+ * those names in the order the runtime discovers them.
+ */
+async function prepareGeminiNativeSkills(
+  context: GeminiSettingsOverrideContext,
+  skills: readonly PreparedSkill[],
+): Promise<string[]> {
+  let realHome: string;
+  try {
+    realHome = geminiRealHome(context);
+  } catch (error) {
+    if (error instanceof CapabilityError) {
+      throw new CapabilityError(
+        error.code,
+        `${NATIVE_SKILLS_REFUSAL}: ${error.message}`,
+      );
+    }
+    throw error;
+  }
+  if (await geminiWorkspaceIsHome(context, realHome)) {
+    throw new CapabilityError('workspace-is-home', NATIVE_SKILLS_HOME_REFUSAL);
+  }
+  const settingsPath = join(realHome, '.gemini', 'settings.json');
+  const userSettings = await readGeminiSettingsFile(
+    settingsPath,
+    'user settings',
+  );
+  if (
+    await geminiSandboxRequested(
+      context,
+      userSettings,
+      true,
+      skills.length > 0 ? undefined : NATIVE_SKILLS_REFUSAL,
+    )
+  ) {
+    throw new CapabilityError('native-sandbox', NATIVE_SKILLS_SANDBOX_REFUSAL);
+  }
+  const env = context.runtimeEnv;
+  const taken = new Set(skills.map((skill) => foldGeminiSkillName(skill.name)));
+  const names: string[] = [];
+  for (const dir of [
+    join(context.childCwd, '.gemini', 'skills'),
+    join(context.childCwd, '.agents', 'skills'),
+  ]) {
+    let found: string[];
+    try {
+      found = await geminiSkillNamesIn(dir);
+    } catch (error) {
+      throw new Error(
+        `${NATIVE_SKILLS_REFUSAL}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    for (const name of found) {
+      const folded = foldGeminiSkillName(name);
+      if (taken.has(folded)) continue;
+      taken.add(folded);
+      if (expandGeminiSettingsString(name, env) !== name) {
+        throw new Error(
+          `${NATIVE_SKILLS_REFUSAL} while the workspace skill name ${JSON.stringify(name)} changes under the runtime's settings expansion, which would read another name`,
+        );
+      }
+      names.push(name);
+    }
+  }
+  if (names.length > 0) {
+    assertGeminiDisabledListWritable(
+      skills.length > 0
+        ? enableRunSkills(userSettings, skills, env)
+        : userSettings,
+      settingsPath,
+      userSettings,
+    );
+  }
+  return names;
+}
+
+/** gemini-58: appends the workspace names to the user-scope `skills.disabled`. */
+function disableGeminiWorkspaceSkills(
+  settings: Record<string, unknown>,
+  names: readonly string[],
+  path: string,
+): Record<string, unknown> {
+  if (names.length === 0) return settings;
+  assertGeminiDisabledListWritable(settings, path);
+  const section =
+    (settings.skills as Record<string, unknown> | undefined) ?? {};
+  const disabled = (section.disabled as unknown[] | undefined) ?? [];
+  return {
+    ...settings,
+    skills: { ...section, disabled: [...disabled, ...names] },
+  };
+}
+
+/**
  * gemini-34: delivers an effort alias through a per-run user-settings home,
  * the one settings layer every supported Gemini CLI loads from a path the
  * caller chooses.
@@ -2912,7 +3056,10 @@ async function defaultCreateSettingsOverride(
   const hasMcpServers = Object.keys(servers ?? {}).length > 0;
   const skills = settingsConfig.skills ?? [];
   const hasSkills = skills.length > 0;
-  if (!settingsConfig.modelAlias && !hasMcpServers && !hasSkills) {
+  // gemini-58: native skills off always takes the per-run home.
+  const nativeSkillsOff = settingsConfig.nativeSkillsOff;
+  const isolate = nativeSkillsOff !== undefined;
+  if (!settingsConfig.modelAlias && !hasMcpServers && !hasSkills && !isolate) {
     return NOOP_SETTINGS_OVERRIDE;
   }
 
@@ -2922,7 +3069,12 @@ async function defaultCreateSettingsOverride(
   } catch (error) {
     // gemini-34: with no home to mirror, an alias alone goes undelivered,
     // as for a workspace that is the home.
-    if (hasMcpServers || hasSkills || !(error instanceof CapabilityError)) {
+    if (
+      hasMcpServers ||
+      hasSkills ||
+      isolate ||
+      !(error instanceof CapabilityError)
+    ) {
       throw error;
     }
     return UNDELIVERED_ALIAS_OVERRIDE;
@@ -2935,6 +3087,7 @@ async function defaultCreateSettingsOverride(
         'Gemini per-run MCP servers require a working directory different from its user home',
       );
     if (hasSkills) throw new Error(SKILLS_HOME_REFUSAL);
+    if (isolate) throw new Error(NATIVE_SKILLS_HOME_REFUSAL);
     return UNDELIVERED_ALIAS_OVERRIDE;
   }
 
@@ -2943,12 +3096,20 @@ async function defaultCreateSettingsOverride(
     settingsPath,
     'user settings',
   );
-  if (await geminiSandboxRequested(context, userSettings, hasSkills)) {
+  if (
+    await geminiSandboxRequested(
+      context,
+      userSettings,
+      hasSkills || isolate,
+      hasSkills ? undefined : NATIVE_SKILLS_REFUSAL,
+    )
+  ) {
     if (hasMcpServers)
       throw new Error(
         'Gemini per-run MCP servers cannot be delivered while its native sandbox is enabled',
       );
     if (hasSkills) throw new Error(SKILLS_SANDBOX_REFUSAL);
+    if (isolate) throw new Error(NATIVE_SKILLS_SANDBOX_REFUSAL);
     return UNDELIVERED_ALIAS_OVERRIDE;
   }
   const env = context.runtimeEnv;
@@ -2994,16 +3155,29 @@ async function defaultCreateSettingsOverride(
     };
   }
   if (hasSkills) settings = enableRunSkills(settings, skills, env);
+  if (isolate) {
+    settings = disableGeminiWorkspaceSkills(
+      settings,
+      nativeSkillsOff.disabled,
+      settingsPath,
+    );
+  }
   const overlay = await createGeminiHomeOverlay(
     realHome,
     `${JSON.stringify(settings, null, 2)}\n`,
-    { skills, signal: context.signal, home: await context.overlay.claim() },
+    {
+      skills,
+      ...(isolate ? { isolateSkills: true } : {}),
+      signal: context.signal,
+      home: await context.overlay.claim(),
+    },
   );
 
   return {
     env: { GEMINI_CLI_HOME: overlay.home },
     ...(hasMcpServers ? { deliversMcp: true } : {}),
     ...(hasSkills ? { deliversSkills: true } : {}),
+    ...(isolate ? { deliversNativeSkillsOff: true } : {}),
     cleanup: overlay.close,
   };
 }
@@ -3527,6 +3701,14 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
         throw new Error('Gemini run aborted during skill preparation');
       }
       if (skills.length > 0) await assertGeminiSkillsContext(context);
+      // skills-10, gemini-58: the switch and its per-run home are settled
+      // before attachments are staged or the browser is prepared.
+      const nativeSkillsDisabled = prepareNativeSkills(
+        AGENT,
+        options?.nativeSkills,
+      )
+        ? await prepareGeminiNativeSkills(context, skills)
+        : undefined;
       // gemini-55: the runtime's own policy sources are settled before
       // attachments are staged or the browser is prepared.
       const runtimePolicySources = mapped.toolConfig.skillsOnlyPolicy
@@ -3561,6 +3743,11 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       if (mcpServers !== undefined)
         mapped.settingsConfig.mcpServers = mcpServers;
       if (skills.length > 0) mapped.settingsConfig.skills = skills;
+      if (nativeSkillsDisabled !== undefined) {
+        mapped.settingsConfig.nativeSkillsOff = {
+          disabled: nativeSkillsDisabled,
+        };
+      }
       settingsOverride = await this.createSettingsOverride(
         mapped.settingsConfig,
         context,
@@ -3576,6 +3763,14 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
       if (skills.length > 0 && settingsOverride.deliversSkills !== true) {
         throw new Error(
           'Gemini settings override cannot deliver the requested skills',
+        );
+      }
+      if (
+        nativeSkillsDisabled !== undefined &&
+        settingsOverride.deliversNativeSkillsOff !== true
+      ) {
+        throw new Error(
+          'Gemini settings override cannot turn native skills off',
         );
       }
       // gemini-7: an alias the override cannot deliver would name no model,

@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Claude Code through the `@anthropic-ai/claude-agent-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including deterministic native session naming, native fast-mode, subagent-model, and subagent-effort selection, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
+It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including deterministic native session naming, native fast-mode, subagent-model, and subagent-effort selection, run skills and the native-skill switch, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 
 ## External Behavior
@@ -522,6 +522,18 @@ When the first native `system` `init` message of a run with skills [[claude-code
 
 When a run with skills [[claude-code-85](#claude-code-85)] ends, the adapter shall remove the plugin root through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after terminal `done` once the SDK query has settled wherever it was invoked, including the [[claude-code-42](#claude-code-42)] and [[claude-code-48](#claude-code-48)] paths, and otherwise before its terminal or rejection leaves the adapter.
 
+### claude-code-90
+
+When a run selects `nativeSkills: false` [[skills-10](../skills.md#skills-10)], the adapter shall add these SDK controls to its query options, whatever its `allowedTools`, skills, effort, or fast mode, per [DR-037](../../decisions/037-per-run-native-skill-switch.md), [[7]], and [[15]]:
+
+| SDK control | Value | Native sources it removes |
+| --- | --- | --- |
+| `managedSettings` | `{ strictPluginOnlyCustomization: ['skills'] }`, the parent policy tier | project and user skill directories, synced skills, and every plugin the runtime would adopt from a project or user skill directory [[16]], with all its components, in the main thread and every subagent, unless an administrator's policy tier that does not merge parent settings drops the parent tier |
+| `settings.disableBundledSkills` | `true`, in the same settings object as the effort, fast-mode, connector, and attribution keys | the skills and workflows bundled with Claude Code, with built-in prompt commands hidden from the model |
+| `skills` | each run skill's `cligent:<name>` [[claude-code-85](#claude-code-85)] in list order, or an empty list for a run without skills | every other skill from the main thread's listing and `Skill` invocations |
+
+- `tools`, `allowedTools`, `disallowedTools`, `settingSources`, `plugins`, permission mode, `canUseTool`, and MCP controls stay as [[claude-code-9](#claude-code-9)], [[claude-code-70](#claude-code-70)], and [[claude-code-85](#claude-code-85)] select them.
+
 ## Internal Behavior
 
 ### Resume-Repair Signature
@@ -807,6 +819,14 @@ Where skill fixtures with and without tool-declaring frontmatter are supplied, w
 
 Where [[claude-code-219](#claude-code-219)]'s credential, retry, and skip preconditions hold, when a run with no permission policy and no approval handler supplies a fixture skill outside its working directory whose frontmatter sets `allowed-tools` and whose body directs a unique token reply, and the prompt names `cligent:<name>`, the acceptance check shall verify through the real SDK that the initialization lists the plugin and the skill [[claude-code-86](#claude-code-86)], that a `Skill` tool use naming `cligent:<name>` has a correlated successful result, the reply carries the token, the native result's `permission_denials` is empty, and no native `system` message has subtype `permission_denied` [[claude-code-85](#claude-code-85)], and that the plugin root is gone once the adapter's own event stream completes [[claude-code-89](#claude-code-89)].
 
+### claude-code-91
+
+Where `Cligent` runs through the adapter and the installed Claude SDK against a recording CLI fixture [[claude-code-87](#claude-code-87)] with `nativeSkills` `false` and omitted, crossed with run skills present and absent and with `allowedTools` omitted and empty, on fresh and resumed turns, the integration check shall verify that every `false` command line carries `--managed-settings` JSON exactly `{"strictPluginOnlyCustomization":["skills"]}` and `--settings` JSON holding `disableBundledSkills: true` beside the connector gate and attribution, and that its initialize request lists exactly the run's `cligent:<name>` skills or an empty list, while every omitted run carries no `--managed-settings` flag, no `disableBundledSkills` key, and no `skills` member in its initialize request, and that both keep the tool, setting-source, and plugin arguments their other options select [[claude-code-90](#claude-code-90)].
+
+### claude-code-92
+
+Where [[claude-code-219](#claude-code-219)]'s credential, retry, and skip preconditions hold, when a run with `nativeSkills: false` and a throwaway Claude configuration directory supplies a run skill outside its working directory, a native skill in the working directory's `.claude/skills`, and another in the configuration directory's user skills, each native body holding a unique token, and prompts the model to have one general-purpose subagent report its skill listing, the acceptance check shall verify through the session transcript the runtime writes that the main thread's and every subagent's skill listings name only the run's `cligent:<name>` and that neither token appears in any event, while a control run without the switch lists both native skills in its main thread [[claude-code-90](#claude-code-90)].
+
 ## References
 
 [1]: https://platform.claude.com/docs/en/build-with-claude/effort "Claude effort parameter"
@@ -823,4 +843,5 @@ Where [[claude-code-219](#claude-code-219)]'s credential, retry, and skip precon
 [12]: https://code.claude.com/docs/en/agent-sdk/plugins "Claude Agent SDK local plugins and initialization evidence"
 [13]: https://code.claude.com/docs/en/skills "Claude Code skills, plugin namespacing, and Skill permissions"
 [14]: https://code.claude.com/docs/en/agent-sdk/claude-code-features "Claude Agent SDK: the Skill tool in an explicit tool list"
-[15]: https://code.claude.com/docs/en/settings-reference "Claude Code managed settings disableSideloadFlags and allowManagedPermissionRulesOnly"
+[15]: https://code.claude.com/docs/en/settings-reference "Claude Code settings disableSideloadFlags, allowManagedPermissionRulesOnly, strictPluginOnlyCustomization, and disableBundledSkills"
+[16]: https://code.claude.com/docs/en/plugins/loading#find-where-a-plugin-came-from "Claude Code plugins adopted from a project or user skill directory"
