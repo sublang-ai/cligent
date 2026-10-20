@@ -4980,7 +4980,9 @@ describe('tmux-play-228: runtime native skills', () => {
       await runtime.runBossTurn('settle');
 
       // tmux-play-93: Cligent.run() receives exactly the admitted boolean,
-      // and no `nativeSkills` key where settings omit it or are not supplied.
+      // and no `nativeSkills` key where settings omit it or are not supplied;
+      // the `false` calls' caller objects changed to `true` after admission,
+      // and neither change reached a run.
       expect(
         runOptions.map(([prompt, options]) => [
           prompt,
@@ -5013,10 +5015,6 @@ describe('tmux-play-228: runtime native skills', () => {
         ['claude-code', 'captain omitted', undefined],
         ['claude-code', 'captain configured', undefined],
       ]);
-      // The runtime froze no caller object: what it holds is its own copy.
-      expect(Object.isFrozen(playerFalse)).toBe(false);
-      expect(Object.isFrozen(captainFalse)).toBe(false);
-
       // tmux-play-93: the runtime-owned Cligent instances carry no
       // `nativeSkills` default, so a direct run reaches the adapter without
       // one.
@@ -5051,6 +5049,7 @@ describe('tmux-play-228: runtime native skills', () => {
       captain: {
         async handleBossTurn(_turn, context) {
           await context.callPlayer('worker', 'player seed');
+          await context.callPlayer('other', 'other seed');
           await context.callCaptain('captain seed');
 
           // tmux-play-93: `false` for an adapter whose descriptor does not
@@ -5085,9 +5084,13 @@ describe('tmux-play-228: runtime native skills', () => {
             );
           }
 
-          // `true` stays admissible on Kimi and resumes the stored session.
+          // `true` stays admissible on Kimi and resumes the stored session;
+          // the non-Kimi player resumes its own after its rejections.
           await context.callPlayer('worker', 'player after', {
             settings: { ...kimiSettings, nativeSkills: true },
+          });
+          await context.callPlayer('other', 'other after', {
+            settings: { ...providerDefaults, nativeSkills: false },
           });
           await context.callCaptain('captain after', {
             settings: { ...kimiSettings, nativeSkills: true },
@@ -5115,8 +5118,10 @@ describe('tmux-play-228: runtime native skills', () => {
         ),
       ).toEqual([
         'player seed',
+        'other seed',
         'captain seed',
         'player after',
+        'other after',
         'captain after',
       ]);
       expect(
@@ -5128,8 +5133,10 @@ describe('tmux-play-228: runtime native skills', () => {
         ]),
       ).toEqual([
         ['kimi', 'player seed', undefined, undefined],
+        ['codex', 'other seed', undefined, undefined],
         ['kimi', 'captain seed', undefined, undefined],
         ['kimi', 'player after', 'kimi:player seed', true],
+        ['codex', 'other after', 'codex:other seed', false],
         ['kimi', 'captain after', 'kimi:captain seed', true],
       ]);
     } finally {
