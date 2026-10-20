@@ -1567,7 +1567,7 @@ function createdAncestors(path: string, firstCreated: string | undefined) {
   return created;
 }
 
-/** How deep below a root the runtime reads directories for skills (codex-79). */
+/** How deep below a root the runtime reads directories for skills (codex-82). */
 const CODEX_SKILL_SCAN_DEPTH = 6;
 const CODEX_SKILL_FILE = 'SKILL.md';
 
@@ -1583,7 +1583,7 @@ function codexSkillReadFailure(path: string, error: unknown): Error {
 }
 
 /**
- * codex-79: the roots to walk, a superset of those the runtime scans:
+ * codex-82: the roots to walk, a superset of those the runtime scans:
  * `.agents/skills` and `.codex/skills` in the working directory and each
  * ancestor, the Codex home's `skills`, the user's `.agents/skills`, and the
  * administrator's skills.
@@ -1623,7 +1623,7 @@ async function codexNativeSkillRoots(
 }
 
 /**
- * codex-79: every regular `SKILL.md` in one root or a directory at most six
+ * codex-82: every regular `SKILL.md` in one root or a directory at most six
  * levels below it, following directory links once by real path and entering
  * no dot-directory below the root, as the runtime walks a root.
  */
@@ -1692,7 +1692,7 @@ async function walkCodexSkillRoot(
 }
 
 /**
- * codex-79: the overrides that turn native skill discovery off: bundled
+ * codex-82: the overrides that turn native skill discovery off: bundled
  * skills off, and every native `SKILL.md` found disabled by its real path in
  * one `skills.config` override, since a later one replaces an earlier one.
  */
@@ -2133,7 +2133,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       }
     }
 
-    // codex-79: native skills are enumerated once the carrier exists, so the
+    // codex-82: native skills are enumerated once the carrier exists, so the
     // walk sees the Codex home the run uses.
     let nativeSkillOverrides: string[] = [];
     if (nativeSkillsOff) {
@@ -2150,7 +2150,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     }
 
     // codex-75: the enable override travels beside codex-70's MCP entries,
-    // and codex-79's native-skill overrides beside it.
+    // and codex-82's native-skill overrides beside it.
     const codexCliConfigOverrides = [
       ...(mapped.codexCliConfigOverrides ?? []),
       ...(skillCarrier ? [skillCarrier.override] : []),

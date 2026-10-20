@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-// codex-80: `nativeSkills: false` reaches Codex as configuration overrides.
+// codex-83: `nativeSkills: false` reaches Codex as configuration overrides.
 // The installed SDK spawns a recording fixture in place of the native CLI,
 // under a throwaway Codex home and a throwaway HOME; the fixture records the
 // run's arguments and, where asked, renders the installed executable's
@@ -162,7 +162,7 @@ async function setup() {
 }
 
 /**
- * codex-80's tree: a working directory two levels below a repository root
+ * codex-83's tree: a working directory two levels below a repository root
  * inside the throwaway HOME, as a project under a real home sits, so the
  * home's `.agents/skills` and the Codex home's `skills` are also ancestor
  * roots. Returns the loadable skills' real paths by name and the names that
@@ -318,9 +318,9 @@ function ambientRoots(root: string): string[] {
 }
 
 describe.skipIf(process.platform === 'win32')(
-  'Codex native-skill switch through the installed SDK (codex-80)',
+  'Codex native-skill switch through the installed SDK (codex-83)',
   () => {
-    it('disables every native skill a root loads, by real path, and leaves only the run skill in the runtime catalog (codex-79)', async () => {
+    it('disables every native skill a root loads, by real path, and leaves only the run skill in the runtime catalog (codex-82)', async () => {
       const fixture = await setup();
       const tree = await nativeTree(
         fixture.root,
@@ -397,7 +397,7 @@ describe.skipIf(process.platform === 'win32')(
       }
     }, 120_000);
 
-    it('adds only the bundled override without run skills where no native skill exists (codex-79)', async () => {
+    it('adds only the bundled override without run skills where no native skill exists (codex-82)', async () => {
       const fixture = await setup();
       const cwd = join(fixture.root, 'workspace');
       await mkdir(cwd);
@@ -417,7 +417,7 @@ describe.skipIf(process.platform === 'win32')(
       );
     });
 
-    it('adds neither native-skill override when nativeSkills is omitted (codex-79)', async () => {
+    it('adds neither native-skill override when nativeSkills is omitted (codex-82)', async () => {
       const fixture = await setup();
       const tree = await nativeTree(
         fixture.root,
@@ -444,7 +444,7 @@ describe.skipIf(process.platform === 'win32')(
     });
 
     it.skipIf(process.getuid?.() === 0)(
-      'rejects an unreadable directory below a native root before SDK invocation, naming it (codex-79)',
+      'rejects an unreadable directory below a native root before SDK invocation, naming it (codex-82)',
       async () => {
         const fixture = await setup();
         const cwd = join(fixture.root, 'workspace');
@@ -474,7 +474,7 @@ describe.skipIf(process.platform === 'win32')(
       },
     );
 
-    it('ends with the interrupted terminal when the caller aborts before enumeration (codex-79)', async () => {
+    it('ends with the interrupted terminal when the caller aborts before enumeration (codex-82)', async () => {
       const fixture = await setup();
       const cwd = join(fixture.root, 'workspace');
       await mkdir(cwd);

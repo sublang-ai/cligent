@@ -418,15 +418,15 @@ When a run supplies skills, the adapter shall deliver the prepared list [[skills
 | stale marketplace | a cache directory whose name parses from the right as `cligent-<host>-<pid>-<suffix>` with this host's segment and a process identifier the operating system reports as not running on this host, removed before materializing; one that disappears concurrently or whose removal fails is left without failing the run |
 | enable override | one native `plugins.cligent@<marketplace>.enabled=true` override, its key unquoted because the runtime splits an override key at every `.` and the marketplace name holds none, through the SDK constructor's raw `configOverrides` array, as [[codex-70](#codex-70)] carries MCP entries, leaving every other `plugins` entry as configuration loading selects it |
 | listed name | `cligent:<name>`, namespaced by the manifest name [[16]], whose body a `$cligent:<name>` prompt mention injects [[14]] |
-| user-level and project skills | unchanged, because the plugin adds a root beside them, unless [[codex-79](#codex-79)] disables them by path |
-| `skills.config` filters and `--ignore-user-config` | unchanged, [[codex-79](#codex-79)] only adding its own rules after the user's |
+| user-level and project skills | unchanged, because the plugin adds a root beside them, unless [[codex-82](#codex-82)] disables them by path |
+| `skills.config` filters and `--ignore-user-config` | unchanged, [[codex-82](#codex-82)] only adding its own rules after the user's |
 | workspace and Codex configuration | no `.codex` or `.agents` workspace entry and no `config.toml` write, the Codex home keeping its authentication and session state as [[codex-31](#codex-31)] preserves them |
 
 ### codex-78
 
 When a run with skills [[codex-75](#codex-75)] ends, the adapter shall remove the plugin root, its marketplace directory, and each parent the run created while empty, through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after terminal `done` once the SDK event iterator has settled, the point at which the SDK stops exposing its child and the only evidence of that child's exit the SDK gives, wherever `runStreamed()` was invoked, including the [[codex-24](#codex-24)], [[codex-25](#codex-25)], [[codex-26](#codex-26)], and [[codex-27](#codex-27)] paths, and otherwise before its terminal or rejection leaves the adapter, even where the run's executable-wrapper cleanup fails first, the rejection then keeping the run's own error.
 
-### codex-79
+### codex-82
 
 When a run selects `nativeSkills: false` [[skills-10](../skills.md#skills-10)], the adapter shall enumerate native skills before SDK invocation and add native configuration overrides through the SDK constructor's raw `configOverrides` array, as [[codex-70](#codex-70)] carries MCP entries, through this matrix per [DR-037](../../decisions/037-per-run-native-skill-switch.md), [[10]], [[17]], [[18]], and [[19]]:
 
@@ -827,17 +827,17 @@ When skill fixtures run with the installed Codex SDK recorded into a fixture sub
 | SDK construction failure, then thread-start failure, each with a forced executable-wrapper cleanup failure | the run's own error as the rejection and a removed marketplace directory [[codex-78](#codex-78)] |
 | forced plugin-root and marketplace removal failures after a successful run, then before a construction-failure rejection | no error event after `done`, then the unremoved path appended to the rejection's message [[codex-78](#codex-78)] |
 
-### codex-80
+### codex-83
 
 When native-skill fixtures run with the installed Codex SDK recorded into a fixture subprocess and a throwaway Codex home [[codex-76](#codex-76)], and a throwaway `HOME`, the integration check shall verify each case of this matrix:
 
 | Case | Assertions |
 | --- | --- |
-| `nativeSkills: false` with a run skill, in a working directory two levels below a repository root, where the root and the directory between hold `.agents/skills` and `.codex/skills` skills, one skill six levels below its root, one seven levels below, one under a dot-directory, one through a linked directory, one in the Codex home's `skills`, and one in `HOME`'s `.agents/skills` | the bundled override and one `skills.config` override listing exactly the real path of each skill at most six levels below a root outside a dot-directory, and, through the installed executable's offline prompt-input rendering, a catalog listing only `cligent:<name>` under the run's overrides and every native skill without the two native-skill overrides [[codex-79](#codex-79)] |
-| `nativeSkills: false` without run skills, in a directory without native skills | the bundled override alone [[codex-79](#codex-79)] |
-| `nativeSkills` omitted | neither native-skill override [[codex-79](#codex-79)] |
-| `nativeSkills: false` with an unreadable directory below a native root | rejection before SDK invocation naming that directory [[codex-79](#codex-79)] |
-| `nativeSkills: false` with the caller signal aborted before enumeration | the interrupted terminal without SDK invocation [[codex-79](#codex-79)] |
+| `nativeSkills: false` with a run skill, in a working directory two levels below a repository root, where the root and the directory between hold `.agents/skills` and `.codex/skills` skills, one skill six levels below its root, one seven levels below, one under a dot-directory, one through a linked directory, one in the Codex home's `skills`, and one in `HOME`'s `.agents/skills` | the bundled override and one `skills.config` override listing exactly the real path of each skill at most six levels below a root outside a dot-directory, and, through the installed executable's offline prompt-input rendering, a catalog listing only `cligent:<name>` under the run's overrides and every native skill without the two native-skill overrides [[codex-82](#codex-82)] |
+| `nativeSkills: false` without run skills, in a directory without native skills | the bundled override alone [[codex-82](#codex-82)] |
+| `nativeSkills` omitted | neither native-skill override [[codex-82](#codex-82)] |
+| `nativeSkills: false` with an unreadable directory below a native root | rejection before SDK invocation naming that directory [[codex-82](#codex-82)] |
+| `nativeSkills: false` with the caller signal aborted before enumeration | the interrupted terminal without SDK invocation [[codex-82](#codex-82)] |
 
 ### codex-77
 
