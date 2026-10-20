@@ -574,16 +574,16 @@ NUL replaces the role's list for that call; omitted `skills`, `instruction`,
 and `permissions` mean none, and none is merged with YAML defaults. A boolean
 `nativeSkills` applies the [native-skill switch](guide.md#native-skills) to
 that call alone: `false` turns the runtime's own skill discovery off, while
-`true` or omission leaves it as the runtime configures it. YAML has no `nativeSkills` default, so only
-supplied settings carry it; read
+`true` or omission leaves it as the runtime configures it. YAML has no
+`nativeSkills` default, so only supplied settings carry it; read
 `getNativeSkillSupport(adapter)?.disableSupported` from `@sublang/cligent`
-before supplying `false`, which Kimi cannot honor. Each `model` and `effort` selector is either a
-concrete value or `provider-default`; the latter omits that option so Codex or
-Gemini chooses its current default even on a resumed call. Claude and OpenCode
-support provider defaults on fresh calls and can use default effort beside a
-concrete resumed model, but a resumed provider-default model fails closed:
-Claude Code restores the transcript model, while OpenCode persists its session
-model without exposing a reset. Omitted permissions on
+before supplying `false`, which Kimi cannot honor. Each `model` and `effort`
+selector is either a concrete value or `provider-default`; the latter omits that
+option so Codex or Gemini chooses its current default even on a resumed call.
+Claude and OpenCode support provider defaults on fresh calls and can use default
+effort beside a concrete resumed model, but a resumed provider-default model
+fails closed: Claude Code restores the transcript model, while OpenCode persists
+its session model without exposing a reset. Omitted permissions on
 a resumed OpenCode complete-settings call clear the prior Cligent-owned session
 ruleset. Kimi supports default reset only for a fresh call because ACP cannot
 restore a resumed session's provider default. Invalid or unenforceable settings
