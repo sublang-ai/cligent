@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-10-20
+
 ### Added
 
 - `nativeSkills: false` turns a runtime's own skill discovery off for a run while the run's `skills` still arrive, on Claude Code, Codex, Gemini CLI, and managed OpenCode; Kimi Code rejects it.
@@ -845,7 +847,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.34.1...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.35.0...HEAD
+[0.35.0]: https://github.com/sublang-ai/cligent/compare/v0.34.1...v0.35.0
 [0.34.1]: https://github.com/sublang-ai/cligent/compare/v0.34.0...v0.34.1
 [0.34.0]: https://github.com/sublang-ai/cligent/compare/v0.33.5...v0.34.0
 [0.33.5]: https://github.com/sublang-ai/cligent/compare/v0.33.4...v0.33.5
