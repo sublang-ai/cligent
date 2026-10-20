@@ -4863,3 +4863,284 @@ describe('runtime skills', () => {
     },
   );
 });
+
+// tmux-play-228: per-call `nativeSkills` in complete call settings — exact
+// forwarding to Cligent.run() on both roles, no configured default, and
+// admission rejections before any record or provider work.
+describe('tmux-play-228: runtime native skills', () => {
+  const providerDefaults = {
+    model: { kind: 'provider-default' as const },
+    effort: { kind: 'provider-default' as const },
+  };
+
+  interface CapturedRun {
+    readonly agent: string;
+    readonly prompt: string;
+    readonly options?: AgentOptions;
+  }
+
+  // With `resumeTokens`, each run ends with a token naming its agent and
+  // prompt, for the next call of that role to resume.
+  function recordingImports(
+    captured: CapturedRun[],
+    resumeTokens = false,
+  ): PlayerAdapterImports {
+    const script = (agent: string): { agent: string; run: RunScript } => ({
+      agent,
+      async *run(prompt, options) {
+        captured.push({ agent, prompt, options });
+        yield doneEvent(
+          agent,
+          'done',
+          'success',
+          resumeTokens ? `${agent}:${prompt}` : undefined,
+        );
+      },
+    });
+    return adapterImports({
+      claude: script('claude-code'),
+      codex: script('codex'),
+      gemini: script('gemini'),
+      kimi: script('kimi'),
+      opencode: script('opencode'),
+    });
+  }
+
+  function runtimeOwnedCligents(
+    runtime: object,
+    playerId: string,
+  ): { captain: Cligent; player: Cligent } {
+    return {
+      captain: Reflect.get(runtime, 'captainCligent') as Cligent,
+      player: (
+        Reflect.get(runtime, 'playersById') as ReadonlyMap<
+          string,
+          { cligent: Cligent }
+        >
+      ).get(playerId)!.cligent,
+    };
+  }
+
+  it('forwards exactly the supplied boolean on both roles and none where settings omit it', async () => {
+    const captured: CapturedRun[] = [];
+    const runOptions: Array<[string, object | undefined]> = [];
+    const playerFalse: { nativeSkills: boolean } & typeof providerDefaults = {
+      ...providerDefaults,
+      nativeSkills: false,
+    };
+    const captainFalse: { nativeSkills: boolean } & typeof providerDefaults = {
+      ...providerDefaults,
+      nativeSkills: false,
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          // Admission snapshots the settings before its first await, so the
+          // caller's later change reaches no run.
+          const playerCall = context.callPlayer('worker', 'player false', {
+            settings: playerFalse,
+          });
+          playerFalse.nativeSkills = true;
+          await playerCall;
+          await context.callPlayer('worker', 'player true', {
+            settings: { ...providerDefaults, nativeSkills: true },
+          });
+          await context.callPlayer('worker', 'player omitted', {
+            settings: providerDefaults,
+          });
+          await context.callPlayer('worker', 'player configured');
+
+          const captainCall = context.callCaptain('captain false', {
+            settings: captainFalse,
+          });
+          captainFalse.nativeSkills = true;
+          await captainCall;
+          await context.callCaptain('captain true', {
+            settings: { ...providerDefaults, nativeSkills: true },
+          });
+          await context.callCaptain('captain omitted', {
+            settings: providerDefaults,
+          });
+          await context.callCaptain('captain configured');
+        },
+      },
+      captainConfig: { adapter: 'claude' },
+      players: [{ id: 'worker', adapter: 'codex' }],
+      adapterImports: recordingImports(captured),
+    });
+    const owned = runtimeOwnedCligents(runtime, 'worker');
+    for (const cligent of [owned.player, owned.captain]) {
+      const run = cligent.run.bind(cligent);
+      vi.spyOn(cligent, 'run').mockImplementation((prompt, options) => {
+        runOptions.push([prompt, options]);
+        return run(prompt, options);
+      });
+    }
+    try {
+      await runtime.runBossTurn('settle');
+
+      // tmux-play-93: Cligent.run() receives exactly the admitted boolean,
+      // and no `nativeSkills` key where settings omit it or are not supplied;
+      // the `false` calls' caller objects changed to `true` after admission,
+      // and neither change reached a run.
+      expect(
+        runOptions.map(([prompt, options]) => [
+          prompt,
+          options !== undefined && Object.hasOwn(options, 'nativeSkills'),
+          (options as { nativeSkills?: unknown } | undefined)?.nativeSkills,
+        ]),
+      ).toEqual([
+        ['player false', true, false],
+        ['player true', true, true],
+        ['player omitted', false, undefined],
+        ['player configured', false, undefined],
+        ['captain false', true, false],
+        ['captain true', true, true],
+        ['captain omitted', false, undefined],
+        ['captain configured', false, undefined],
+      ]);
+      expect(
+        captured.map(({ agent, prompt, options }) => [
+          agent,
+          prompt,
+          options?.nativeSkills,
+        ]),
+      ).toEqual([
+        ['codex', 'player false', false],
+        ['codex', 'player true', true],
+        ['codex', 'player omitted', undefined],
+        ['codex', 'player configured', undefined],
+        ['claude-code', 'captain false', false],
+        ['claude-code', 'captain true', true],
+        ['claude-code', 'captain omitted', undefined],
+        ['claude-code', 'captain configured', undefined],
+      ]);
+      // tmux-play-93: the runtime-owned Cligent instances carry no
+      // `nativeSkills` default, so a direct run reaches the adapter without
+      // one.
+      captured.length = 0;
+      for (const cligent of [owned.captain, owned.player]) {
+        for await (const event of cligent.run('direct')) {
+          void event;
+        }
+      }
+      expect(
+        captured.map(({ agent, options }) => [agent, options?.nativeSkills]),
+      ).toEqual([
+        ['claude-code', undefined],
+        ['codex', undefined],
+      ]);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it('rejects a non-boolean and a Kimi false before any record or provider run, keeping the stored token', async () => {
+    const captured: CapturedRun[] = [];
+    const records: TmuxPlayRecord[] = [];
+    // Complete Kimi settings a resumed call can enforce, so the switch is the
+    // only reason to reject.
+    const kimiSettings = {
+      model: { kind: 'value' as const, value: 'kimi-k2-current' },
+      effort: { kind: 'value' as const, value: 'off' as const },
+      permissions: { mode: 'auto' as const },
+    };
+    const runtime = await createTmuxPlayRuntime({
+      captain: {
+        async handleBossTurn(_turn, context) {
+          await context.callPlayer('worker', 'player seed');
+          await context.callPlayer('other', 'other seed');
+          await context.callCaptain('captain seed');
+
+          // tmux-play-93: `false` for an adapter whose descriptor does not
+          // accept it raises AgentCallSettingsError naming the switch and
+          // the adapter.
+          await expectAgentCallSettingsRejection(
+            context.callPlayer('worker', 'player false', {
+              settings: { ...kimiSettings, nativeSkills: false },
+            }),
+            'nativeSkills: false is not supported for adapter "kimi"',
+          );
+          await expectAgentCallSettingsRejection(
+            context.callCaptain('captain false', {
+              settings: { ...kimiSettings, nativeSkills: false },
+            }),
+            'nativeSkills: false is not supported for adapter "kimi"',
+          );
+
+          // tmux-play-93: a non-boolean is rejected on either role.
+          for (const nativeSkills of ['false', 0, null, {}]) {
+            await expectAgentCallSettingsRejection(
+              context.callPlayer('other', 'player non-boolean', {
+                settings: { ...providerDefaults, nativeSkills } as never,
+              }),
+              'nativeSkills must be a boolean',
+            );
+            await expectAgentCallSettingsRejection(
+              context.callCaptain('captain non-boolean', {
+                settings: { ...kimiSettings, nativeSkills } as never,
+              }),
+              'nativeSkills must be a boolean',
+            );
+          }
+
+          // `true` stays admissible on Kimi and resumes the stored session;
+          // the non-Kimi player resumes its own after its rejections.
+          await context.callPlayer('worker', 'player after', {
+            settings: { ...kimiSettings, nativeSkills: true },
+          });
+          await context.callPlayer('other', 'other after', {
+            settings: { ...providerDefaults, nativeSkills: false },
+          });
+          await context.callCaptain('captain after', {
+            settings: { ...kimiSettings, nativeSkills: true },
+          });
+        },
+      },
+      captainConfig: { adapter: 'kimi' },
+      players: [
+        { id: 'worker', adapter: 'kimi' },
+        { id: 'other', adapter: 'codex' },
+      ],
+      observers: [{ onRecord: (record) => void records.push(record) }],
+      adapterImports: recordingImports(captured, true),
+    });
+    try {
+      await runtime.runBossTurn('reject');
+
+      // tmux-play-93: no rejected call recorded a prompt or reached a
+      // provider, and each role kept its stored resume token.
+      expect(
+        records.flatMap((record) =>
+          record.type === 'player_prompt' || record.type === 'captain_prompt'
+            ? [record.prompt]
+            : [],
+        ),
+      ).toEqual([
+        'player seed',
+        'other seed',
+        'captain seed',
+        'player after',
+        'other after',
+        'captain after',
+      ]);
+      expect(
+        captured.map(({ agent, prompt, options }) => [
+          agent,
+          prompt,
+          options?.resume,
+          options?.nativeSkills,
+        ]),
+      ).toEqual([
+        ['kimi', 'player seed', undefined, undefined],
+        ['codex', 'other seed', undefined, undefined],
+        ['kimi', 'captain seed', undefined, undefined],
+        ['kimi', 'player after', 'kimi:player seed', true],
+        ['codex', 'other after', 'codex:other seed', false],
+        ['kimi', 'captain after', 'kimi:captain seed', true],
+      ]);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+});

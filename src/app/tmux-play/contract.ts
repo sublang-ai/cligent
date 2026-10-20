@@ -79,7 +79,8 @@ export type TuningSelection<T extends string = string> =
  * permission policy; configured values are not merged into this object.
  * Omitting `browser` disables browser tools; omitting `mcpServers` selects
  * an empty server map for this invocation; omitting `skills` selects no
- * skills.
+ * skills; omitting `nativeSkills` leaves the runtime's own skill discovery
+ * in force.
  */
 export interface AgentCallSettings {
   readonly model: TuningSelection;
@@ -108,6 +109,13 @@ export interface AgentCallSettings {
    * selected adapter validates the directories.
    */
   readonly skills?: readonly string[];
+  /**
+   * `false` turns the runtime's own skill discovery off for this invocation
+   * only (tmux-play-93, DR-038); adapters whose `NATIVE_SKILL_SUPPORT`
+   * descriptor does not accept it, such as Kimi, reject `false`. No
+   * configured default exists for this member.
+   */
+  readonly nativeSkills?: boolean;
 }
 
 const AGENT_CALL_SETTINGS_ERROR = Symbol.for('cligent.agentCallSettingsError');

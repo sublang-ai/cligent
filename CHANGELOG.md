@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- tmux-play call settings accept `nativeSkills`, so a host can turn a runtime's own skill discovery off for one Captain or player call; a non-boolean value, and `false` for Kimi Code, which cannot honor it, raise `AgentCallSettingsError` before the call is recorded.
+
 ## [0.35.0] - 2026-10-20
 
 ### Added
