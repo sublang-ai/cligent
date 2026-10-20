@@ -528,8 +528,8 @@ When a run selects `nativeSkills: false` [[skills-10](../skills.md#skills-10)], 
 
 | SDK control | Value | Native sources it removes |
 | --- | --- | --- |
-| `managedSettings` | `{ strictPluginOnlyCustomization: ['skills'] }`, the parent policy tier | project and user skill directories and synced skills, in the main thread and every subagent, unless an administrator's policy tier that does not merge parent settings drops the parent tier |
-| `settings.disableBundledSkills` | `true`, in the same settings object as the effort, fast-mode, connector, and attribution keys | the skills bundled with Claude Code |
+| `managedSettings` | `{ strictPluginOnlyCustomization: ['skills'] }`, the parent policy tier | project and user skill directories, synced skills, and every plugin the runtime would adopt from a project or user skill directory [[16]], with all its components, in the main thread and every subagent, unless an administrator's policy tier that does not merge parent settings drops the parent tier |
+| `settings.disableBundledSkills` | `true`, in the same settings object as the effort, fast-mode, connector, and attribution keys | the skills and workflows bundled with Claude Code, with built-in prompt commands hidden from the model |
 | `skills` | each run skill's `cligent:<name>` [[claude-code-85](#claude-code-85)] in list order, or an empty list for a run without skills | every other skill from the main thread's listing and `Skill` invocations |
 
 - `tools`, `allowedTools`, `disallowedTools`, `settingSources`, `plugins`, permission mode, `canUseTool`, and MCP controls stay as [[claude-code-9](#claude-code-9)], [[claude-code-70](#claude-code-70)], and [[claude-code-85](#claude-code-85)] select them.
@@ -844,3 +844,4 @@ Where [[claude-code-219](#claude-code-219)]'s credential, retry, and skip precon
 [13]: https://code.claude.com/docs/en/skills "Claude Code skills, plugin namespacing, and Skill permissions"
 [14]: https://code.claude.com/docs/en/agent-sdk/claude-code-features "Claude Agent SDK: the Skill tool in an explicit tool list"
 [15]: https://code.claude.com/docs/en/settings-reference "Claude Code settings disableSideloadFlags, allowManagedPermissionRulesOnly, strictPluginOnlyCustomization, and disableBundledSkills"
+[16]: https://code.claude.com/docs/en/plugins/loading#find-where-a-plugin-came-from "Claude Code plugins adopted from a project or user skill directory"
