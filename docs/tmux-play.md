@@ -430,6 +430,8 @@ players:
   explicit tool list. A Captain control call whose `allowedTools` leaves that
   tool out runs without skills rather than failing.
 - The generated and migrated home configs never add `skills`.
+- The config has no `nativeSkills` key; a Captain turns a runtime's own skill
+  discovery off for one call through its [call settings](#custom-captains).
 - `createTmuxPlayRuntime` from `@sublang/cligent/tmux-play` accepts the same
   top-level `skills` and role `skills`, with the same validation and Kimi
   check; there a relative entry passes unchanged and resolves against the
@@ -569,7 +571,13 @@ effort to the agent, rather than merging the YAML value; `subagentModel` and
 `subagentEffort` are accepted only for a Claude role, and `subagentEffort` only
 beside `subagentModel`; a supplied `skills` array of non-blank strings without
 NUL replaces the role's list for that call; omitted `skills`, `instruction`,
-and `permissions` mean none, and none is merged with YAML defaults. Each `model` and `effort` selector is either a
+and `permissions` mean none, and none is merged with YAML defaults. A boolean
+`nativeSkills` applies the [native-skill switch](guide.md#native-skills) to
+that call alone: `false` turns the runtime's own skill discovery off, while
+`true` or omission leaves it as the runtime configures it. YAML has no `nativeSkills` default, so only
+supplied settings carry it; read
+`getNativeSkillSupport(adapter)?.disableSupported` from `@sublang/cligent`
+before supplying `false`, which Kimi cannot honor. Each `model` and `effort` selector is either a
 concrete value or `provider-default`; the latter omits that option so Codex or
 Gemini chooses its current default even on a resumed call. Claude and OpenCode
 support provider defaults on fresh calls and can use default effort beside a
@@ -579,8 +587,9 @@ model without exposing a reset. Omitted permissions on
 a resumed OpenCode complete-settings call clear the prior Cligent-owned session
 ruleset. Kimi supports default reset only for a fresh call because ACP cannot
 restore a resumed session's provider default. Invalid or unenforceable settings
-— including non-boolean or adapter-unsupported fast mode — fail before an
-agent call begins and do not discard the stored resume token.
+— including non-boolean or adapter-unsupported fast mode, and a non-boolean
+`nativeSkills` or `nativeSkills: false` on Kimi — fail before an agent call
+begins and do not discard the stored resume token.
 tmux-play resolves the effective explicit, forced-fresh, or automatic resume
 selection once at admission and uses that same selection for reset preflight
 and the provider run.
