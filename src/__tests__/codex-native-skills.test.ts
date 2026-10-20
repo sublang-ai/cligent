@@ -443,10 +443,26 @@ describe.skipIf(process.platform === 'win32')(
       const [record] = await fixture.recordings();
       expect(record?.home).toBe(fixture.home);
       const overrides = configs(record!.args);
-      expect(
-        overrides.filter((value) => /^skills[.=]/.test(value)),
-        'native skill roots outside the fixture must hold no SKILL.md',
-      ).toEqual([BUNDLED_OFF]);
+      const skillOverrides = overrides.filter((value) =>
+        /^skills[.=]/.test(value),
+      );
+      expect(skillOverrides.filter((value) => value === BUNDLED_OFF)).toEqual([
+        BUNDLED_OFF,
+      ]);
+      // A skill the host machine holds in a root outside the fixture is
+      // disabled too, as the first case allows; none lies in the fixture.
+      const ambient = ambientRoots(fixture.root);
+      for (const listing of skillOverrides.filter(
+        (value) => value !== BUNDLED_OFF,
+      )) {
+        for (const path of disabledPaths(listing)) {
+          expect(path.startsWith(`${fixture.root}${sep}`), path).toBe(false);
+          expect(
+            ambient.some((rootPath) => path.startsWith(`${rootPath}${sep}`)),
+            path,
+          ).toBe(true);
+        }
+      }
       expect(overrides.some((value) => value.startsWith('plugins.'))).toBe(
         false,
       );
