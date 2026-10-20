@@ -2011,7 +2011,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     let sdkPrompt: Parameters<NonNullable<CodexThread['runStreamed']>>[0] =
       prompt;
     let skills: PreparedSkill[] = [];
-    let nativeSkillsOff = false;
+    let nativeSkillOverrides: string[] = [];
     try {
       // attachments-2: the cheap attachment check precedes MCP preparation,
       // which may download and launch the managed browser.
@@ -2038,8 +2038,13 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
         options?.cwd,
         options?.abortSignal,
       );
-      // skills-10: so is the native-skill switch.
-      nativeSkillsOff = prepareNativeSkills(AGENT, options?.nativeSkills);
+      // skills-10: so is the native-skill switch, and codex-82 enumerates
+      // native skills here too, so a run its roots reject neither prepares
+      // the browser nor opens its plugin root.
+      if (prepareNativeSkills(AGENT, options?.nativeSkills)) {
+        nativeSkillOverrides = await codexNativeSkillOverrides(options?.cwd);
+        options?.abortSignal?.throwIfAborted();
+      }
       const mcpServers = await prepareMcpServers(options);
       if (mcpServers !== undefined) options = { ...options, mcpServers };
     } catch (error) {
@@ -2125,22 +2130,6 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       } catch (error) {
         // The run ends here, so release its abort registration as codex-40
         // does for the other pre-start failures.
-        cleanupAbort();
-        if (!options?.abortSignal?.aborted) throw await rejectRun(error);
-        await removeSkillCarrier();
-        yield preparationInterrupted();
-        return;
-      }
-    }
-
-    // codex-82: native skills are enumerated once the carrier exists, so the
-    // walk sees the Codex home the run uses.
-    let nativeSkillOverrides: string[] = [];
-    if (nativeSkillsOff) {
-      try {
-        nativeSkillOverrides = await codexNativeSkillOverrides(options?.cwd);
-        options?.abortSignal?.throwIfAborted();
-      } catch (error) {
         cleanupAbort();
         if (!options?.abortSignal?.aborted) throw await rejectRun(error);
         await removeSkillCarrier();

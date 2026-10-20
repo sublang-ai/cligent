@@ -9,7 +9,7 @@
 // native-skill overrides, so the catalog evidence comes from the real runtime
 // rather than from this adapter's own reading of the skill roots.
 
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -30,12 +30,36 @@ import { CodexAdapter } from '../adapters/codex.js';
 import { probeCodexExecutable } from '../adapters/codex-executable.js';
 import type { AgentEvent } from '../types.js';
 
+// Managed-browser preparation, recorded so a rejection can show it never ran.
+const browserPreparation = vi.hoisted(() => vi.fn());
+vi.mock('../browser.js', () => ({
+  prepareBrowserServer: browserPreparation,
+  releaseBrowserServer: async () => {},
+}));
+
+// A hook each directory read reaches, so a test can abort a run while the
+// adapter reads a native root (codex-82).
+const reads = vi.hoisted(() => ({ onReaddir: (_path: string): void => {} }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  const readdir = actual.readdir as (...args: unknown[]) => Promise<unknown>;
+  return {
+    ...actual,
+    readdir: (path: unknown, ...rest: unknown[]) => {
+      reads.onReaddir(String(path));
+      return readdir(path, ...rest);
+    },
+  };
+});
+
 const THREAD_ID = 'codex-native-skills-thread';
 const RUN_SKILL = 'run-skill';
 const BUNDLED_OFF = 'skills.bundled.enabled=false';
 const roots: string[] = [];
 
 afterEach(async () => {
+  reads.onReaddir = () => {};
+  browserPreparation.mockReset();
   vi.unstubAllEnvs();
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
@@ -250,6 +274,12 @@ async function nativeTree(root: string, home: string, codexHome: string) {
   };
 }
 
+/** The entries of the Codex home's plugin cache, where a plugin root opens. */
+async function pluginCacheEntries(codexHome: string): Promise<string[]> {
+  const cache = join(codexHome, 'plugins', 'cache');
+  return existsSync(cache) ? await readdir(cache) : [];
+}
+
 function inheritedEnvironment(): Record<string, string> {
   return Object.fromEntries(
     Object.entries(process.env).filter(
@@ -447,7 +477,7 @@ describe.skipIf(process.platform === 'win32')(
     });
 
     it.skipIf(process.getuid?.() === 0)(
-      'rejects an unreadable directory below a native root before SDK invocation, naming it (codex-82)',
+      'rejects an unreadable directory below a native root before browser preparation, a plugin root, or SDK invocation, naming it (codex-82)',
       async () => {
         const fixture = await setup();
         const cwd = join(fixture.root, 'workspace');
@@ -459,6 +489,7 @@ describe.skipIf(process.platform === 'win32')(
             collect(
               fixture.adapter.run('Locked.', {
                 cwd,
+                browser: true,
                 skills: [fixture.runSkill],
                 nativeSkills: false,
               }),
@@ -469,35 +500,21 @@ describe.skipIf(process.platform === 'win32')(
         } finally {
           await chmod(locked, 0o700);
         }
+        expect(browserPreparation).not.toHaveBeenCalled();
         expect(fixture.constructed).toEqual([]);
         expect(await fixture.recordings()).toEqual([]);
-        // codex-78: the run's plugin root went with the rejection.
-        const cache = join(fixture.codexHome, 'plugins', 'cache');
-        expect(existsSync(cache) ? await readdir(cache) : []).toEqual([]);
+        expect(await pluginCacheEntries(fixture.codexHome)).toEqual([]);
       },
     );
 
-    it('ends with the interrupted terminal when the caller aborts before enumeration (codex-82)', async () => {
+    it('ends with the interrupted terminal when the caller aborts before the run (codex-82)', async () => {
       const fixture = await setup();
       const cwd = join(fixture.root, 'workspace');
       await mkdir(cwd);
       const controller = new AbortController();
-      const constructed: unknown[] = [];
-      const adapter = new CodexAdapter({
-        loadSdk: async () => {
-          controller.abort();
-          return {
-            Codex: class extends Codex {
-              constructor(options?: ConstructorParameters<typeof Codex>[0]) {
-                constructed.push(options);
-                super(options);
-              }
-            },
-          };
-        },
-      });
+      controller.abort();
       const events = await collect(
-        adapter.run('Aborted.', {
+        fixture.adapter.run('Aborted.', {
           cwd,
           nativeSkills: false,
           abortSignal: controller.signal,
@@ -505,7 +522,38 @@ describe.skipIf(process.platform === 'win32')(
       );
       expect(events.map((event) => event.type)).toEqual(['done']);
       expect(events[0]!.payload).toMatchObject({ status: 'interrupted' });
-      expect(constructed).toEqual([]);
+      expect(fixture.constructed).toEqual([]);
+      expect(await fixture.recordings()).toEqual([]);
+    });
+
+    it('ends with the interrupted terminal and no plugin root when the caller aborts while enumeration reads a native root (codex-82)', async () => {
+      const fixture = await setup();
+      const cwd = join(fixture.root, 'workspace');
+      const nativeRoot = join(cwd, '.agents', 'skills');
+      await writeSkill(join(nativeRoot, 'native-skill'), 'native-skill');
+      const cache = join(fixture.codexHome, 'plugins', 'cache');
+      const controller = new AbortController();
+      let cacheAtRead: string[] | undefined;
+      reads.onReaddir = (path) => {
+        if (path !== nativeRoot || cacheAtRead) return;
+        // No plugin root exists while enumeration runs.
+        cacheAtRead = existsSync(cache) ? readdirSync(cache) : [];
+        controller.abort();
+      };
+      const events = await collect(
+        fixture.adapter.run('Aborted.', {
+          cwd,
+          skills: [fixture.runSkill],
+          nativeSkills: false,
+          abortSignal: controller.signal,
+        }),
+      );
+      expect(cacheAtRead).toEqual([]);
+      expect(events.map((event) => event.type)).toEqual(['done']);
+      expect(events[0]!.payload).toMatchObject({ status: 'interrupted' });
+      expect(fixture.constructed).toEqual([]);
+      expect(await fixture.recordings()).toEqual([]);
+      expect(await pluginCacheEntries(fixture.codexHome)).toEqual([]);
     });
 
     it('rejects a non-boolean nativeSkills before the fixture spawns (skills-10)', async () => {
