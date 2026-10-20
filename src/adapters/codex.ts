@@ -1569,6 +1569,14 @@ function createdAncestors(path: string, firstCreated: string | undefined) {
 
 /** How deep below a root the runtime reads directories for skills (codex-82). */
 const CODEX_SKILL_SCAN_DEPTH = 6;
+/**
+ * codex-82: the longest `skills.config` override a run passes, in UTF-8
+ * bytes: what fills, with a terminator, the 32 pages of 4 KiB Linux allows
+ * one argument string, or on Windows under half its 32,767-character command
+ * line, so that no host refuses to start the runtime.
+ */
+const CODEX_SKILLS_CONFIG_BOUND =
+  process.platform === 'win32' ? 16_000 : 131_071;
 const CODEX_SKILL_FILE = 'SKILL.md';
 
 function isMissingEntry(error: unknown): boolean {
@@ -1694,7 +1702,8 @@ async function walkCodexSkillRoot(
 /**
  * codex-82: the overrides that turn native skill discovery off: bundled
  * skills off, and every native `SKILL.md` found disabled by its real path in
- * one `skills.config` override, since a later one replaces an earlier one.
+ * one `skills.config` override, since a later one replaces an earlier one,
+ * rejecting the run where that override exceeds the process-argument bound.
  */
 async function codexNativeSkillOverrides(
   cwd: string | undefined,
@@ -1709,11 +1718,16 @@ async function codexNativeSkillOverrides(
   }
   const overrides = ['skills.bundled.enabled=false'];
   if (found.length > 0) {
-    overrides.push(
-      `skills.config=[${found
-        .map((path) => `{path=${codexTomlString(path)},enabled=false}`)
-        .join(',')}]`,
-    );
+    const listing = `skills.config=[${found
+      .map((path) => `{path=${codexTomlString(path)},enabled=false}`)
+      .join(',')}]`;
+    const bytes = Buffer.byteLength(listing, 'utf8');
+    if (bytes > CODEX_SKILLS_CONFIG_BOUND) {
+      throw new Error(
+        `nativeSkills: false for adapter "${AGENT}" cannot be honored: the paths of ${found.length} native skills make a skills.config override of ${bytes} bytes, beyond the ${CODEX_SKILLS_CONFIG_BOUND}-byte process-argument bound`,
+      );
+    }
+    overrides.push(listing);
   }
   return overrides;
 }

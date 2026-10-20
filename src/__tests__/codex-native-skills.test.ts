@@ -55,6 +55,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const THREAD_ID = 'codex-native-skills-thread';
 const RUN_SKILL = 'run-skill';
 const BUNDLED_OFF = 'skills.bundled.enabled=false';
+/** codex-82's bound on the `skills.config` override off Windows, in UTF-8 bytes. */
+const POSIX_SKILLS_CONFIG_BOUND = 131_071;
 const roots: string[] = [];
 
 afterEach(async () => {
@@ -506,6 +508,61 @@ describe.skipIf(process.platform === 'win32')(
         expect(await pluginCacheEntries(fixture.codexHome)).toEqual([]);
       },
     );
+
+    it('rejects native skill paths beyond the process-argument bound before browser preparation, a plugin root, or SDK invocation, naming the count (codex-82)', async () => {
+      const fixture = await setup();
+      const cwd = join(fixture.root, 'workspace');
+      const nativeRoot = join(cwd, '.agents', 'skills');
+      // Long shared directories keep each path under macOS's 1,024-byte
+      // limit while few skills fill the bound.
+      const levels = Math.min(
+        5,
+        Math.floor((1000 - nativeRoot.length - 32) / 201),
+      );
+      const shared = join(
+        nativeRoot,
+        ...Array.from({ length: levels }, (_, index) =>
+          String.fromCharCode(97 + index).repeat(200),
+        ),
+      );
+      let bytes = 'skills.config=[]'.length;
+      let count = 0;
+      while (bytes <= POSIX_SKILLS_CONFIG_BOUND) {
+        const file = await writeSkill(
+          join(shared, `native-${count}`),
+          `native-${count}`,
+        );
+        bytes +=
+          Buffer.byteLength(`{path=${JSON.stringify(file)},enabled=false}`) + 1;
+        count += 1;
+      }
+
+      let message = '';
+      try {
+        await collect(
+          fixture.adapter.run('Too many.', {
+            cwd,
+            browser: true,
+            skills: [fixture.runSkill],
+            nativeSkills: false,
+          }),
+        );
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      const match =
+        /^nativeSkills: false for adapter "codex" cannot be honored: the paths of (\d+) native skills make a skills\.config override of (\d+) bytes, beyond the 131071-byte process-argument bound$/.exec(
+          message,
+        );
+      expect(match, message).not.toBeNull();
+      // Every fixture skill, and any the host machine holds (ambientRoots).
+      expect(Number(match![1])).toBeGreaterThanOrEqual(count);
+      expect(Number(match![2])).toBeGreaterThan(POSIX_SKILLS_CONFIG_BOUND);
+      expect(browserPreparation).not.toHaveBeenCalled();
+      expect(fixture.constructed).toEqual([]);
+      expect(await fixture.recordings()).toEqual([]);
+      expect(await pluginCacheEntries(fixture.codexHome)).toEqual([]);
+    });
 
     it('ends with the interrupted terminal when the caller aborts before the run (codex-82)', async () => {
       const fixture = await setup();
