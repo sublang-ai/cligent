@@ -409,7 +409,7 @@ New behavior in any of these areas requires a separate decision record.
 - `tmux-play` replaces the standalone fanout CLI; fanout becomes a regular Captain shipped as a sub-export.
 - Custom Captains use the same contract as built-ins: a `captain.from` specifier in CLI config, or a Captain instance via the runtime API.
 - Stateful Captains (XState actors, planners) acquire session-scoped resources in `init(session)`, hold the session reference for emissions across turns, and release in `dispose()`. They surface human-readable status through `emitStatus`/`captain_status` and structured machine-readable events through `emitTelemetry`/`captain_telemetry`. Both emit methods are session-scoped so a Captain can fire telemetry while idle between turns (e.g., an XState `after:` timer) without the per-turn binding gymnastics that an earlier draft of this DR required.
-- `captain_telemetry` is a generic topic-routed lane. An XState Captain emits visualizer streams (`sketch.diagram`, `sketch.highlight` per [DR-002 §8](../../../playbook/specs/decisions/002-in-page-xstate-visualizer.md#8-cross-process-deployment)) without the runtime knowing about visualizers; a sketch presenter consumes the records and owns SSE/WebSocket transport, with internal buffering to keep the dispatcher non-blocking.
+- `captain_telemetry` is a generic topic-routed lane. An XState Captain emits visualizer streams (`sketch.diagram`, `sketch.highlight` per Playbook's DR-002 §8 [[5]]) without the runtime knowing about visualizers; a sketch presenter consumes the records and owns SSE/WebSocket transport, with internal buffering to keep the dispatcher non-blocking.
 - Out-of-turn emissions carry `turnId: null`; turn-bound emissions carry the active session-local turn ID. Observers handle both deliberately rather than assuming every record is turn-scoped.
 - Coordination is testable without tmux because the runtime emits records before formatting.
 - The runtime record types and observer-registration contract export from `@sublang/cligent/tmux-play` (not the root package), so out-of-package observers — sketch presenters, metrics collectors — attach without depending on internal modules.
@@ -421,3 +421,4 @@ New behavior in any of these areas requires a separate decision record.
 [2]: https://nodejs.org/api/readline.html#readlineemitkeypresseventsstream-interface "Node.js — readline.emitKeypressEvents()"
 [3]: https://catppuccin.com/palette/ "Catppuccin Palette"
 [4]: https://man.openbsd.org/tmux.1 "tmux manual — key tables, copy-mode, send-keys -X"
+[5]: https://github.com/sublang-ai/playbook/blob/main/specs/decisions/002-in-page-xstate-visualizer.md#8-cross-process-deployment "Playbook DR-002: XState Visualizer Architecture — Cross-process deployment"

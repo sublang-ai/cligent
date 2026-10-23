@@ -6,8 +6,8 @@
 ## Intent
 
 This package lets a developer or agent cut a published release of this project from a git tag, with a changelog a reader can trust and provenance a consumer can verify.
-It owns versioning, changelog form, and the tag-triggered publish, not what any release contains.
-It is project-local: the scoped distributable it publishes is `@sublang/cligent`.
+It owns versioning, changelog form, the tag-triggered publish, and the gate every merge into `main` passes, not what any release contains.
+It is project-local: the scoped distributable it publishes is `@sublang/cligent`, and the CI jobs it names are this repository's.
 
 ## External Behavior
 
@@ -89,6 +89,43 @@ Before creating the final release-preparation commit, the developer or agent sha
 | notable-change reconciliation                           | each notable change group, its changelog heading, and the commits that establish it, with every audited commit and the containing preparation changes either tied to a group or explicitly classified as non-notable with rationale [[release-3](#release-3)], [[release-5](#release-5)]                                           |
 | pre-tag checklist                                       | the result of every [[release-10](#release-10)] line, with work intentionally deferred until after the preparation commit still marked pending                                                                                                                                                                                     |
 
+### release-16
+
+When a pull request into `main` is ready, the maintainer shall ask GitHub to merge it on green, and the repository shall merge it with a merge commit once every job of the CI workflow's pull-request run has passed on the pull request's head, requiring no job to re-run for a later move of `main` ([DR-039](../decisions/039-merge-on-green.md)):
+
+- `main` is a protected branch whose required status checks are exactly the jobs a pull request's run holds [[release-19](#release-19)], with the branch not required to be up to date;
+- a conflicting pull request merges only once its branch merges `main` and its checks pass again on that head.
+
+### release-17
+
+While a pull request targets a branch, the maintainer shall keep that branch ([DR-039](../decisions/039-merge-on-green.md)).
+
+### release-18
+
+When a push reaches a pull request's branch, the CI workflow shall cancel the run of the head that push supersedes and run the new head once, cancelling no run of a push to `main` or of its nightly schedule ([DR-039](../decisions/039-merge-on-green.md)).
+
+### release-19
+
+The CI workflow shall run the jobs the event starting it selects ([DR-039](../decisions/039-merge-on-green.md)):
+
+| Event | Jobs |
+| --- | --- |
+| pull request into `main` | `ci` on Linux for each of its Node versions, `distributable` on Linux, and `browser` on Linux, Windows and macOS, `browser (macos-latest)` being its one macOS job |
+| push to `main`, nightly schedule | every job of a pull request's run, and `acceptance` |
+
+### release-20
+
+When the developer or agent is about to push, they shall run `npm run prepush`, which refuses a tree holding a conflict marker and then runs the spec lint and the type check, pushing only once it passes ([DR-039](../decisions/039-merge-on-green.md)).
+
+### release-21
+
+A test suite shall be deterministic by construction ([DR-039](../decisions/039-merge-on-green.md)):
+
+- an order it reads from Git or from a directory listing is sorted on both sides of the comparison, or read from the source whose order its subject promises;
+- a step is bounded by the event the behavior names, never by wall-clock time;
+- a tool's calls are asserted by where they went, never by their exact count;
+- a scripted fault outlasts every call that may consume it before the call under test.
+
 ## Verification
 
 ### release-11
@@ -123,6 +160,15 @@ When a release-preparation record is audited, the system check shall assert the 
 - the recorded previous tag and previous version agree, the recorded change level produces the chosen version, and the recorded release date identifies its changelog section [[release-1](#release-1)], [[release-4](#release-4)];
 - `CHANGELOG.md` has the chosen version and date, ordered headings, reconciled notable entries, and correct comparison links; `[Unreleased]` is empty in the pending final-preparation changes, committed final-preparation tree, and matching release-tag tree, while ordered later-release entries in a working tree based on the committed preparation or tag, or in a later descendant, do not invalidate the prepared record [[release-3](#release-3)], [[release-4](#release-4)], [[release-5](#release-5)];
 - `package.json` `version`, `package-lock.json` top-level `version`, and `package-lock.json` `packages[""].version` carry the chosen version, and the record truthfully distinguishes completed preparation checks from the push and tag work that remains [[release-10](#release-10)].
+
+### release-22
+
+When the repository audit reads the CI workflow and the pre-push script, it shall assert:
+
+- the workflow's concurrency groups a pull request's runs by its number and cancels the run in progress for a pull request, and not for a push to `main` or a scheduled run [[release-18](#release-18)];
+- a nightly schedule starts the workflow, and the jobs it runs narrow for a pull request to its one macOS job beside Linux and Windows and are whole for a push to `main` and for the schedule [[release-19](#release-19)];
+- the required checks the merge rule names are exactly the jobs a pull request's run holds [[release-16](#release-16)], [[release-19](#release-19)];
+- `npm run prepush` refuses a tree holding a conflict marker, naming the file that holds it [[release-20](#release-20)].
 
 ## References
 

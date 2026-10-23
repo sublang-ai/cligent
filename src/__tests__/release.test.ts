@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -1132,5 +1133,158 @@ describe('release preparation', () => {
     expect(manifest.scripts['smoke:release']).toBe(
       'npm run build && npm run test:package && npm run test:distributable && npm run test:smoke',
     );
+  });
+});
+
+interface CiJob {
+  if?: string;
+  'runs-on'?: string;
+  strategy?: { matrix?: Record<string, unknown> };
+}
+
+interface CiWorkflow {
+  on: {
+    push?: { branches?: string[] };
+    pull_request?: { branches?: string[] };
+    schedule?: Array<{ cron?: string }>;
+  };
+  concurrency?: { group?: string; 'cancel-in-progress'?: string };
+  jobs: Record<string, CiJob>;
+}
+
+type CiEvent = 'pull_request' | 'push' | 'schedule';
+
+/** The jobs a pull request's run holds (release-19), its required checks (release-16). */
+const requiredChecks = [
+  'ci (20)',
+  'ci (22)',
+  'ci (24)',
+  'ci (25)',
+  'distributable',
+  'browser (ubuntu-latest)',
+  'browser (macos-latest)',
+  'browser (windows-latest)',
+];
+
+function ciWorkflow(): CiWorkflow {
+  return parse(read('.github/workflows/ci.yml')) as CiWorkflow;
+}
+
+function jobRunsFor(job: CiJob, event: CiEvent): boolean {
+  if (job.if === undefined) return true;
+  if (job.if === "github.event_name != 'pull_request'") {
+    return event !== 'pull_request';
+  }
+  throw new Error(`the merge-gate audit does not know the job rule ${job.if}`);
+}
+
+/** The check runs an event starts: each job's matrix legs, named as GitHub names them. */
+function ciChecks(
+  workflow: CiWorkflow,
+  event: CiEvent,
+): Array<{ name: string; runner: string }> {
+  return Object.entries(workflow.jobs).flatMap(([id, job]) => {
+    if (!jobRunsFor(job, event)) return [];
+    const matrix = job.strategy?.matrix ?? {};
+    if ('include' in matrix || 'exclude' in matrix) {
+      throw new Error(`the merge-gate audit does not expand ${id}'s matrix`);
+    }
+    let legs: Array<Record<string, string>> = [{}];
+    for (const [key, values] of Object.entries(matrix)) {
+      legs = legs.flatMap((leg) =>
+        (values as unknown[]).map((value) => ({
+          ...leg,
+          [key]: String(value),
+        })),
+      );
+    }
+    return legs.map((leg) => {
+      const values = Object.values(leg);
+      const runner = (job['runs-on'] ?? '').replace(
+        /^\$\{\{ matrix\.([\w-]+) \}\}$/,
+        (_, key: string) => leg[key] ?? '',
+      );
+      return {
+        name: values.length === 0 ? id : `${id} (${values.join(', ')})`,
+        runner,
+      };
+    });
+  });
+}
+
+describe('merge gate', () => {
+  it('runs one run per pull-request head, never cancelling main (release-22)', () => {
+    const workflow = ciWorkflow();
+    expect(workflow.on.push?.branches).toEqual(['main']);
+    expect(workflow.on.pull_request?.branches).toEqual(['main']);
+    expect(workflow.concurrency?.group).toBe(
+      'ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}',
+    );
+    expect(workflow.concurrency?.['cancel-in-progress']).toBe(
+      "${{ github.event_name == 'pull_request' }}",
+    );
+  });
+
+  it('narrows a pull request to one macOS job and runs all on main and nightly (release-22)', () => {
+    const workflow = ciWorkflow();
+    expect(workflow.on.schedule).toHaveLength(1);
+    expect(workflow.on.schedule?.[0]?.cron).toMatch(/^\S+ \S+ \* \* \*$/);
+
+    const pullRequest = ciChecks(workflow, 'pull_request');
+    expect(pullRequest.map((check) => check.name).sort()).toEqual(
+      [...requiredChecks].sort(),
+    );
+    expect(
+      pullRequest
+        .filter((check) => check.runner.startsWith('macos-'))
+        .map((check) => check.name),
+    ).toEqual(['browser (macos-latest)']);
+    for (const runner of ['ubuntu-latest', 'windows-latest']) {
+      expect(pullRequest.map((check) => check.runner)).toContain(runner);
+    }
+
+    const full = [...requiredChecks, 'acceptance'].sort();
+    for (const event of ['push', 'schedule'] as const) {
+      expect(
+        ciChecks(workflow, event)
+          .map((check) => check.name)
+          .sort(),
+      ).toEqual(full);
+    }
+  });
+
+  it('refuses a tree holding a conflict marker before the lints (release-22)', () => {
+    const manifest = JSON.parse(read('package.json')) as {
+      scripts: Record<string, string>;
+    };
+    expect(manifest.scripts['prepush']).toBe('bash scripts/prepush.sh');
+
+    const scratch = mkdtempSync(join(tmpdir(), 'cligent-prepush-'));
+    try {
+      execFileSync('git', ['init', '-q', scratch]);
+      mkdirSync(join(scratch, 'scripts'));
+      writeFileSync(
+        join(scratch, 'scripts/prepush.sh'),
+        read('scripts/prepush.sh'),
+      );
+      writeFileSync(
+        join(scratch, 'left.ts'),
+        'const a = 1;\n<<<<<<< HEAD\nconst b = 2;\n=======\nconst b = 3;\n>>>>>>> origin/main\n',
+      );
+      execFileSync('git', ['add', '-A'], { cwd: scratch });
+      const run = spawnSync('bash', [join(scratch, 'scripts/prepush.sh')], {
+        encoding: 'utf8',
+      });
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain(
+        'prepush: conflict markers left in the tree',
+      );
+      expect(run.stderr).toContain('left.ts:2:<<<<<<< HEAD');
+      expect(run.stderr).toContain('left.ts:4:=======');
+      expect(run.stderr).toContain('left.ts:6:>>>>>>> origin/main');
+      expect(run.stdout).toBe('');
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });
