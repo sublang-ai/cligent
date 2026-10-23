@@ -64,6 +64,7 @@ meta.md       The spec of specs
 | [DR-036](decisions/036-cross-agent-skill-installation.md) | 036-cross-agent-skill-installation.md | Shared `skills` option, portable validation, run-scoped snapshot carriers per runtime, opened invocation |
 | [DR-037](decisions/037-per-run-native-skill-switch.md) | 037-per-run-native-skill-switch.md | Shared `nativeSkills` switch turning a runtime's own skill discovery off per run, per-adapter levers and disclosed residue, frozen install folders; Captain call settings amended by DR-038 |
 | [DR-038](decisions/038-native-skills-in-tmux-play-call-settings.md) | 038-native-skills-in-tmux-play-call-settings.md | `nativeSkills` in tmux-play call settings: admitted, snapshotted and forwarded unchanged, Kimi's `false` rejected before the prompt record, no configured default |
+| [DR-039](decisions/039-merge-on-green.md) | 039-merge-on-green.md | Merge on green: protected `main` with the pull request's jobs as required checks, auto-merge, one run per pull-request head, Linux, Windows and one macOS job on a pull request, the full set on `main` and nightly, kept base branches, a pre-push check, deterministic suites |
 
 ## Packages
 
@@ -85,6 +86,6 @@ meta.md       The spec of specs
 | [ndjson.md](packages/ndjson.md) | NDJSON stream parser |
 | [opencode.md](packages/adapters/opencode.md) | OpenCode SDK and server adapter |
 | [package.md](packages/package.md) | Distributable package configuration |
-| [release.md](packages/release.md) | Versioning and release workflow |
+| [release.md](packages/release.md) | Versioning, release workflow, and the merge gate into `main` |
 | [skills.md](packages/skills.md) | Caller-supplied skills, validation, snapshot, removal, transport discovery, and the native-skill switch |
 | [tmux-play.md](packages/tmux-play.md) | tmux-play multi-agent application |
