@@ -5,6 +5,16 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # The full set nightly, so acceptance runs on main within a day even
+    # when nothing lands (release-19, DR-039).
+    - cron: '47 3 * * *'
+
+# One run per pull-request head: a push cancels the run it supersedes;
+# a push to main and the nightly run cancel nothing (release-18).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -138,8 +148,11 @@ jobs:
             node scripts/verify-electron-host.mjs --packaged
           fi
 
+  # A pull request's run is ci, distributable and browser, with
+  # browser (macos-latest) its one macOS job; a push to main and the
+  # nightly run add acceptance (release-19).
   acceptance:
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     needs: [ci, distributable, browser]
     runs-on: ubuntu-latest
 
