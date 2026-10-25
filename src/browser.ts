@@ -343,13 +343,16 @@ async function probeBrowser(
   const source = `
 process.on('SIGTERM', () => process.exit(1));
 process.on('SIGINT', () => process.exit(1));
-const step = value => console.error(${JSON.stringify('\n' + proofStepPrefix)} + value);
+let currentStep, reportedFailure;
+let failureReported = false;
+const step = value => { currentStep = value; console.error(${JSON.stringify('\n' + proofStepPrefix)} + value); };
+const deadline = Date.now() + ${timeoutMs};
 const timer = setTimeout(() => { console.error(${JSON.stringify('\n' + proofDeadlineMarker)}); process.exit(1); }, ${timeoutMs});
 (async () => {
-  step('load-runtime');
-  const { chromium } = require(${JSON.stringify(runtime.playwright)});
-  let server;
+  let server, browser, page;
   try {
+    step('load-runtime');
+    const { chromium } = require(${JSON.stringify(runtime.playwright)});
     step('launch-browser');
     server = await chromium.launchServer({
       executablePath: ${JSON.stringify(runtime.executablePath)},
@@ -358,17 +361,48 @@ const timer = setTimeout(() => { console.error(${JSON.stringify('\n' + proofDead
       timeout: ${timeoutMs}, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
     });
     step('connect-browser');
-    const browser = await chromium.connect(server.wsEndpoint(), { timeout: ${timeoutMs} });
+    browser = await chromium.connect(server.wsEndpoint(), { timeout: ${timeoutMs} });
     step('open-page');
-    const page = await browser.newPage();
+    page = await browser.newPage();
     step('set-content');
     await page.setContent('<!doctype html><title>Browser readiness</title><p>Ready</p>');
     step('capture-screenshot');
-    const png = await page.screenshot({ type: 'png', timeout: ${timeoutMs} });
-    if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('Browser returned no PNG screenshot');
+    const capture = async () => {
+      const png = await page.screenshot({ type: 'png', timeout: Math.max(1, deadline - Date.now()) });
+      if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error('Browser returned no PNG screenshot');
+    };
+    try {
+      await capture();
+    } catch (first) {
+      if (!(first instanceof Error) || first.message.split('\\n', 1)[0] !== 'page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot' || !browser.isConnected() || page.isClosed() || Date.now() >= deadline) throw first;
+      try {
+        await capture();
+      } catch (additional) {
+        throw new Error('First PNG capture: ' + String(first).slice(0, 2048) + '\\nAdditional PNG capture: ' + String(additional).slice(0, 2048));
+      }
+    }
+  } catch (error) {
+    // Observe the failed stage and live state before finally disposes them.
+    try {
+      const viewport = page?.viewportSize();
+      console.error('Browser proof failure facts: ' + JSON.stringify({
+        step: currentStep, browserConnected: browser?.isConnected() ?? null,
+        pageClosed: page?.isClosed() ?? null,
+        viewport: viewport ? { width: viewport.width, height: viewport.height } : null,
+      }));
+    } catch {
+      console.error('Browser proof failure facts: ' + JSON.stringify({ step: currentStep, browserConnected: null, pageClosed: null, viewport: null }));
+    }
+    console.error(String(error).slice(0, 4608));
+    reportedFailure = error;
+    failureReported = true;
+    throw error;
   } finally { step('dispose-browser'); await server?.kill(); }
   clearTimeout(timer);
-})().then(() => process.exit(0), error => { console.error(String(error)); process.exit(1); });
+})().then(() => process.exit(0), error => {
+  if (!failureReported || error !== reportedFailure) console.error((failureReported ? 'Browser disposal failure: ' : '') + String(error).slice(0, failureReported ? 512 : 4608));
+  process.exit(1);
+});
 `;
   try {
     await writeFile(entry, source);
