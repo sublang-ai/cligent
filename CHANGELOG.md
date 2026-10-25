@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Managed browser readiness permits one additional PNG capture on the same live page only for Chromium's exact empty-image capture error, within the original deadline, and preserves bounded failure facts before cleanup.
+
 ## [0.36.0] - 2026-10-20
 
 ### Added

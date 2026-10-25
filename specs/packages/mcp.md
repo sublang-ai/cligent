@@ -54,6 +54,8 @@ When managed-browser configuration is returned, the server shall run through the
 When managed-browser preparation runs its launch proof, the proof shall select its outcome after bounded isolated headless launch and in-memory PNG capture with the managed runtime's sandbox posture, without installing operating-system packages:
 
 - Success requires a valid screenshot and browser disposal before readiness.
+- Only an error whose first message line is exactly `page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot` permits one additional PNG capture on the same still-connected browser and open page, within the original proof deadline; launch, other errors, invalid PNG, cancellation and timeout are never retried.
+- A failure before disposal records its fixed proof stage, browser connection, page-closed state and viewport dimensions before disposal, with unavailable facts marked unknown and no page content; a failed additional capture retains bounded first and additional capture diagnostics even if disposal also fails.
 - A deadline failure names the last reported fixed browser step in plain language, or the starting step if none was reported, without copying arbitrary runtime output into that timeout diagnostic.
 - Caller cancellation remains independent of the deadline and terminates the owned proof with bounded cleanup.
 
@@ -69,7 +71,7 @@ When a managed browser server is admitted, its configuration shall select a run-
 
 ### mcp-14
 
-When real browser and Electron host fixtures prepare and execute a browser, integration checks shall verify launch/screenshot proof, fixed-step deadline diagnostics across split or oversized child output without echoing arbitrary contents, and timeout/cancellation cleanup [[mcp-11](#mcp-11)], Node/Electron child execution without global Node [[mcp-12](#mcp-12)], and automatic artifacts outside an unchanged workspace with release after consumption [[mcp-13](#mcp-13)].
+When real browser, controlled subprocess and Electron host fixtures prepare and execute a browser, integration checks shall verify launch/screenshot proof, one same-page empty-image recovery, refusal to retry repeated or different errors, invalid PNG or a closed page/browser, bounded pre-disposal failure facts and both failed capture diagnostics despite disposal rejection, fixed-step deadline diagnostics across split or oversized child output without echoing arbitrary contents, and timeout/cancellation cleanup during capture [[mcp-11](#mcp-11)], Node/Electron child execution without global Node [[mcp-12](#mcp-12)], and automatic artifacts outside an unchanged workspace with release after consumption [[mcp-13](#mcp-13)].
 
 ### mcp-7
 

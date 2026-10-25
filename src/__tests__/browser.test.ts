@@ -42,7 +42,226 @@ async function fixture(body: string) {
   };
 }
 
+async function captureFixture(
+  outcomes: readonly string[],
+  rejectDisposal = false,
+) {
+  const runtime = await fixture(
+    "fs.writeFileSync(path.join(__dirname, 'chromium'), 'fixture', {mode:0o700});",
+  );
+  const playwright = join(runtime.dir, 'playwright.cjs');
+  // Run the production generated proof in its real owned child, controlling
+  // only the native runtime boundary where Chromium reports capture outcomes.
+  await writeFile(
+    playwright,
+    `
+const fs = require('node:fs');
+const path = require('node:path');
+const record = value => fs.appendFileSync(path.join(__dirname, 'events'), JSON.stringify(value) + '\\n');
+fs.writeFileSync(path.join(__dirname, 'pid'), String(process.pid));
+const outcomes = ${JSON.stringify(outcomes)};
+let connected = true, closed = false, attempt = 0;
+const page = {
+  setContent: async () => record({event:'content', page:'owned-page'}),
+  isClosed: () => closed,
+  viewportSize: () => ({width:1280, height:720}),
+  screenshot: async options => {
+    record({event:'capture', page:'owned-page', timeout:options.timeout});
+    const outcome = outcomes[attempt++];
+    const empty = 'page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot';
+    if (outcome === 'empty' || outcome === 'closed-page' || outcome === 'disconnected') {
+      if (outcome === 'closed-page') closed = true;
+      if (outcome === 'disconnected') connected = false;
+      // Oversized native call logs must leave both bounded causes observable.
+      throw new Error(empty + '\\nCall log:\\n  - capture-' + attempt + '\\n' + 'x'.repeat(12000));
+    }
+    if (outcome === 'other') throw new Error('page.screenshot: Protocol error (Page.captureScreenshot): Permission denied');
+    if (outcome === 'prefixed') throw new Error('unrelated ' + empty);
+    if (outcome === 'suffixed') throw new Error(empty + ' on another operation');
+    if (outcome === 'invalid') return Buffer.from('not a PNG');
+    if (outcome === 'hang') {
+      fs.writeFileSync(path.join(__dirname, 'capture-waiting'), 'waiting');
+      return new Promise(() => {});
+    }
+    // A third capture succeeding would expose an unbounded recovery policy.
+    return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRZkAAAAASUVORK5CYII=', 'base64');
+  },
+};
+const browser = {
+  isConnected: () => connected,
+  newPage: async () => { record({event:'page', page:'owned-page'}); return page; },
+};
+module.exports = {chromium:{
+  launchServer: async options => {
+    record({event:'launch', headless:options.headless, sandbox:options.chromiumSandbox});
+    return {wsEndpoint:()=> 'ws://owned-browser', kill:async()=> {
+      record({event:'dispose'}); connected = false; closed = true;
+      if (${rejectDisposal}) throw new Error('fixture disposal rejected ' + 'z'.repeat(12000));
+    }};
+  },
+  connect: async endpoint => { record({event:'connect', endpoint}); return browser; },
+}};
+`,
+  );
+  return { ...runtime, probe: undefined, playwright };
+}
+
+async function captureEvents(runtime: { dir: string }) {
+  return (await readFile(join(runtime.dir, 'events'), 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+}
+
 describe('managed browser preparation subprocess', () => {
+  it('recovers one exact empty-image failure on the same live page before disposal', async () => {
+    const runtime = await captureFixture(['empty', 'png']);
+    configurations.push(await prepareBrowserServer(undefined, runtime));
+    const events = await captureEvents(runtime);
+    const launches = events.filter((event) => event.event === 'launch');
+    expect(launches.length).toBeLessThanOrEqual(1);
+    expect(launches[0]).toMatchObject({ headless: true, sandbox: true });
+    expect(events.find((event) => event.event === 'connect')?.endpoint).toBe(
+      'ws://owned-browser',
+    );
+    const captures = events.filter((event) => event.event === 'capture');
+    expect(captures.length).toBeLessThanOrEqual(2);
+    expect(captures.every((event) => event.page === 'owned-page')).toBe(true);
+    expect(captures[1].timeout).toBeLessThanOrEqual(captures[0].timeout);
+    expect(captures[0].timeout).toBeLessThanOrEqual(10_000);
+    expect(
+      events.findIndex((event) => event.event === 'dispose'),
+    ).toBeGreaterThan(
+      events.findLastIndex((event) => event.event === 'capture'),
+    );
+  });
+
+  it.each(['empty', 'other', 'invalid'])(
+    'retains both diagnostics and pre-disposal live facts after additional capture %s',
+    async (additional) => {
+      const runtime = await captureFixture(['empty', additional]);
+      const failure = await prepareBrowserServer(undefined, runtime).catch(
+        (error) => error as Error,
+      );
+      expect(failure).toMatchObject({ code: 'launch-failed' });
+      expect(failure.message).toContain(
+        'First PNG capture: Error: page.screenshot:',
+      );
+      expect(failure.message).toContain('capture-1');
+      expect(failure.message).toContain('Additional PNG capture: Error:');
+      expect(failure.message).toContain(
+        additional === 'empty'
+          ? 'capture-2'
+          : additional === 'invalid'
+            ? 'Browser returned no PNG screenshot'
+            : 'Permission denied',
+      );
+      expect(failure.message).toContain(
+        'Browser proof failure facts: {"step":"capture-screenshot","browserConnected":true,"pageClosed":false,"viewport":{"width":1280,"height":720}}',
+      );
+      expect(failure.message.length).toBeLessThan(9000);
+      const events = await captureEvents(runtime);
+      expect(
+        events.filter((event) => event.event === 'capture').length,
+      ).toBeLessThanOrEqual(2);
+      expect(events.at(-1)?.event).toBe('dispose');
+    },
+  );
+
+  it.each([
+    'other',
+    'prefixed',
+    'suffixed',
+    'invalid',
+    'closed-page',
+    'disconnected',
+  ])(
+    'does not recapture after %s and observes the failed state before cleanup',
+    async (outcome) => {
+      const runtime = await captureFixture([outcome, 'png']);
+      const failure = await prepareBrowserServer(undefined, runtime).catch(
+        (error) => error as Error,
+      );
+      expect(failure).toMatchObject({ code: 'launch-failed' });
+      expect(failure.message).not.toContain('Additional PNG capture:');
+      expect(failure.message).toContain(
+        `"browserConnected":${outcome !== 'disconnected'},"pageClosed":${outcome === 'closed-page'}`,
+      );
+      const events = await captureEvents(runtime);
+      expect(
+        events.filter((event) => event.event === 'capture').length,
+      ).toBeLessThanOrEqual(1);
+      expect(events.at(-1)?.event).toBe('dispose');
+    },
+  );
+
+  it('retains both bounded capture failures when disposal also rejects', async () => {
+    const runtime = await captureFixture(['empty', 'empty'], true);
+    const failure = await prepareBrowserServer(undefined, runtime).catch(
+      (error) => error as Error,
+    );
+    expect(failure.message).toContain('First PNG capture:');
+    expect(failure.message).toContain('capture-1');
+    expect(failure.message).toContain('Additional PNG capture:');
+    expect(failure.message).toContain('capture-2');
+    expect(failure.message).toContain(
+      'Browser disposal failure: Error: fixture disposal rejected',
+    );
+    expect(failure.message).toContain(
+      '"browserConnected":true,"pageClosed":false',
+    );
+    expect(failure.message.length).toBeLessThan(6000);
+    expect(failure.message.indexOf('First PNG capture:')).toBeLessThan(
+      failure.message.indexOf('Browser disposal failure:'),
+    );
+  });
+
+  it.each(['timeout', 'cancel'])(
+    'keeps the original deadline and owned cleanup during additional capture %s',
+    async (kind) => {
+      const runtime = await captureFixture(['empty', 'hang']);
+      const controller = new AbortController();
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      const pending = browser.prepareBrowserRuntime(
+        { timeoutMs: 900_000, abortSignal: controller.signal },
+        runtime,
+      );
+      try {
+        let captureWaiting = false;
+        for (let attempt = 0; attempt < 1000; attempt++) {
+          try {
+            await readFile(join(runtime.dir, 'capture-waiting'));
+            captureWaiting = true;
+            break;
+          } catch {
+            await delay(10);
+          }
+        }
+        expect(captureWaiting).toBe(true);
+        if (kind === 'timeout') await vi.advanceTimersByTimeAsync(10_000);
+        if (kind === 'cancel') controller.abort();
+        expect(await pending).toMatchObject(
+          kind === 'cancel'
+            ? { status: 'cancelled' }
+            : {
+                status: 'not-ready',
+                code: 'launch-failed',
+                message: expect.stringContaining(
+                  'last reported browser step: capturing the screenshot',
+                ),
+              },
+        );
+        const pid = Number(await readFile(join(runtime.dir, 'pid'), 'utf8'));
+        expect(() => process.kill(pid, 0)).toThrow();
+      } finally {
+        controller.abort();
+        vi.useRealTimers();
+        await pending;
+      }
+    },
+    15_000,
+  );
+
   it.skipIf(process.platform === 'win32').each(['timeout', 'cancel'])(
     'terminates a nonresponsive native browser launch and descendant on %s',
     async (kind) => {
