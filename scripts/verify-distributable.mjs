@@ -33,7 +33,7 @@ const EXPECTED_RUNTIME_DEPENDENCIES = Object.freeze({
   '@agentclientprotocol/sdk': '1.4.0',
   '@playwright/mcp': '0.0.77',
   yaml: '^2.8.4',
-  zod: '4.4.3',
+  zod: '4.6.6',
 });
 // package-26: derived from the shipped descriptor, never restated here. A
 // second copy of a floor is exactly the drift this work removes.

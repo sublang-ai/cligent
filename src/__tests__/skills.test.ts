@@ -1028,6 +1028,7 @@ describe('read-only directories and aliased sources (skills-3)', () => {
     );
     await writeFile(join(store, 'assets', 'a.txt'), 'A');
     await writeFile(join(store, 'nested', 'n.txt'), 'N', { mode: 0o444 });
+    await chmod(join(store, 'nested', 'n.txt'), 0o444);
     // A relative link that reaches its target through the physical parent name.
     await symlink(
       join('..', 'version123', 'assets'),

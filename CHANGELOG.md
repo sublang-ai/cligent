@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Managed browser readiness permits one additional PNG capture on the same live page only for Chromium's exact empty-image capture error, within the original deadline, and preserves bounded failure facts before cleanup.
 
+### Security
+
+- Pin Zod to 4.6.6 to address oversized constrained-collection validation memory exhaustion ([GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)).
+- Refresh locked development dependencies body-parser to 2.4.0 and fast-uri to 3.1.9 to address their [compressed-request handling](https://github.com/advisories/GHSA-27r3-jxmh-p828) and [URI normalization](https://github.com/advisories/GHSA-w74x-v6f9-j3xg) advisories without changing SDK pins or the Node floor.
+- Align the pnpm development lock's matcher, source-map, server, address and Vite/Vitest families with compatible patched versions already resolved by npm.
+
 ## [0.36.0] - 2026-10-20
 
 ### Added
