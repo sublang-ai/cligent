@@ -65,6 +65,10 @@ meta.md       The spec of specs
 | [DR-037](decisions/037-per-run-native-skill-switch.md) | 037-per-run-native-skill-switch.md | Shared `nativeSkills` switch turning a runtime's own skill discovery off per run, per-adapter levers and disclosed residue, frozen install folders; Captain call settings amended by DR-038 |
 | [DR-038](decisions/038-native-skills-in-tmux-play-call-settings.md) | 038-native-skills-in-tmux-play-call-settings.md | `nativeSkills` in tmux-play call settings: admitted, snapshotted and forwarded unchanged, Kimi's `false` rejected before the prompt record, no configured default |
 | [DR-039](decisions/039-merge-on-green.md) | 039-merge-on-green.md | Merge on green: protected `main` with the pull request's jobs as required checks, auto-merge, one run per pull-request head, Linux, Windows and one macOS job on a pull request, the full set on `main` and nightly, kept base branches, a pre-push check, deterministic suites |
+| [DR-040](decisions/040-native-windows-codex-isolation.md) | 040-native-windows-codex-isolation.md | Native Windows Codex permission isolation using public SDK launch options and an owned runtime supervisor |
+
+| [DR-041](decisions/041-codex-final-response.md) | 041-codex-final-response.md | Codex terminal result follows the public SDK final-response contract |
+| [DR-042](decisions/042-windows-powershell-module-cache.md) | 042-windows-powershell-module-cache.md | Windows module-analysis cache stays outside the caller working directory |
 
 ## Packages
 

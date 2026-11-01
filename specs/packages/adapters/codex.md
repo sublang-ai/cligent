@@ -147,7 +147,7 @@ When Codex emits `turn.completed`, the adapter shall emit [[codex-59](#codex-59)
 | `status: 'max_turns'` | `max_turns` or `maxturns` |
 | `status: 'max_budget'` | `max_budget`, `maxbudget`, or `budget_exceeded` |
 | `status: 'error'` | `error` or `failed` |
-| `result` | first non-empty `turn.result`, then event `result`, otherwise omitted |
+| `result` | first non-empty `turn.result`, then event `result`, then the exact text of the last completed `agent_message` in this run (including an empty message), otherwise omitted; earlier progress messages remain separate streamed events |
 | `durationMs` | first finite `turn.durationMs`, `turn.duration_ms`, event `durationMs`, or event `duration_ms`, otherwise elapsed run time |
 | `resumeToken` with `status: 'interrupted'` | the interrupted-terminal selection in [[codex-33](#codex-33)] |
 | `resumeToken` with any other status | the normal-terminal selection in [[codex-6](#codex-6)] |
@@ -213,9 +213,17 @@ When a run has no permission policy or a supplied policy whose mapping succeeds,
 | Permission-policy input | Configuration source |
 | --- | --- |
 | policy absent | emit no `--ignore-user-config`, inherit Codex's native configuration, and preserve normal `CODEX_HOME` authentication and session state |
-| any supplied policy on POSIX, including empty | include `--ignore-user-config` in the selected Codex `exec` arguments while preserving normal `CODEX_HOME` authentication and session state, so user-level legacy `sandbox_mode` or stale `default_permissions` cannot replace the selected profile |
+| any supplied policy on POSIX or native Windows, including empty | include `--ignore-user-config` in the selected Codex `exec` arguments while preserving normal `CODEX_HOME` authentication and session state, so user-level legacy `sandbox_mode` or stale `default_permissions` cannot replace the selected profile |
 
-| any supplied policy on native Windows | reject before browser preparation because the executable wrapper cannot enforce isolated configuration on that host |
+Native Windows isolation uses the host runtime and requires Node 18.19 or later per [DR-040](../../decisions/040-native-windows-codex-isolation.md); an older runtime rejects before native execution.
+
+### codex-84
+
+On native Windows, the mapped run configuration shall preserve those authentication and isolation rules while setting `shell_environment_policy.set.PSModuleAnalysisCachePath` to the inherited nonempty value or `NUL`, without broadening environment inheritance ([DR-042](../../decisions/042-windows-powershell-module-cache.md)).
+
+### codex-85
+
+Where a native Windows policy selects a bounded permission profile, the adapter shall prefer the native MXC backend and supply Windows command-shell guidance without changing the permission or approval axes [[codex-4](#codex-4)] ([DR-040](../../decisions/040-native-windows-codex-isolation.md)).
 
 ### codex-32
 
@@ -586,7 +594,7 @@ When a run starts through the SDK, the adapter shall select its transport from t
 | POSIX permission policy absent                      | retain native configuration and environment under [[codex-31](#codex-31)] without adding isolation arguments                                                                       |
 | POSIX supplied policy                               | preserve [[codex-31](#codex-31)]'s isolation arguments and [[codex-12](#codex-12)]'s SDK-owned entry as resolution anchor for [[codex-64](#codex-64)]'s selected native executable |
 | native Windows without policy                       | retain direct SDK execution without separator protection                                                                                                                           |
-| native Windows with policy                          | retain [[codex-31](#codex-31)]'s rejection                                                                                                                                         |
+| native Windows with policy                          | use the host Node/Electron runtime through SDK public launch options, with POSIX-equivalent JSONL protection and isolation                                                                                                                                         |
 
 The transport executes that selected native binary directly, prepends its existing modern `codex-path` helper directory as the SDK does, and preserves stdin, stderr, argument order, authentication, session state, the caller's original `ELECTRON_RUN_AS_NODE` presence and value, and decoded JSON values; malformed JSON and actual child failures remain failures under [[codex-24](#codex-24)] through [[codex-27](#codex-27)].
 
@@ -595,6 +603,7 @@ The transport executes that selected native binary directly, prepends its existi
 When [[codex-79](#codex-79)]'s owned wrapper terminates or its SDK consumer closes early, the wrapper and adapter shall complete their owned lifecycle before removing the carrier:
 
 - arbitrate startup and unused-carrier retirement through one exclusive claim directory, with a cleanup winner preventing any later native spawn and a wrapper winner requiring cleanup to await both atomic lifecycle records;
+- on Windows, supervise the native child independently of the SDK-facing runtime, using an inherited IPC connection whose closure cancels the native child even when the SDK-facing runtime is forcibly terminated;
 - register signal and output-error handling before claiming startup, atomically publish the wrapper's started identity before spawning the selected native executable, and forward cancellation or a closed stdout only to that exact owned native child;
 - await child close and output drain, preserve child nonzero exits and forwarding failures, and avoid an immediate process exit that truncates output;
 - bound cancellation escalation to that exact native child and bound adapter cleanup waiting for the matching atomically published wrapper completion record after native close and output drain, without terminating or claiming cleanup of intentional tool descendants;
@@ -848,16 +857,17 @@ Where [[codex-219](#codex-219)]'s credential, retry, and skip preconditions hold
 
 ### codex-81
 
-Where POSIX recording CLI fixtures run through the installed real Codex SDK and the adapter's wrapper, when [the installed-SDK transport matrix](../../../src/__tests__/codex-jsonl.test.ts) executes, verification shall assert the following outcomes without replacing the SDK parser [[codex-79](#codex-79)], [[codex-80](#codex-80)]:
+Where POSIX or native Windows recording CLI fixtures run through the installed real Codex SDK and the adapter's wrapper, when [the POSIX transport matrix](../../../src/__tests__/codex-jsonl.test.ts) or [the native Windows check](../../../src/__tests__/codex-windows.test.ts) executes, verification shall assert the following host-specific outcomes without replacing the SDK parser [[codex-79](#codex-79)], [[codex-80](#codex-80)]:
 
 | Case                                                                                                                 | Assertions                                                                                                 |
 | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| raw and escaped U+2028/U+2029, nested strings, LF/CRLF, final unterminated record, byte-split UTF-8 and large output | exact decoded event strings and unchanged other wire data, with complete output under backpressure         |
-| no policy, managed policy and resumed thread                                                                         | exact prompt, arguments, configuration and environment, with only the declared policy isolation difference |
-| malformed JSON, nonzero child exit and `turn.failed`                                                                 | original failure classification under [[codex-24](#codex-24)] and [[codex-26](#codex-26)]                  |
-| abort, early iterator return, closed stdout, already-aborted request and startup/cleanup race                                                                       | finite child termination, closed/drained wrapper, no leaked carrier and no unhandled forwarding error      |
-| original Electron flag absent, empty or set, and existing helper PATH | exact native environment presence/value and SDK-equivalent helper precedence |
-| non-JSON command                                                                                                     | unchanged stdout bytes                                                                                     |
+| POSIX: raw and escaped U+2028/U+2029, nested strings, LF/CRLF, final unterminated record, byte-split UTF-8 and large output | exact decoded event strings and unchanged other wire data, with complete output under backpressure         |
+| POSIX: no policy, managed policy and resumed thread                                                                         | exact prompt, arguments, configuration and environment, with only the declared policy isolation difference |
+| POSIX: malformed JSON, nonzero child exit and `turn.failed`                                                                 | original failure classification under [[codex-24](#codex-24)] and [[codex-26](#codex-26)]                  |
+| POSIX: abort, early iterator return, closed stdout, already-aborted request and startup/cleanup race                                                                       | finite child termination, closed/drained wrapper, no leaked carrier and no unhandled forwarding error      |
+| POSIX: original Electron flag absent, empty or set, and existing helper PATH | exact native environment presence/value and SDK-equivalent helper precedence |
+| POSIX: non-JSON command                                                                                                     | unchanged stdout bytes                                                                                     |
+| native Windows managed policy through the real SDK and a compiled recording executable | exact isolation/config arguments, Unicode JSONL and prompt, unchanged auth/session home and native Node/Electron environment including mixed-case Windows Path, original malformed/nonzero failures, and proven native-child exit and carrier removal on normal completion, abort, early return and already-aborted startup |
 
 ## References
 

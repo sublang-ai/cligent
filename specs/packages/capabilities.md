@@ -32,7 +32,7 @@ When a built-in adapter reports browser admission, discovery shall apply the sam
 | Gemini native sandbox enabled [[gemini-48](adapters/gemini.md#gemini-48)] | unsupported native sandbox |
 | Gemini child environment naming no home [[gemini-48](adapters/gemini.md#gemini-48)] | unsupported home |
 | Gemini per-run server, the browser's included, replacing a same-name user entry that fails the runtime's MCP entry schema beside a string its validation could coerce [[gemini-48](adapters/gemini.md#gemini-48)] | unsupported settings validity |
-| native Windows Codex explicit permission isolation [[codex-31](adapters/codex.md#codex-31)] | unsupported permissions |
+| native Windows Codex explicit permission isolation on Node older than 18.19 [[codex-31](adapters/codex.md#codex-31)] | unsupported permissions |
 | Codex with explicit `allowedTools` or `disallowedTools` [[codex-70](adapters/codex.md#codex-70)] | unsupported tool restriction |
 | other known rejected adapter options | unsupported option |
 | supported transport with no known conflict | supported |

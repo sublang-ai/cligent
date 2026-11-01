@@ -261,6 +261,58 @@ async function collect(
 }
 
 describe('CodexAdapter', () => {
+  it('keeps streamed progress while terminal result uses the SDK final agent message', async () => {
+    for (const explicit of [undefined, 'explicit native result']) {
+      const adapter = new CodexAdapter({
+        loadSdk: makeLoader({
+          events: [
+            { type: 'thread.started', thread_id: CANONICAL_THREAD_ID },
+            {
+              type: 'item.completed',
+              item: {
+                type: 'agent_message',
+                id: 'progress',
+                text: 'Inspecting the task.',
+              },
+            },
+            {
+              type: 'item.completed',
+              item: {
+                type: 'agent_message',
+                id: 'final',
+                text: '{"status":"ready"}',
+              },
+            },
+            {
+              type: 'item.completed',
+              item: {
+                type: 'command_execution',
+                id: 'tool',
+                command: 'echo tool',
+                status: 'completed',
+                aggregated_output: 'must not become the answer',
+                exit_code: 0,
+              },
+            },
+            {
+              type: 'turn.completed',
+              ...(explicit ? { result: explicit } : {}),
+              usage: canonicalUsage,
+            },
+          ],
+        }),
+      });
+      const events = await collect(adapter.run('task'));
+      expect(
+        events
+          .filter((e) => e.type === 'text')
+          .map((e) => (e.payload as { content: string }).content),
+      ).toEqual(['Inspecting the task.', '{"status":"ready"}']);
+      expect(
+        (events.find((e) => e.type === 'done')?.payload as DonePayload).result,
+      ).toBe(explicit ?? '{"status":"ready"}');
+    }
+  });
   it('emits native MCP media once without changing the opaque result or tool count', async () => {
     const content = [
       {
@@ -2541,6 +2593,77 @@ describe('CodexAdapter', () => {
     expect(raw).toContain('permissions.cligent-workspace-extra-writes=');
     expect(raw).toContain('".git"="write"');
     expect(existsSync(wrapperPath!)).toBe(false);
+  });
+
+  it('keeps Windows PowerShell module caching out of the caller cwd without broadening environment inheritance', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const previous = process.env.PSModuleAnalysisCachePath;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      delete process.env.PSModuleAnalysisCachePath;
+      const mapped = mapAgentOptionsToCodexOptions({
+        permissions: { mode: 'auto' },
+      });
+      expect(mapped.codexCliConfigOverrides).toContain(
+        'shell_environment_policy.set.PSModuleAnalysisCachePath="NUL"',
+      );
+      expect(mapped.codexCliConfigOverrides?.join(' ')).not.toContain(
+        'inherit=',
+      );
+      process.env.PSModuleAnalysisCachePath =
+        'C:\\owned cache\\ModuleAnalysisCache';
+      expect(
+        mapAgentOptionsToCodexOptions({}).codexCliConfigOverrides,
+      ).toContain(
+        'shell_environment_policy.set.PSModuleAnalysisCachePath="C:\\\\owned cache\\\\ModuleAnalysisCache"',
+      );
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      expect(
+        mapAgentOptionsToCodexOptions({}).codexCliConfigOverrides?.join(' ') ??
+          '',
+      ).not.toContain('PSModuleAnalysisCachePath');
+    } finally {
+      Object.defineProperty(process, 'platform', descriptor);
+      if (previous === undefined) delete process.env.PSModuleAnalysisCachePath;
+      else process.env.PSModuleAnalysisCachePath = previous;
+    }
+  });
+
+  it('preserves permission and approval axes when selecting the native Windows backend', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    try {
+      for (const [policy, profile, approval] of [
+        [{ mode: 'auto' }, ':workspace', 'on-request'],
+        [{ fileWrite: 'deny' }, ':read-only', 'on-request'],
+        [{ shellExecute: 'ask' }, ':workspace', 'untrusted'],
+        [{ mode: 'bypass' }, ':danger-full-access', 'never'],
+      ] as const) {
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        const mapped = mapPermissionsToCodexOptions(policy);
+        expect(mapped.codexOptions?.config?.default_permissions).toBe(profile);
+        expect(mapped.approvalPolicy).toBe(approval);
+        const bounded = profile !== ':danger-full-access';
+        expect(mapped.codexOptions?.config?.features).toEqual(
+          bounded ? { prefer_mxc: true } : undefined,
+        );
+        expect(mapped.codexOptions?.config?.developer_instructions).toEqual(
+          bounded
+            ? expect.stringContaining(
+                'Keep the declared filesystem and network permissions',
+              )
+            : undefined,
+        );
+      }
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      expect(
+        mapPermissionsToCodexOptions({ mode: 'auto' }).codexOptions?.config,
+      ).not.toHaveProperty('features');
+      expect(
+        mapPermissionsToCodexOptions(undefined).codexOptions,
+      ).toBeUndefined();
+    } finally {
+      Object.defineProperty(process, 'platform', descriptor);
+    }
   });
 
   it('rejects writablePaths that conflict with read-only Codex local access', () => {
