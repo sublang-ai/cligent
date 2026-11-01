@@ -98,7 +98,7 @@ describe('per-run MCP native boundaries', () => {
       });`,
       );
       await chmod(fixturePaths.codex, 0o700);
-      let wrapper: string | undefined;
+      let executableOverride: string | undefined;
       const adapter = new CodexAdapter({
         probeExecutable: () => ({ state: 'present', path: fixturePaths.codex }),
         loadSdk: async () => ({
@@ -109,7 +109,7 @@ describe('per-run MCP native boundaries', () => {
                 codexPathOverride:
                   options?.codexPathOverride ?? fixturePaths.codex,
               });
-              wrapper = options?.codexPathOverride;
+              executableOverride = options?.codexPathOverride;
             }
           },
         }),
@@ -135,8 +135,7 @@ describe('per-run MCP native boundaries', () => {
       expect(overrides[1]).toBe(
         'mcp_servers.remote={"url" = "https://example.test/mcp?test=1", "http_headers" = {"Authorization" = "Bearer fixture"}, "required" = true, "default_tools_approval_mode" = "approve"}',
       );
-      expect(wrapper).toBeDefined();
-      expect(existsSync(wrapper!)).toBe(false);
+      expect(executableOverride).toBeUndefined();
       expect(captured.args).not.toContain('--ignore-user-config');
     },
   );

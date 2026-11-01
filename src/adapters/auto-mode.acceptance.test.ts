@@ -43,7 +43,6 @@ import { ClaudeCodeAdapter } from './claude-code.js';
 import {
   CodexAdapter,
   codexWorkspaceExtraWritesProfileConfigOverride,
-  createCodexConfigOverrideWrapper,
   resolveCodexBinPath,
 } from './codex.js';
 import { GeminiAdapter } from './gemini.js';
@@ -1000,7 +999,6 @@ async function runCodexWritablePathsSandboxProbe(): Promise<CodexSandboxWritable
   const probePath = join(cwd, '.git', 'cligent-profile-probe');
   const userConfigBefore = userCodexConfigStamp();
   const override = codexWorkspaceExtraWritesProfileConfigOverride(['.git']);
-  let cleanupWrapper: (() => Promise<void>) | undefined;
 
   try {
     const base = runCodexSandboxWriteProbe(cwd, ':workspace', []);
@@ -1016,17 +1014,10 @@ async function runCodexWritablePathsSandboxProbe(): Promise<CodexSandboxWritable
     }
 
     rmSync(probePath, { force: true });
-    const wrapper = await createCodexConfigOverrideWrapper([override]);
-    if (!wrapper) {
-      throw new Error(
-        'Codex writablePaths acceptance did not create a wrapper',
-      );
-    }
-    cleanupWrapper = wrapper.cleanup;
-    const extra = runCodexSandboxWriteProbeThroughWrapper(
+    const extra = runCodexSandboxWriteProbe(
       cwd,
       'cligent-workspace-extra-writes',
-      wrapper.path,
+      [override],
     );
     if (sandboxInitFailureSummary(extra.summary)) {
       return {
@@ -1047,7 +1038,6 @@ async function runCodexWritablePathsSandboxProbe(): Promise<CodexSandboxWritable
       summary: `base=${base.summary}; extra=${extra.summary}`,
     };
   } finally {
-    await cleanupWrapper?.();
     rmSync(cwd, { recursive: true, force: true });
   }
 }
@@ -1086,44 +1076,14 @@ function runCodexSandboxWriteProbe(
   }
 }
 
-function runCodexSandboxWriteProbeThroughWrapper(
-  cwd: string,
-  permissionsProfile: string,
-  wrapperPath: string,
-): CodexSandboxCommandResult {
-  const args = [
-    'sandbox',
-    '--permissions-profile',
-    permissionsProfile,
-    '-C',
-    cwd,
-    process.execPath,
-    '-e',
-    'require("node:fs").writeFileSync(".git/cligent-profile-probe", "ok")',
-  ];
-
-  try {
-    execFileSync(wrapperPath, args, { stdio: 'pipe', timeout: 30_000 });
-    return { ok: true, summary: 'ok' };
-  } catch (error) {
-    return { ok: false, summary: summarizeExecFailure(error) };
-  }
-}
-
 function createPrompt(fileName: string): string {
   const path = shellQuote(`./${fileName}`);
-  return exactShellPrompt(
-    `printf '%s\\n' phase-one > ${path}`,
-    'created',
-  );
+  return exactShellPrompt(`printf '%s\\n' phase-one > ${path}`, 'created');
 }
 
 function updatePrompt(fileName: string): string {
   const path = shellQuote(`./${fileName}`);
-  return exactShellPrompt(
-    `printf '%s\\n' phase-two > ${path}`,
-    'updated',
-  );
+  return exactShellPrompt(`printf '%s\\n' phase-two > ${path}`, 'updated');
 }
 
 function outsideWorkspaceWritePrompt(relativePath: string): string {

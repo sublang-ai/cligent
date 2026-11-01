@@ -954,7 +954,7 @@ if (
 
 const adapterModule = await import(adapterSpecifier);
 const rootModule = await import(rootSpecifier);
-const { CodexAdapter, createCodexConfigOverrideWrapper, resolveCodexBinPath } =
+const { CodexAdapter, resolveCodexBinPath } =
   adapterModule;
 const {
   AGENT_RUNTIME_TARGETS,
@@ -965,7 +965,6 @@ const {
 } = rootModule;
 for (const [label, value] of [
   ['CodexAdapter', CodexAdapter],
-  ['createCodexConfigOverrideWrapper', createCodexConfigOverrideWrapper],
   ['resolveCodexBinPath', resolveCodexBinPath],
   ['locateAgentExecutable', locateAgentExecutable],
 ]) {
@@ -1051,24 +1050,6 @@ if (expectation === 'missing') {
   if (sdkOwnedPrefix && !native.path.startsWith(sdkOwnedPrefix)) {
     throw new Error('Resolved native Codex executable is outside the SDK-owned tree: ' + native.path);
   }
-  const wrapper = await createCodexConfigOverrideWrapper(
-    ['permissions.cligent_probe="resolution"'],
-    ['--ignore-user-config'],
-    native.path,
-  );
-  if (!wrapper) throw new Error('config override wrapper was not created');
-  try {
-    const scriptPath = wrapper.path.endsWith('.cmd') || wrapper.path.endsWith('.sh')
-      ? join(dirname(wrapper.path), 'codex-wrapper.mjs')
-      : wrapper.path;
-    const script = readFileSync(scriptPath, 'utf8');
-    if (!script.includes(JSON.stringify(native.path))) {
-      throw new Error(\`wrapper does not embed resolved native Codex executable \${native.path}\`);
-    }
-  } finally {
-    await wrapper.cleanup();
-  }
-
   const controller = new AbortController();
   const abortTimer = setTimeout(() => controller.abort(), 3000);
   const adapter = new CodexAdapter();

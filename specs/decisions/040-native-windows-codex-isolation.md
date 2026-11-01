@@ -1,32 +1,26 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai> -->
 
-# DR-040: Native Windows Codex Isolation
+# DR-040: Direct native Codex through the official SDK
 
 ## Status
 
-Accepted (2026-10-30).
-Amends [DR-033](033-host-capabilities-and-browser-readiness.md)'s native Windows isolation refusal.
+Revised 2026-11-01 by the PR #88 architecture review. Supersedes the earlier Node-hook/supervisor design and DR-033's Windows permission refusal.
 
 ## Context
 
-The Codex SDK public launch options select an executable and its environment but cannot insert `--ignore-user-config` into `exec` arguments.
-POSIX shell wrappers cannot run through native Windows process creation.
-Removing the permission policy would allow user configuration to replace the caller's permission profile.
-Windows forcibly terminates a killed SDK-facing process, so POSIX signal forwarding alone cannot establish native-child shutdown.
+The former implementation inserted `--ignore-user-config` for every supplied permission policy. That required a wrapper and suppressed user providers and MCP configuration. A Windows runtime carrier, IPC supervisor, lifecycle records, forced MXC, and command guidance compounded that design. None is necessary to pass the supported permission controls through the SDK's public configuration API.
 
 ## Decision
 
-- Preserve the permission mapping, isolated configuration, authentication and session home on both platforms.
-- Bounded Windows permission profiles prefer the native MXC sandbox backend and carry native command-shell guidance; neither preference changes the chosen permission profile or approval policy.
-- Use the embedding Node/Electron runtime through the SDK's public launch options on Windows, with no global Node, shell, WSL, SDK patch or system configuration change.
-- Require Node 18.19 or later on Windows for its public import startup hook.
-- Reuse the existing transport supervisor and atomic lifecycle evidence, with an inherited IPC connection cancelling its exact native child when the SDK-facing process disappears.
-- Preserve the caller's native environment after the owned runtime launch; scope startup hooks to the owned carrier.
-- Retain an unproven carrier as a cleanup failure instead of claiming successful termination.
+Use Cligent → official `@openai/codex-sdk` → platform-native Codex on both systems. Ordinary callers retain SDK executable selection. An ASAR host may override the path only to the actual unpacked native binary. Preserve public permission mapping and validation while inheriting user configuration; explicit settings use SDK options/config/configOverrides and native precedence. Never ignore or rewrite the whole user configuration to resolve a conflict. Native managed-policy/configuration errors remain errors.
+
+Delete script generation, Node hooks, intermediary/supervisor processes and their temporary lifecycle files. Preserve adapter abort, iterator-finalization, resume-lock and skill-resource cleanup. Do not inject a sandbox backend, command instructions, or PowerShell cache policy.
 
 ## Consequences
 
-Native Windows permission-managed calls become supported without changing SPEX workflow semantics or weakening caller policy.
-The Windows startup and forced-termination paths require real Windows integration and packaged Electron acceptance evidence.
-Intentional tool descendants remain outside the transport's native-child shutdown claim.
+The SDK owns process lifecycle. Its public iterator does not expose an awaited native-close handle; integration probes observe native child exit, rather than claiming an adapter-level process-tree guarantee. Tool descendants are outside this claim.
+
+Removing the transport also removes U+2028/U+2029 rewriting. Raw separators can fail in the pinned SDK parser on either platform. This is an explicitly accepted limitation of this review, not a Windows startup failure or a claim that all output encodings pass. No compatibility wrapper is retained.
+
+Real native configuration precedence and filesystem effects, inherited providers/MCP, account-authenticated short tasks, and isolated APP hosts are separate validation layers; recording executable tests alone do not prove them.

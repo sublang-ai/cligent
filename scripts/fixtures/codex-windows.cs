@@ -24,17 +24,9 @@ class RecordingCodex {
         if (mode == "hang") { Thread.Sleep(Timeout.Infinite); }
         if (mode == "malformed") { Console.WriteLine("{broken"); return 0; }
         if (mode == "nonzero") { Console.Error.Write("native failure evidence"); return 7; }
-        var text = "left\u2028middle\u2029right 中文 😀";
-        if (mode == "git") {
-            var start = new ProcessStartInfo("git.exe", "--version");
-            start.UseShellExecute = false; start.CreateNoWindow = true;
-            start.RedirectStandardOutput = true; start.RedirectStandardError = true;
-            using (var git = Process.Start(start)) {
-                text = git.StandardOutput.ReadToEnd().Trim(); git.WaitForExit();
-                if (git.ExitCode != 0) return git.ExitCode;
-            }
+        foreach (var text in new [] { "progress one", "progress two", "{\"ok\":true,\"text\":\"中文 space\"}" }) {
+            Console.WriteLine(json.Serialize(new { type = "item.completed", item = new { id = "message", type = "agent_message", text } }));
         }
-        Console.WriteLine("{\"type\":\"item.completed\",\"item\":{\"id\":\"message\",\"type\":\"agent_message\",\"text\":\"" + text + "\"}}");
         Console.WriteLine("{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}");
         return 0;
     }

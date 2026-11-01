@@ -5,7 +5,7 @@
 
 ## Status
 
-Accepted, 2026-10-31.
+Withdrawn from the default adapter path, 2026-11-01, by [DR-040](040-native-windows-codex-isolation.md). The original observation remains below.
 
 ## Context
 
@@ -13,7 +13,7 @@ A native Windows SPEX acceptance role completed its real CLI debug, but PowerShe
 
 ## Decision
 
-Use the official Codex shell_environment_policy.set configuration to carry only PSModuleAnalysisCachePath on Windows. Preserve an explicitly inherited nonempty value; otherwise use Microsoft's documented NUL cache suppression. Do not inherit all host environment variables, change permissions, ignore generated files or expand workflow write roots. Retain the original failed role and cache evidence.
+Leave shell environment and cache policy to user/native Codex configuration. The previous evidence was collected through the removed wrapper and forced backend, so it does not independently justify a universal adapter override. The direct SDK path must be tested before proposing any separate shell-cache fix.
 
 ## Consequences
 

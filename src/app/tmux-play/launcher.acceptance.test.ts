@@ -2638,7 +2638,6 @@ describe('tmux-play YAML → adapter permission seam', () => {
           approvals_reviewer: 'auto_review',
         },
       },
-      codexCliExecArgs: ['--ignore-user-config'],
       codexCliConfigOverrides: [
         'permissions.cligent-workspace-extra-writes={extends=":workspace", filesystem={":workspace_roots"={".git"="write"}}}',
       ],

@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { describeCapabilities, CapabilityError } from '../capabilities.js';
-import { nodeChildEnvironment, quoteShellArgument } from '../node-child.js';
 
 import {
   existsSync,
@@ -12,19 +11,16 @@ import {
   type Stats,
 } from 'node:fs';
 import {
-  chmod,
   mkdir,
-  mkdtemp,
   readdir,
   realpath,
   rm,
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
-import { pathToFileURL } from 'node:url';
 import { createEvent, generateSessionId } from '../events.js';
 import { prepareAttachments } from '../attachments.js';
 import { mediaFromMcpContent } from '../media.js';
@@ -283,7 +279,6 @@ function asNumber(value: unknown): number | undefined {
 export interface CodexPermissionOptions {
   approvalPolicy?: CodexApprovalPolicy;
   codexOptions?: CodexConstructorOptions;
-  codexCliExecArgs?: string[];
   codexCliConfigOverrides?: string[];
   writablePaths?: WritablePathsPermissionMapping;
 }
@@ -413,18 +408,6 @@ function codexProjectRoot(cwd: string): string {
   }
 }
 
-function assertCodexWindowsIsolationRuntime(): void {
-  if (process.platform !== 'win32') return;
-  // The public --import startup hook is available on this supported floor.
-  const [major, minor] = process.versions.node.split('.').map(Number);
-  if (major! < 18 || (major === 18 && minor! < 19)) {
-    throw new CapabilityError(
-      'unsupported-permissions',
-      'Native Windows Codex permission isolation requires Node 18.19 or later',
-    );
-  }
-}
-
 export function mapPermissionsToCodexOptions(
   policy: PermissionPolicy | undefined,
 ): CodexPermissionOptions {
@@ -432,7 +415,6 @@ export function mapPermissionsToCodexOptions(
     return {};
   }
 
-  assertCodexWindowsIsolationRuntime();
   const defaultPermissions = codexDefaultPermissions(policy);
   const writablePaths = mapWritablePathsPermission(
     policy,
@@ -451,14 +433,6 @@ export function mapPermissionsToCodexOptions(
         ? CODEX_WORKSPACE_EXTRA_WRITES_PROFILE
         : defaultPermissions,
     ...(policy.mode === 'auto' ? { approvals_reviewer: 'auto_review' } : {}),
-    ...(process.platform === 'win32' &&
-    defaultPermissions !== ':danger-full-access'
-      ? {
-          features: { prefer_mxc: true },
-          developer_instructions:
-            'Native Windows command execution (only when allowed by the declared permission policy): use exec_command with shell="C:/Windows/System32/cmd.exe" and login=false, using cmd.exe syntax. Windows PowerShell 5.1 may fail to initialize in the native sandbox. Read files using cmd built-ins or an available Node.js runtime. Keep the declared filesystem and network permissions; do not request escalation or change sandbox settings. A failed command is not evidence of an empty file.',
-        }
-      : {}),
   };
 
   const codexCliConfigOverrides =
@@ -469,7 +443,6 @@ export function mapPermissionsToCodexOptions(
   return {
     approvalPolicy: codexApprovalPolicy(policy),
     codexOptions: { config },
-    codexCliExecArgs: ['--ignore-user-config'],
     ...(codexCliConfigOverrides ? { codexCliConfigOverrides } : {}),
     ...(writablePaths ? { writablePaths } : {}),
   };
@@ -733,7 +706,6 @@ function mapUsage(rawUsage: unknown, toolUses: number): DonePayload['usage'] {
 
 interface MappedCodexOptions {
   codexOptions?: CodexConstructorOptions;
-  codexCliExecArgs?: string[];
   codexCliConfigOverrides?: string[];
   threadOptions: CodexThreadOptions;
   runOptions: CodexRunOptions;
@@ -856,14 +828,7 @@ export function mapAgentOptionsToCodexOptions(
     codexDefaultPermissions(options.permissions) !== ':read-only'
       ? codexProjectTrustConfigOverride(options.cwd)
       : undefined;
-  // PowerShell 5.1 otherwise falls back to cwd when Codex filters LOCALAPPDATA.
-  // Control only its incidental module cache; do not broaden inherited env or permissions.
   const overrides = [
-    ...(process.platform === 'win32'
-      ? [
-          `shell_environment_policy.set.PSModuleAnalysisCachePath=${JSON.stringify(process.env.PSModuleAnalysisCachePath || 'NUL')}`,
-        ]
-      : []),
     ...(projectTrustOverride ? [projectTrustOverride] : []),
     ...(permissions.codexCliConfigOverrides ?? []),
     ...mcpOverrides,
@@ -888,9 +853,6 @@ export function mapAgentOptionsToCodexOptions(
 
   return {
     codexOptions,
-    ...(permissions.codexCliExecArgs
-      ? { codexCliExecArgs: permissions.codexCliExecArgs }
-      : {}),
     ...(codexCliConfigOverrides ? { codexCliConfigOverrides } : {}),
     threadOptions,
     runOptions: {
@@ -1237,13 +1199,6 @@ function firstString(
   return undefined;
 }
 
-interface CodexConfigOverrideWrapper {
-  path: string;
-  /** Public SDK environment overlay for the Windows runtime carrier. */
-  env?: Record<string, string>;
-  cleanup: () => Promise<void>;
-}
-
 /**
  * The refusal a binary the lookup did not find earns (codex-63): on a host
  * the launcher has no target for, that fact, since no reinstall can help;
@@ -1282,286 +1237,6 @@ function codexExecutableRefusal(
 // it moved beside the native-binary lookup.
 export { resolveCodexBinPath };
 export type { CodexBinPathResolutionDeps } from './codex-executable.js';
-
-function codexWrapperScript(
-  nativePath: string,
-  configOverrides: readonly string[],
-  execArgs: readonly string[],
-  dir: string,
-): string {
-  return String.raw`#!/usr/bin/env node
-import { spawn } from 'node:child_process';
-import { writeFileSync, renameSync, mkdirSync, statSync } from 'node:fs';
-import { dirname, join, delimiter } from 'node:path';
-import { Transform } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-
-const nativePath = ${JSON.stringify(nativePath)};
-const configOverrides = ${JSON.stringify(configOverrides)};
-const execArgs = ${JSON.stringify(execArgs)};
-const dir = ${JSON.stringify(dir)};
-const [electronPresent, electronValue, ...cliArgs] = process.argv.slice(2);
-if (electronPresent !== '' && electronPresent !== 'x') {
-  throw new Error('Invalid owned Codex carrier arguments');
-}
-const childEnv = { ...process.env };
-if (electronPresent === 'x') childEnv.ELECTRON_RUN_AS_NODE = electronValue;
-else delete childEnv.ELECTRON_RUN_AS_NODE;
-// Mirror the SDK's current package layout, without changing its supported
-// native selection or adding the JavaScript launcher's update metadata.
-const helperPath = join(dirname(nativePath), '..', 'codex-path');
-const pathKey = process.platform === 'win32'
-  ? Object.keys(childEnv).find((key) => key.toLowerCase() === 'path') ?? 'Path'
-  : 'PATH';
-try {
-  if (statSync(helperPath).isDirectory()) {
-    const entries = (childEnv[pathKey] ?? '').split(delimiter)
-      .filter((entry) => entry.length > 0 && entry !== helperPath);
-    // Windows environment names are case-insensitive, unlike this object.
-    // Keep the inherited key and remove aliases before Node selects one.
-    if (process.platform === 'win32') {
-      for (const key of Object.keys(childEnv)) {
-        if (key.toLowerCase() === 'path' && key !== pathKey) delete childEnv[key];
-      }
-    }
-    childEnv[pathKey] = [helperPath, ...entries].join(delimiter);
-  }
-} catch {
-  // Like SDK existingDirs, an unavailable optional helper directory is absent.
-}
-const [subcommand, ...rest] = cliArgs;
-const injectedExecArgs = subcommand === 'exec' ? execArgs : [];
-const injected = configOverrides.flatMap((override) => ['--config', override]);
-const args = subcommand
-  ? [subcommand, ...injectedExecArgs, ...injected, ...rest]
-  : [...injected];
-const json = subcommand === 'exec' && rest.some((arg) =>
-  arg === '--json' || arg === '--experimental-json');
-let child;
-let cancellation;
-let escalation;
-let forwardingError;
-const stop = (signal = 'SIGTERM') => {
-  cancellation ??= signal;
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
-  child.kill(signal);
-  escalation ??= setTimeout(() => child.kill('SIGKILL'), 1000);
-};
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => stop(signal));
-}
-process.stdout.on('error', () => stop());
-// Windows terminates the SDK-facing runtime without delivering SIGTERM.
-// Its inherited IPC handle closes even on forced death: this supervisor
-// remains alive to close its exact native child and publish exit evidence.
-if (process.platform === 'win32' && process.send) {
-  process.on('disconnect', () => stop());
-  process.channel?.unref();
-  if (!process.connected) stop();
-}
-const record = (name, value) => {
-  const temporary = dir + '/' + name + '.' + process.pid + '.tmp';
-  writeFileSync(temporary, JSON.stringify(value));
-  renameSync(temporary, dir + '/' + name + '.json');
-};
-// Cleanup and startup compete for this same exclusive claim. A retired
-// carrier cannot cross this boundary into native execution.
-mkdirSync(dir + '/claimed');
-record('started', { pid: process.pid });
-let exit = { code: 1, signal: null };
-let closed;
-let forwarded;
-try {
-  child = spawn(nativePath, args, {
-    env: childEnv,
-    stdio: ['inherit', 'pipe', 'inherit'],
-    windowsHide: true,
-  });
-  closed = new Promise((resolve) => {
-    child.on('error', (error) => { forwardingError = error; });
-    child.on('close', (code, signal) => resolve({ code, signal }));
-  });
-  let tail = Buffer.alloc(0);
-  const wire = new Transform({
-    transform(chunk, _encoding, callback) {
-      if (!json) return callback(null, chunk);
-      const bytes = Buffer.concat([tail, chunk]);
-      const parts = [];
-      let start = 0;
-      let index = 0;
-      while (index < bytes.length) {
-        if (bytes[index] !== 0xe2) { index++; continue; }
-        if (index + 2 >= bytes.length) break;
-        if (bytes[index + 1] === 0x80 &&
-            (bytes[index + 2] === 0xa8 || bytes[index + 2] === 0xa9)) {
-          parts.push(bytes.subarray(start, index),
-            Buffer.from(bytes[index + 2] === 0xa8 ? '\\u2028' : '\\u2029'));
-          index += 3;
-          start = index;
-        } else index++;
-      }
-      parts.push(bytes.subarray(start, index));
-      tail = bytes.subarray(index);
-      callback(null, Buffer.concat(parts));
-    },
-    flush(callback) { callback(null, tail); },
-  });
-  forwarded = pipeline(child.stdout, wire, process.stdout).catch((error) => {
-    forwardingError = error;
-    stop();
-  });
-  if (cancellation) stop(cancellation);
-} catch (error) {
-  forwardingError = error;
-  stop();
-} finally {
-  if (closed) exit = await closed;
-  if (forwarded) await forwarded;
-  clearTimeout(escalation);
-  if (forwardingError && !cancellation) console.error(forwardingError);
-  process.exitCode = forwardingError ? 1 : exit.signal ? 1 : (exit.code ?? 1);
-  record('settled', {
-    pid: process.pid, childPid: child?.pid, nativeClosed: true,
-    code: exit.code, signal: exit.signal,
-    forwardingFailed: Boolean(forwardingError),
-  });
-  if (process.connected) process.disconnect();
-}
-`;
-}
-
-/** The optional native target is the already-probed SDK-owned executable. */
-export async function createCodexConfigOverrideWrapper(
-  configOverrides: readonly string[],
-  execArgs: readonly string[] = [],
-  selectedNativePath?: string,
-): Promise<CodexConfigOverrideWrapper | undefined> {
-  if (
-    process.platform === 'win32' &&
-    configOverrides.length === 0 &&
-    execArgs.length === 0
-  ) {
-    return undefined;
-  }
-
-  const executable =
-    selectedNativePath === undefined
-      ? probeCodexExecutable()
-      : { state: 'present' as const, path: selectedNativePath };
-  if (executable.state !== 'present') throw codexExecutableRefusal(executable);
-  const dir = await mkdtemp(join(tmpdir(), 'cligent-codex-config-'));
-  const scriptPath = join(dir, 'codex-wrapper.mjs');
-  const windows = process.platform === 'win32';
-  const wrapperPath = windows
-    ? process.execPath
-    : join(dir, 'codex-wrapper.sh');
-  let env: Record<string, string> | undefined;
-
-  try {
-    await writeFile(
-      scriptPath,
-      codexWrapperScript(executable.path, configOverrides, execArgs, dir),
-      'utf8',
-    );
-
-    if (windows) {
-      assertCodexWindowsIsolationRuntime();
-      const bootstrapPath = join(dir, 'codex-bootstrap.mjs');
-      await writeFile(
-        bootstrapPath,
-        `
-import { spawn } from 'node:child_process';
-const env = { ...process.env };
-const originalNodeOptions = ${JSON.stringify(process.env.NODE_OPTIONS ?? null)};
-if (originalNodeOptions === null) delete env.NODE_OPTIONS;
-else env.NODE_OPTIONS = originalNodeOptions;
-const child = spawn(process.execPath, [
-  ${JSON.stringify(scriptPath)},
-  ${JSON.stringify(Object.hasOwn(process.env, 'ELECTRON_RUN_AS_NODE') ? 'x' : '')},
-  ${JSON.stringify(process.env.ELECTRON_RUN_AS_NODE ?? '')},
-  'exec', ...process.argv.slice(2),
-], { env, detached: true, windowsHide: true, stdio: ['inherit', 'inherit', 'inherit', 'ipc'] });
-let failed = false;
-child.on('error', (error) => { failed = true; console.error(error); });
-const code = await new Promise((resolve) => child.on('close', resolve));
-// All native output uses inherited handles and has closed before this exit.
-// Do not interpret the SDK exec argument as a JavaScript filename.
-process.exit(failed ? 1 : (code ?? 1));
-`,
-        'utf8',
-      );
-      env = Object.fromEntries(
-        Object.entries(process.env).filter(
-          (entry): entry is [string, string] => entry[1] !== undefined,
-        ),
-      );
-      env.ELECTRON_RUN_AS_NODE = '1';
-      env.NODE_OPTIONS = [
-        process.env.NODE_OPTIONS,
-        '--import=' + pathToFileURL(bootstrapPath).href,
-      ]
-        .filter(Boolean)
-        .join(' ');
-    } else {
-      const environment = Object.entries(nodeChildEnvironment())
-        .map(([key, value]) => `${key}=${quoteShellArgument(value)} `)
-        .join('');
-      await writeFile(
-        wrapperPath,
-        `#!/bin/sh\n${environment}exec ${quoteShellArgument(process.execPath)} ${quoteShellArgument(scriptPath)} "\${ELECTRON_RUN_AS_NODE+x}" "\${ELECTRON_RUN_AS_NODE-}" "$@"\n`,
-        'utf8',
-      );
-      await chmod(wrapperPath, 0o700);
-    }
-  } catch (error) {
-    await rm(dir, { recursive: true, force: true });
-    throw error;
-  }
-
-  return {
-    path: wrapperPath,
-    ...(env ? { env } : {}),
-    cleanup: async () => {
-      // An exclusive claim prevents an absence check from racing startup.
-      // Winning cleanup retires an unused carrier before any native spawn.
-      try {
-        await mkdir(join(dir, 'claimed'));
-        await rm(dir, { recursive: true, force: true });
-        return;
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === 'ENOENT') return;
-        if (code !== 'EEXIST') throw error;
-      }
-      const deadline = Date.now() + 5000;
-      while (
-        !existsSync(join(dir, 'started.json')) ||
-        !existsSync(join(dir, 'settled.json'))
-      ) {
-        if (!existsSync(dir)) return;
-        if (Date.now() >= deadline) {
-          throw new Error('Codex wrapper cleanup incomplete; retained ' + dir);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      const started = JSON.parse(
-        readFileSync(join(dir, 'started.json'), 'utf8'),
-      ) as { pid?: unknown };
-      const settled = JSON.parse(
-        readFileSync(join(dir, 'settled.json'), 'utf8'),
-      ) as { pid?: unknown; nativeClosed?: unknown };
-      if (
-        typeof started.pid !== 'number' ||
-        started.pid <= 0 ||
-        settled.pid !== started.pid ||
-        settled.nativeClosed !== true
-      ) {
-        throw new Error('Codex wrapper cleanup unproven; retained ' + dir);
-      }
-      await rm(dir, { recursive: true, force: true });
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Skills (codex-75, codex-78): a run-private plugin in the Codex home's plugin
@@ -2174,13 +1849,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
     // vocabulary, codex-70's MCP map) runs before the skill carrier opens, so
     // a run bound to be rejected does no work in the Codex home.
     const mapped = mapAgentOptionsToCodexOptions(options);
-    const {
-      codexOptions,
-      codexCliExecArgs,
-      threadOptions,
-      runOptions,
-      cleanupAbort,
-    } = mapped;
+    const { codexOptions, threadOptions, runOptions, cleanupAbort } = mapped;
 
     // codex-75: the run-private plugin exists before the SDK starts. codex-78
     // removes it once: before a rejection or preparation terminal while the
@@ -2210,8 +1879,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       try {
         await cleanup();
       } catch {
-        // The run's own error is the outcome; a wrapper left behind is a
-        // temporary directory, not Codex configuration.
+        // Keep the run's own error while still releasing its skill resources.
       }
       return await rejectRun(error);
     };
@@ -2243,19 +1911,6 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       ...nativeSkillOverrides,
     ];
 
-    let codexConfigWrapper: CodexConfigOverrideWrapper | undefined;
-    try {
-      codexConfigWrapper = await createCodexConfigOverrideWrapper(
-        [],
-        codexCliExecArgs ?? [],
-        executable.path,
-      );
-    } catch (err) {
-      // Executable resolution and wrapper setup run before any event, so
-      // release the abort listener registered for this run before rethrowing.
-      cleanupAbort();
-      throw await rejectRun(err);
-    }
     // The SDK's spawn path remains virtual when its JS is inside an ASAR.
     // Use the same SDK-owned native binary the readiness probe resolved in
     // the host's unpacked tree; ordinary Node callers retain SDK selection.
@@ -2264,22 +1919,15 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
         ? executable.path
         : undefined;
     const effectiveCodexOptions =
-      codexConfigWrapper || codexCliConfigOverrides.length || packagedExecutable
+      codexCliConfigOverrides.length || packagedExecutable
         ? {
             ...codexOptions,
             ...(codexCliConfigOverrides.length
               ? { configOverrides: codexCliConfigOverrides }
               : {}),
-            ...(codexConfigWrapper
-              ? {
-                  codexPathOverride: codexConfigWrapper.path,
-                  ...(codexConfigWrapper.env
-                    ? { env: codexConfigWrapper.env }
-                    : {}),
-                }
-              : packagedExecutable
-                ? { codexPathOverride: packagedExecutable }
-                : {}),
+            ...(packagedExecutable
+              ? { codexPathOverride: packagedExecutable }
+              : {}),
           }
         : codexOptions;
     let cleanedUp = false;
@@ -2287,7 +1935,6 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
       if (cleanedUp) return;
       cleanedUp = true;
       cleanupAbort();
-      await codexConfigWrapper?.cleanup();
     };
 
     let codex: CodexClient;
@@ -2640,9 +2287,11 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
             {
               status,
               result:
-                asString(turn.result) ??
-                asString(event.result) ??
-                lastAgentMessage,
+                typeof turn.result === 'string'
+                  ? turn.result
+                  : typeof event.result === 'string'
+                    ? event.result
+                    : lastAgentMessage,
               ...doneResumeTokenPayload(
                 status,
                 backendProvidedSessionId,

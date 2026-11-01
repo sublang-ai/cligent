@@ -11,7 +11,7 @@ Amends [DR-002](002-unified-event-stream-and-adapter-interface.md).
 ## Decision
 
 - Follow the public Codex SDK `Thread.run()` finalResponse contract: retain the text of the last completed `agent_message` in the current run as the terminal result fallback.
-- Explicit native turn/event result keeps precedence; no JSON substring scraping, content repair or prompt-specific parsing.
+- Explicit string-valued native turn/event result keeps precedence, including empty strings; no JSON substring scraping, content repair or prompt-specific parsing.
 - Keep every intermediate text event in its original stream and journal, with existing usage, resume, cancellation and permission behavior.
 - A run-local variable prevents carrying a previous turn's final answer into a new run.
 

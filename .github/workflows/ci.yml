@@ -130,9 +130,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - run: npm run build
-      - name: Verify native Windows Codex transport
-        if: runner.os == 'Windows'
-        run: node scripts/verify-codex-windows.mjs
+      - name: Verify direct SDK Codex transport
+        run: node scripts/verify-codex-sdk.mjs
       - name: Install separate Electron host proof runtime
         shell: bash
         run: |
