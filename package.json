@@ -118,7 +118,7 @@
     "@typescript-eslint/eslint-plugin": "^8.63.0",
     "@typescript-eslint/parser": "^8.63.0",
     "dotenv": "^17.3.1",
-    "eslint": "^9.39.5",
+    "eslint": "^10.14.0",
     "eslint-plugin-n": "^18.3.0",
     "prettier": "^3.9.5",
     "typescript": "^5.5.0",
@@ -127,7 +127,10 @@
   },
   "pnpm": {
     "overrides": {
-      "@hono/node-server": "2.0.12"
+      "@hono/node-server": "2.1.5",
+      "eslint>minimatch": "11.0.3",
+      "@eslint/config-array>minimatch": "11.0.3",
+      "@typescript-eslint/typescript-estree>minimatch": "11.0.3"
     }
   },
   "dependencies": {
@@ -135,5 +138,16 @@
     "@playwright/mcp": "0.0.77",
     "yaml": "^2.8.4",
     "zod": "4.6.6"
+  },
+  "overrides": {
+    "eslint": {
+      "minimatch": "11.0.3"
+    },
+    "@eslint/config-array": {
+      "minimatch": "11.0.3"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.3"
+    }
   }
 }

@@ -261,8 +261,9 @@ notifications, and writing a Captain.
 
 ## Contributing
 
-Repository tests use Vitest 4 on Node.js 20, 22, or 24 and newer.
-CI tests those three Node majors; distributable verification separately checks
+Repository tests use Vitest 4; development linting uses ESLint 10 and requires
+Node.js `^20.19.0 || ^22.13.0 || >=24`.
+CI tests Node.js 20, 22, 24 and 25; distributable verification separately checks
 the published package's Node.js 18.3.0 runtime floor.
 
 We welcome contributions of all kinds. If you'd like to help:

@@ -69,6 +69,7 @@ meta.md       The spec of specs
 
 | [DR-041](decisions/041-codex-final-response.md) | 041-codex-final-response.md | Codex terminal result follows the public SDK final-response contract |
 | [DR-042](decisions/042-windows-powershell-module-cache.md) | 042-windows-powershell-module-cache.md | Windows module-analysis cache stays outside the caller working directory |
+| [DR-043](decisions/043-audited-development-matchers.md) | 043-audited-development-matchers.md | Exact development matcher substitutions with consumer compatibility checks and unchanged runtime/audit safeguards |
 
 ## Packages
 
