@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-11-02
+
+### Added
+
+- Native Windows Codex execution through the official SDK and platform executable, including explicitly configured permissions, without Bash, WSL or Cligent launch wrappers.
+
+### Changed
+
+- Codex runs inherit user configuration while mapping explicit per-call permissions through public SDK options; unsupported legacy/new permission combinations fail explicitly instead of ignoring the user configuration.
+- Remove the Codex output wrapper and its U+2028/U+2029 escaping workaround. Raw separator handling is again subject to the official SDK's JSONL reader; this release does not claim compatibility for those output cases.
+- Development linting uses ESLint 10 and requires Node `^20.19.0 || ^22.13.0 || >=24`; the published Cligent runtime floor remains Node 18.3.0.
+
+### Fixed
+
+- Codex final results prefer the explicit final response and otherwise use only the last completed Agent message, retaining the complete progress stream and independent per-call state.
+
+### Security
+
+- Repair development dependency audits with patched Hono and qs resolutions and three exact, consumer-tested minimatch substitutions documented in DR-043; preserve the zero-finding audit gates, runtime dependencies and Agent SDK pins.
+
 ## [0.36.1] - 2026-10-25
 
 ### Fixed
@@ -865,7 +885,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.36.1...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/sublang-ai/cligent/compare/v0.36.1...v0.37.0
 [0.36.1]: https://github.com/sublang-ai/cligent/compare/v0.36.0...v0.36.1
 [0.36.0]: https://github.com/sublang-ai/cligent/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/sublang-ai/cligent/compare/v0.34.1...v0.35.0
