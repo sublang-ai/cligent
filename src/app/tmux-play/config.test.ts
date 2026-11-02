@@ -303,7 +303,7 @@ describe('tmux-play config loading', () => {
     expect(loaded.config.captain.effort).toBe('xhigh');
     expect(loaded.config.players.map((player) => player.model)).toEqual([
       'claude-opus-5-5',
-      'gpt-6-sol',
+      'gpt-6.1-sol',
     ]);
     expect(loaded.config.players.map((player) => player.effort)).toEqual([
       'xhigh',
@@ -379,7 +379,7 @@ describe('tmux-play config loading', () => {
 
     expect(notices).toEqual([['codex']]);
     expect(loaded.config.captain.adapter).toBe('codex');
-    expect(loaded.config.captain.model).toBe('gpt-6-sol');
+    expect(loaded.config.captain.model).toBe('gpt-6.1-sol');
     expect(loaded.config.players.map((player) => player.adapter)).toEqual([
       'codex',
     ]);

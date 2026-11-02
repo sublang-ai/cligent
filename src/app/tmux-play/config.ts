@@ -242,7 +242,7 @@ const DEFAULT_ROLE_BY_ADAPTER: {
   };
 } = {
   claude: { model: 'claude-opus-5-5', effort: 'xhigh' },
-  codex: { model: 'gpt-6-sol', effort: 'xhigh' },
+  codex: { model: 'gpt-6.1-sol', effort: 'xhigh' },
   gemini: {},
   kimi: {},
   opencode: {},

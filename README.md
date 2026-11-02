@@ -26,7 +26,7 @@ adapters you use:
 # `0.MINOR.PATCH` package a caret pins the minor: `^0.139.0` never reaches
 # `0.159.0`, however often you run `npm update`.
 npm install "@anthropic-ai/claude-agent-sdk@>=0.3.284"   # Claude Code
-npm install "@openai/codex-sdk@>=0.156.1"                # Codex
+npm install "@openai/codex-sdk@>=0.159.1"                # Codex
 npm install "@opencode-ai/sdk@>=1.18.29"                 # OpenCode
 ```
 

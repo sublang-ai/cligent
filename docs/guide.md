@@ -16,7 +16,7 @@ Each adapter that uses an SDK has an optional peer dependency. Install only the 
 
 ```bash
 npm install "@anthropic-ai/claude-agent-sdk@>=0.3.284"   # Claude Code
-npm install "@openai/codex-sdk@>=0.156.1"                 # Codex CLI
+npm install "@openai/codex-sdk@>=0.159.1"                 # Codex CLI
 npm install "@opencode-ai/sdk@>=1.18.29"                  # OpenCode
 # Gemini CLI uses a child process — no SDK required
 # Kimi Code uses an external CLI — no Kimi-specific SDK required
@@ -968,7 +968,7 @@ const codexGitPermissions: PermissionPolicy = {
 };
 
 const codexAgent = new Cligent(new CodexAdapter(), {
-  model: 'gpt-6-sol',
+  model: 'gpt-6.1-sol',
   permissions: codexGitPermissions,
 });
 
@@ -1118,7 +1118,7 @@ const coder = new Cligent(new ClaudeCodeAdapter(), {
 });
 const reviewer = new Cligent(new CodexAdapter(), {
   role: 'reviewer',
-  model: 'gpt-6-sol',
+  model: 'gpt-6.1-sol',
 });
 
 // Cligent.parallel(tasks) → AsyncGenerator<CligentEvent>
@@ -1152,7 +1152,7 @@ for await (const event of runParallel([
   {
     adapter: new CodexAdapter(),
     prompt: 'Write integration tests',
-    options: { model: 'gpt-6-sol', effort: 'ultra' },
+    options: { model: 'gpt-6.1-sol', effort: 'ultra' },
   },
 ])) {
   console.log(`[${event.agent}] ${event.type}`);
