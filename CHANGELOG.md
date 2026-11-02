@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The supported Codex runtime floor rises to `0.159.1`, the first release whose bundled model catalog carries `gpt-6.1-sol`, the latest Sol model (DR-027); an older Codex runtime that loaded under 0.36.x is now refused with the required version and upgrade named. CI verifies `0.159.1`.
+- tmux-play's created home config and default Codex role name `gpt-6.1-sol`.
+
 ## [0.36.2] - 2026-11-02
 
 ### Changed

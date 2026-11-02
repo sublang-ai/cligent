@@ -321,12 +321,11 @@ describe('the runtimes DR-013 was written about', () => {
     const codex = AGENT_RUNTIME_TARGETS.codex[0]!;
     expect(classifyRuntime(codex, true, '0.139.0').state).toBe('unsupported');
     expect(isBelowFloor('0.139.0', codex)).toBe(true);
-    // 0.156.1 is the first release whose bundled catalog carries the whole
-    // GPT-6 family, and the floor is that release rather than the tested
-    // one, so a working 0.156.1 install is not refused while 0.156.0, which
-    // lacks GPT-6-Sol and GPT-6-Luna, is.
-    expect(classifyRuntime(codex, true, '0.156.1').state).toBe('satisfied');
-    expect(classifyRuntime(codex, true, '0.156.0').state).toBe('unsupported');
+    // 0.159.1 is the first release whose bundled catalog carries
+    // GPT-6.1-Sol, the latest Sol model, so a 0.159.1 install is not
+    // refused while 0.159.0, which lacks it, is.
+    expect(classifyRuntime(codex, true, '0.159.1').state).toBe('satisfied');
+    expect(classifyRuntime(codex, true, '0.159.0').state).toBe('unsupported');
   });
 
   it('keeps a CLI probe and the verdict from disagreeing', () => {

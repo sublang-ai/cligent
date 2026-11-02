@@ -124,22 +124,22 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@openai/codex-sdk',
-      repairSpec: '@openai/codex-sdk@0.159.0',
-      // The first release whose bundled model catalog carries the whole
-      // GPT-6 family, the latest OpenAI models: the published 0.156.0 binary
-      // carries only `gpt-6-astra` (absent from 0.153.0, bundled since
-      // 0.153.1), and 0.156.1 adds `gpt-6-sol` and `gpt-6-luna`. API-key
+      repairSpec: '@openai/codex-sdk@0.159.1',
+      // The first release whose bundled model catalog carries `gpt-6.1-sol`,
+      // the latest Sol model: 0.159.0 carries `gpt-6-astra`, `gpt-6-sol` and
+      // `gpt-6-luna` alone, and 0.159.1 adds `gpt-6.1-sol` (the GPT-6 family
+      // was whole from 0.156.1, `gpt-6-astra` bundled since 0.153.1). API-key
       // runs fetch no remote model list while the under-development
       // `api_key_model_discovery` feature stays off by default, so the
       // bundled catalog alone decides; ChatGPT account runs also merge a
       // remote catalog the service filters by each entry's
       // `minimal_client_version`, which is 0.155.0 for Sol and Luna. A
       // runtime without the entry falls back to generic slug metadata with no
-      // reasoning levels or speed tiers. Bisected against the published
-      // darwin-arm64 binaries and the tagged `models.json`. 0.139.0, the
+      // reasoning levels or speed tiers. Bisected against the tagged
+      // `models.json` of each release. 0.139.0, the
       // runtime DR-013 was written about, stays refused.
-      supportedFrom: '0.156.1',
-      tested: '0.159.0',
+      supportedFrom: '0.159.1',
+      tested: '0.159.1',
       // The adapter spawns this executable, and it is what refuses a model
       // newer than itself, so it is the version that must be read.
       bundles: '@openai/codex',
