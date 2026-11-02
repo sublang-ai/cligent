@@ -130,7 +130,20 @@ Where a release candidate is evaluated for readiness, its dependency audit shall
 
 ### package-28
 
-When a known vulnerability is remediated, the remediation shall retain the Node runtime floor in [[package-2](#package-2)] and use neither an ignored audit finding nor an unsupported dependency override.
+When a known vulnerability is remediated, the remediation shall retain the Node runtime floor in [[package-2](#package-2)] and use neither an ignored audit finding nor an unsupported dependency override, with repository-supported development matcher substitutions bounded by [[package-35](#package-35)].
+
+### package-35
+
+Where upstream development tools have not adopted the patched matcher, the repository shall support only the following out-of-range development dependency substitutions ([DR-043](../decisions/043-audited-development-matchers.md)):
+
+- `eslint`, `@eslint/config-array` and `@typescript-eslint/typescript-estree` may select exactly `minimatch@11.0.3` through matching npm and pnpm parent-scoped overrides;
+- every affected consumer uses retained public matcher APIs, verified through [[package-36](#package-36)];
+- runtime dependencies and Agent SDK pins remain unchanged, and both dependency audits remain free of known vulnerabilities under [[package-13](#package-13)];
+- removal follows an upstream compatible dependency range, rather than widening this exception to other consumers.
+
+### package-37
+
+When repository development linting runs, its Node version shall satisfy the development ESLint package's declared engines independently of the unchanged distributable runtime floor in [[package-2](#package-2)].
 
 ### package-16
 
@@ -202,6 +215,10 @@ User-facing package documentation shall state the optional-agent-runtime depende
 The project shall include type-level tests verifying discriminated-union narrowing and interface assignability for [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md) types.
 
 ## Verification
+
+### package-36
+
+When the development-tool compatibility integration checks run, verification shall exercise actual ESLint and TypeScript parser entry points to assert configured TypeScript, nested, hidden and CLI file selection, ignored build output, include/exclude/negation behavior, active unused-variable and Node compatibility rules, and project-service admission of matching out-of-project files with rejection of nonmatching files [[package-35](#package-35)].
 
 ### package-101
 

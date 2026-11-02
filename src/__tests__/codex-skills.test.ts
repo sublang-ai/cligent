@@ -21,7 +21,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { Codex } from '@openai/codex-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -203,7 +203,7 @@ async function setup() {
           const executable = probeCodexExecutable();
           super({
             ...options,
-            // The transport wrapper launches the recording native fixture;
+            // The direct SDK launches the recording native fixture;
             // supplied policy arguments travel through that same carrier.
             codexPathOverride: options?.codexPathOverride ?? fixturePaths.codex,
             env: {
@@ -432,9 +432,9 @@ describe.skipIf(process.platform === 'win32')(
       );
 
       // One unquoted enable override, and nothing else changes: the skill
-      // filters, configuration isolation, and every other argument match the
+      // filters, configuration inheritance, and every other argument match the
       // same resumed run without skills.
-      expect(second!.args).toContain('--ignore-user-config');
+      expect(second!.args).not.toContain('--ignore-user-config');
       expect(first!.args).not.toContain('--ignore-user-config');
       expect(
         second!.args.filter(
@@ -678,22 +678,16 @@ describe.skipIf(process.platform === 'win32')(
       expect(await fixture.recordings()).toEqual([]);
     });
 
-    it('removes the plugin and keeps the run error when the wrapper cleanup fails (codex-78)', async () => {
+    it('removes the plugin and keeps SDK construction and startup errors (codex-78)', async () => {
       const fixture = await setup();
       vi.stubEnv('CODEX_HOME', fixture.home);
       const cache = join(fixture.home, 'plugins', 'cache');
-      const seen: { wrapper: string; marketplace: string; held: boolean }[] =
-        [];
+      const seen: { marketplace: string; held: boolean }[] = [];
       const failing = (stage: 'construct' | 'start') =>
         new CodexAdapter({
           loadSdk: async () => ({
             Codex: class {
               constructor(options?: ConstructorParameters<typeof Codex>[0]) {
-                // A permission policy runs through the generated wrapper,
-                // whose cleanup this run forces to fail.
-                const wrapper = dirname(options!.codexPathOverride!);
-                roots.push(wrapper);
-                removal.fails = (path) => path === wrapper;
                 const override = (options!.configOverrides as string[]).find(
                   (entry) => entry.startsWith('plugins.'),
                 );
@@ -703,7 +697,6 @@ describe.skipIf(process.platform === 'win32')(
                   )?.[1];
                 expect(marketplace).toMatch(OWN_MARKETPLACE);
                 seen.push({
-                  wrapper,
                   marketplace: marketplace!,
                   held: existsSync(join(cache, marketplace!)),
                 });
@@ -732,9 +725,8 @@ describe.skipIf(process.platform === 'win32')(
       );
       await expect(run('start')).rejects.toThrow(/^thread start failure$/);
       expect(seen).toHaveLength(2);
-      for (const { wrapper, marketplace, held } of seen) {
+      for (const { marketplace, held } of seen) {
         expect(held).toBe(true);
-        expect(existsSync(wrapper)).toBe(true);
         expect(existsSync(join(cache, marketplace))).toBe(false);
       }
       expect(await readdir(fixture.home)).toEqual(['config.toml']);

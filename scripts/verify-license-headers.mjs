@@ -21,6 +21,7 @@ const commentStyles = new Map([
   ['.cc', 'slash'],
   ['.cjs', 'slash'],
   ['.cpp', 'slash'],
+  ['.cs', 'slash'],
   ['.css', 'block'],
   ['.cts', 'slash'],
   ['.h', 'slash'],

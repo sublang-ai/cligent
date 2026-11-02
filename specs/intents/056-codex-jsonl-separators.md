@@ -5,7 +5,7 @@
 
 ## Status
 
-Implementation complete and reviewed locally; integration and release pending.
+Superseded 2026-11-01 by [DR-040](../decisions/040-native-windows-codex-isolation.md). The wrapper and its tests are removed. Raw U+2028/U+2029 parser failures are an accepted known limitation; the historical verification below does not describe the current direct SDK path.
 
 ## Intent
 

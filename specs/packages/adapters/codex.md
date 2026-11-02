@@ -147,7 +147,7 @@ When Codex emits `turn.completed`, the adapter shall emit [[codex-59](#codex-59)
 | `status: 'max_turns'` | `max_turns` or `maxturns` |
 | `status: 'max_budget'` | `max_budget`, `maxbudget`, or `budget_exceeded` |
 | `status: 'error'` | `error` or `failed` |
-| `result` | first non-empty `turn.result`, then event `result`, otherwise omitted |
+| `result` | first string-valued `turn.result`, then event `result` (including empty strings), then the exact text of the last completed `agent_message` in this run (including an empty message), otherwise omitted; earlier progress messages remain separate streamed events |
 | `durationMs` | first finite `turn.durationMs`, `turn.duration_ms`, event `durationMs`, or event `duration_ms`, otherwise elapsed run time |
 | `resumeToken` with `status: 'interrupted'` | the interrupted-terminal selection in [[codex-33](#codex-33)] |
 | `resumeToken` with any other status | the normal-terminal selection in [[codex-6](#codex-6)] |
@@ -208,14 +208,15 @@ When the adapter maps the closed `PermissionPolicy.mode` set in [[engine-21](../
 
 ### codex-31
 
-When a run has no permission policy or a supplied policy whose mapping succeeds, the adapter shall select its per-run Codex configuration source from this isolation matrix:
+On Mac and Windows, the adapter shall inherit Codex's native user, project, authentication, provider, and MCP configuration without adding `--ignore-user-config` or modifying configuration files, with a supplied permission policy travelling through public SDK `config`, `configOverrides`, and thread approval options, leaving native precedence and managed requirements authoritative ([DR-040](../../decisions/040-native-windows-codex-isolation.md)).
 
-| Permission-policy input | Configuration source |
-| --- | --- |
-| policy absent | emit no `--ignore-user-config`, inherit Codex's native configuration, and preserve normal `CODEX_HOME` authentication and session state |
-| any supplied policy on POSIX, including empty | include `--ignore-user-config` in the selected Codex `exec` arguments while preserving normal `CODEX_HOME` authentication and session state, so user-level legacy `sandbox_mode` or stale `default_permissions` cannot replace the selected profile |
+### codex-84
 
-| any supplied policy on native Windows | reject before browser preparation because the executable wrapper cannot enforce isolated configuration on that host |
+The adapter shall leave PowerShell cache policy to native Codex and host configuration, without injecting `PSModuleAnalysisCachePath` ([DR-042](../../decisions/042-windows-powershell-module-cache.md)).
+
+### codex-85
+
+The adapter shall use the same public SDK permission mapping on Mac and Windows without selecting a sandbox backend or injecting platform-specific command guidance [[codex-4](#codex-4)].
 
 ### codex-32
 
@@ -288,13 +289,13 @@ When the adapter maps the Codex-specific `AgentOptions.effort` vocabulary from [
 
 ### codex-35
 
-Where `AgentOptions.effort` is `ultra`, when the adapter maps the same permission input with and without that effort, it shall leave every permission profile, approval, reviewer, legacy-control omission, writable-path mapping, and configuration-isolation control unchanged.
+Where `AgentOptions.effort` is `ultra`, when the adapter maps the same permission input with and without that effort, it shall leave every permission profile, approval, reviewer, legacy-control omission, writable-path mapping, and configuration-inheritance control unchanged.
 
 ### Fast Mode
 
 ### codex-55
 
-When the adapter maps `AgentOptions.fastMode` under [[engine-75](../engine.md#engine-75)], it shall produce this Codex constructor-configuration matrix per [[9]], [[10]], [[11]], and [[12]] while preserving [[codex-4](#codex-4)] permission configuration, [[codex-7](#codex-7)] effort configuration, and [[codex-31](#codex-31)] configuration isolation in the same `CodexOptions.config` object:
+When the adapter maps `AgentOptions.fastMode` under [[engine-75](../engine.md#engine-75)], it shall produce this Codex constructor-configuration matrix per [[9]], [[10]], [[11]], and [[12]] while preserving [[codex-4](#codex-4)] permission configuration, [[codex-7](#codex-7)] effort configuration, and [[codex-31](#codex-31)] configuration inheritance in the same `CodexOptions.config` object:
 
 | `AgentOptions.fastMode` | `config.service_tier` | `config.features.fast_mode` |
 | --- | --- | --- |
@@ -419,12 +420,12 @@ When a run supplies skills, the adapter shall deliver the prepared list [[skills
 | enable override | one native `plugins.cligent@<marketplace>.enabled=true` override, its key unquoted because the runtime splits an override key at every `.` and the marketplace name holds none, through the SDK constructor's raw `configOverrides` array, as [[codex-70](#codex-70)] carries MCP entries, leaving every other `plugins` entry as configuration loading selects it |
 | listed name | `cligent:<name>`, namespaced by the manifest name [[16]], whose body a `$cligent:<name>` prompt mention injects [[14]] |
 | user-level and project skills | unchanged, because the plugin adds a root beside them, unless [[codex-82](#codex-82)] disables them by path |
-| `skills.config` filters and `--ignore-user-config` | unchanged, [[codex-82](#codex-82)] only adding its own rules after the user's |
+| `skills.config` filters and configuration inheritance | unchanged, [[codex-82](#codex-82)] only adding its own rules after the user's |
 | workspace and Codex configuration | no `.codex` or `.agents` workspace entry and no `config.toml` write, the Codex home keeping its authentication and session state as [[codex-31](#codex-31)] preserves them |
 
 ### codex-78
 
-When a run with skills [[codex-75](#codex-75)] ends, the adapter shall remove the plugin root, its marketplace directory, and each parent the run created while empty, through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after terminal `done` once the SDK event iterator has settled, the point at which the SDK stops exposing its child and the only evidence of that child's exit the SDK gives, wherever `runStreamed()` was invoked, including the [[codex-24](#codex-24)], [[codex-25](#codex-25)], [[codex-26](#codex-26)], and [[codex-27](#codex-27)] paths, and otherwise before its terminal or rejection leaves the adapter, even where the run's executable-wrapper cleanup fails first, the rejection then keeping the run's own error.
+When a run with skills [[codex-75](#codex-75)] ends, the adapter shall remove the plugin root, its marketplace directory, and each parent the run created while empty, through the shared carrier removal [[skills-4](../skills.md#skills-4)]: after terminal `done` once the SDK event iterator has settled, the point at which the SDK stops exposing its child and the only evidence of that child's exit the SDK gives, wherever `runStreamed()` was invoked, including the [[codex-24](#codex-24)], [[codex-25](#codex-25)], [[codex-26](#codex-26)], and [[codex-27](#codex-27)] paths, and otherwise before its terminal or rejection leaves the adapter, including SDK construction or thread-start failure, with the rejection retaining the run's own error.
 
 ### codex-82
 
@@ -570,46 +571,28 @@ When the adapter locates the native binary the Codex CLI entry spawns, it shall 
 
 ### codex-40
 
-Where executable resolution or wrapper setup fails while starting a run, the adapter shall release that run's abort registration before propagating the error so repeated failures on one long-lived caller signal accumulate no listeners.
+Where executable resolution fails while starting a run, the adapter shall release that run's abort registration before propagating the error so repeated failures on one long-lived caller signal accumulate no listeners.
 
 
 ### JSONL Transport
 
 ### codex-79
 
-When a run starts through the SDK, the adapter shall select its transport from this host and command matrix:
-
-| Input or host                                       | Transport behavior                                                                                                                                                                 |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POSIX `exec` with `--json` or `--experimental-json` | escape only raw UTF-8 U+2028 and U+2029 in stdout as the equivalent JSON Unicode escapes, including separators split across chunks, leaving every other byte unchanged             |
-| POSIX other commands or output modes                | forward stdout unchanged                                                                                                                                                           |
-| POSIX permission policy absent                      | retain native configuration and environment under [[codex-31](#codex-31)] without adding isolation arguments                                                                       |
-| POSIX supplied policy                               | preserve [[codex-31](#codex-31)]'s isolation arguments and [[codex-12](#codex-12)]'s SDK-owned entry as resolution anchor for [[codex-64](#codex-64)]'s selected native executable |
-| native Windows without policy                       | retain direct SDK execution without separator protection                                                                                                                           |
-| native Windows with policy                          | retain [[codex-31](#codex-31)]'s rejection                                                                                                                                         |
-
-The transport executes that selected native binary directly, prepends its existing modern `codex-path` helper directory as the SDK does, and preserves stdin, stderr, argument order, authentication, session state, the caller's original `ELECTRON_RUN_AS_NODE` presence and value, and decoded JSON values; malformed JSON and actual child failures remain failures under [[codex-24](#codex-24)] through [[codex-27](#codex-27)].
+The adapter shall start Codex directly through the official SDK on every supported platform, leaving native executable selection to the SDK except that an Electron ASAR host shall pass its resolved unpacked native binary as `codexPathOverride`, without any shell script, Node hook, transport intermediary, or dependency on a global Node installation or output-byte transformations, leaving raw U+2028/U+2029 output subject to the SDK parser's known limitation ([DR-040](../../decisions/040-native-windows-codex-isolation.md)).
 
 ### codex-80
 
-When [[codex-79](#codex-79)]'s owned wrapper terminates or its SDK consumer closes early, the wrapper and adapter shall complete their owned lifecycle before removing the carrier:
-
-- arbitrate startup and unused-carrier retirement through one exclusive claim directory, with a cleanup winner preventing any later native spawn and a wrapper winner requiring cleanup to await both atomic lifecycle records;
-- register signal and output-error handling before claiming startup, atomically publish the wrapper's started identity before spawning the selected native executable, and forward cancellation or a closed stdout only to that exact owned native child;
-- await child close and output drain, preserve child nonzero exits and forwarding failures, and avoid an immediate process exit that truncates output;
-- bound cancellation escalation to that exact native child and bound adapter cleanup waiting for the matching atomically published wrapper completion record after native close and output drain, without terminating or claiming cleanup of intentional tool descendants;
-- remove an unused carrier normally when setup, SDK construction or cancellation ends before any wrapper starts; and
-- retain the carrier and report a cleanup failure when a started wrapper's completion cannot be established within the cleanup bound, without claiming the child exited.
+On completion, error, cancellation, or consumer closure, the adapter shall close its SDK iterator, release abort registrations and resume locks, and clean its run-owned resources, leaving native process launch and termination to the SDK without a separate supervisor or lifecycle-carrier files.
 
 ## Verification
 
 ### codex-74
 
-Where the exact native Codex conformance target is installed, when the real engine, adapter, SDK, and executable run against isolated configuration with loopback-only provider responses and a fixture MCP subprocess, acceptance verification shall assert the supplied server reaches the native tool catalog and executes without a permission prompt [[codex-70](#codex-70)], its valid PNG reaches the subsequent model request and one correlated host media event beside explanation text [[codex-72](#codex-72)], and completion counts one tool invocation without using real credentials or changing user configuration.
+Where the exact native Codex conformance target is installed, when the real engine, adapter, SDK, and executable run against explicit configuration with loopback-only provider responses and a fixture MCP subprocess, acceptance verification shall assert the supplied server reaches the native tool catalog and executes without a permission prompt [[codex-70](#codex-70)], its valid PNG reaches the subsequent model request and one correlated host media event beside explanation text [[codex-72](#codex-72)], and completion counts one tool invocation without using real credentials or changing user configuration.
 
 ### codex-71
 
-When a run supplies both MCP transports with quotes, whitespace, and newlines, the integration check shall exercise the installed SDK directly into a fixture subprocess and verify exact complete-entry arguments, scoped approval and required-server flags, unchanged prompt, successful terminal, and no MCP-generated carrier or isolation argument for MCP-only calls beside the POSIX transport wrapper [[codex-70](#codex-70)], [[codex-79](#codex-79)].
+When a run supplies both MCP transports with quotes, whitespace, and newlines, the integration check shall exercise the installed SDK directly into a fixture subprocess and verify exact complete-entry arguments, scoped approval and required-server flags, unchanged prompt, successful terminal, and no MCP-generated carrier or isolation argument for MCP-only calls through direct SDK execution [[codex-70](#codex-70)], [[codex-79](#codex-79)].
 
 ### codex-73
 
@@ -684,11 +667,11 @@ Where an application configuration selects representative thread and constructor
 
 ### codex-204
 
-Given a missing policy and the complete supplied-policy mode and capability matrix, when the adapter maps permissions, it shall produce every approval, reviewer, modern local-profile, user-config-isolation, and legacy-control-omission outcome in [[codex-4](#codex-4)] and [[codex-31](#codex-31)].
+Given a missing policy and the complete supplied-policy mode and capability matrix, when the adapter maps permissions, it shall produce every approval, reviewer, modern local-profile, native-config-inheritance, and legacy-control-omission outcome in [[codex-4](#codex-4)] and [[codex-31](#codex-31)].
 
 ### codex-205
 
-Where the packed tarball and exact Codex SDK target are installed in turn into a global-style prefix and a nested-strategy consumer, with neither layout leaving `@openai/codex` at its install root, when the installed adapter resolves the executable, creates a permission-managed wrapper, and runs until a scheduled abort, it shall resolve the SDK-owned entry in both layouts, embed the native path independently resolved through the public executable locator in the wrapper, terminate the invocation without a module-resolution failure, and exercise the nested-strategy case on the Node 18.3.0 floor without an ESM loader resolution surface [[codex-10](#codex-10)], [[codex-12](#codex-12)], [[codex-31](#codex-31)], [[codex-64](#codex-64)], [[codex-79](#codex-79)].
+Where the packed tarball and exact Codex SDK target are installed in turn into a global-style prefix and a nested-strategy consumer, with neither layout leaving `@openai/codex` at its install root, when the installed adapter resolves the executable, runs a permission-managed invocation until a scheduled abort, it shall resolve the SDK-owned entry in both layouts, independently resolve the SDK-owned native path through the public executable locator, terminate the invocation without a module-resolution failure, and exercise the nested-strategy case on the Node 18.3.0 floor without an ESM loader resolution surface [[codex-10](#codex-10)], [[codex-12](#codex-12)], [[codex-31](#codex-31)], [[codex-64](#codex-64)], [[codex-79](#codex-79)].
 
 ### codex-51
 
@@ -720,7 +703,7 @@ Given every Codex effort value, omission, foreign value, and unknown value, when
 
 ### codex-57
 
-Where `fastMode` omitted, `true`, and `false` are crossed with native and isolated configuration, supplied permissions, and ordinary, `max`, and `ultra` effort, when the adapter reaches the Codex SDK boundary, the check shall assert [[codex-55](#codex-55)]'s exact tier and feature values in one merged configuration object without losing any independent permission, effort, or isolation field.
+Where `fastMode` omitted, `true`, and `false` are crossed with native and explicit configuration, supplied permissions, and ordinary, `max`, and `ultra` effort, when the adapter reaches the Codex SDK boundary, the check shall assert [[codex-55](#codex-55)]'s exact tier and feature values in one merged configuration object without losing any independent permission, effort, or configuration field.
 
 ### codex-58
 
@@ -757,7 +740,7 @@ Given the Codex CLI can initialize its native sandbox, when a credential-free sa
 
 ### codex-224
 
-Given [[codex-219](#codex-219)]'s credential, sandbox, and `CI` preconditions and a throwaway `CODEX_HOME` whose `config.toml` grants broader user-level access, when a no-policy run and then a `mode: 'auto'` run each attempts to write outside its working directory, the probe shall prove [[codex-31](#codex-31)]'s isolation matrix from the pinned native root threads' persisted permission contexts:
+Given [[codex-219](#codex-219)]'s credential, sandbox, and `CI` preconditions and a throwaway `CODEX_HOME` whose `config.toml` grants broader user-level access, when a no-policy run and then a `mode: 'auto'` run each attempts to write outside its working directory, the probe shall prove [[codex-31](#codex-31)]'s configuration precedence matrix from the pinned native root threads' persisted permission contexts:
 
 - the no-policy context selects `danger-full-access` and approval policy `never`, and its write succeeds without permission or error events;
 - the managed context selects `workspace-write`, approval policy `on-request`, and reviewer `auto_review`, rather than the broader user configuration;
@@ -804,7 +787,7 @@ Given absent, empty, and non-empty caller working directories, when the adapter 
 
 ### codex-50
 
-Given repeated executable-resolution or wrapper-setup failures on one caller signal, when each attempted run rejects, no abort listener shall remain registered after any rejection [[codex-40](#codex-40)].
+Given repeated executable-resolution failures on one caller signal, when each attempted run rejects, no abort listener shall remain registered after any rejection [[codex-40](#codex-40)].
 
 ### codex-68
 
@@ -816,7 +799,7 @@ When skill fixtures run with the installed Codex SDK recorded into a fixture sub
 
 | Case | Assertions |
 | --- | --- |
-| fresh and resumed threads under a set `CODEX_HOME` holding a stale marketplace directory, one whose removal fails, a live same-host one, and a foreign-host one | the exact plugin root layout and manifest, the single unquoted `plugins` override argument, unchanged skill filters and isolation arguments, the stale-marketplace sweep leaving the live and foreign entries and tolerating the failed removal, and an unchanged workspace and `config.toml` [[codex-75](#codex-75)]; through the installed executable's offline prompt-input rendering, a catalog listing `cligent:<name>` from the plugin root under the same override and not without it [[codex-75](#codex-75)]; and removal of each run's plugin root and marketplace directory after normal completion [[codex-78](#codex-78)] |
+| fresh and resumed threads under a set `CODEX_HOME` holding a stale marketplace directory, one whose removal fails, a live same-host one, and a foreign-host one | the exact plugin root layout and manifest, the single unquoted `plugins` override argument, unchanged skill filters and inherited configuration, the stale-marketplace sweep leaving the live and foreign entries and tolerating the failed removal, and an unchanged workspace and `config.toml` [[codex-75](#codex-75)]; through the installed executable's offline prompt-input rendering, a catalog listing `cligent:<name>` from the plugin root under the same override and not without it [[codex-75](#codex-75)]; and removal of each run's plugin root and marketplace directory after normal completion [[codex-78](#codex-78)] |
 | unset `CODEX_HOME` | the `~/.codex` fallback [[codex-75](#codex-75)] and removal of the parents the run created [[codex-78](#codex-78)] |
 | `CODEX_HOME` naming a missing path, then a regular file | each runtime message as the rejection, no SDK construction, and nothing created [[codex-75](#codex-75)] |
 | unsupported effort beside a stale marketplace directory | the effort rejection with the stale entry unswept, no SDK construction, and nothing written in the Codex home [[codex-75](#codex-75)] |
@@ -825,7 +808,7 @@ When skill fixtures run with the installed Codex SDK recorded into a fixture sub
 | fixture emitting `turn.failed`, then exiting non-zero | the turn's error and `done` with `status: 'error'` [[codex-24](#codex-24)], then a removed marketplace directory [[codex-78](#codex-78)] |
 | caller abort while the fixture hangs | `done` with `status: 'interrupted'` [[codex-27](#codex-27)], then a removed marketplace directory [[codex-78](#codex-78)] |
 | cancellation before and during skill preparation | the interrupted terminal without SDK construction [[codex-69](#codex-69)] and removal of everything the run materialized [[codex-78](#codex-78)] |
-| SDK construction failure, then thread-start failure, each with a forced executable-wrapper cleanup failure | the run's own error as the rejection and a removed marketplace directory [[codex-78](#codex-78)] |
+| SDK construction failure, then thread-start failure | the run's own error as the rejection and a removed marketplace directory [[codex-78](#codex-78)] |
 | forced plugin-root and marketplace removal failures after a successful run, then before a construction-failure rejection | no error event after `done`, then the unremoved path appended to the rejection's message [[codex-78](#codex-78)] |
 
 ### codex-83
@@ -848,16 +831,11 @@ Where [[codex-219](#codex-219)]'s credential, retry, and skip preconditions hold
 
 ### codex-81
 
-Where POSIX recording CLI fixtures run through the installed real Codex SDK and the adapter's wrapper, when [the installed-SDK transport matrix](../../../src/__tests__/codex-jsonl.test.ts) executes, verification shall assert the following outcomes without replacing the SDK parser [[codex-79](#codex-79)], [[codex-80](#codex-80)]:
+When [the direct SDK probe](../../../scripts/verify-codex-sdk.mjs) uses a POSIX recording executable or compiled native Windows recording executable, verification shall assert unchanged prompt and config home, direct SDK arguments without isolation flags or startup hooks, complete progress events and independently parseable final JSON, nonzero and malformed-stream errors, and native child exit after normal completion, cancellation, and early return [[codex-79](#codex-79)], [[codex-80](#codex-80)].
 
-| Case                                                                                                                 | Assertions                                                                                                 |
-| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| raw and escaped U+2028/U+2029, nested strings, LF/CRLF, final unterminated record, byte-split UTF-8 and large output | exact decoded event strings and unchanged other wire data, with complete output under backpressure         |
-| no policy, managed policy and resumed thread                                                                         | exact prompt, arguments, configuration and environment, with only the declared policy isolation difference |
-| malformed JSON, nonzero child exit and `turn.failed`                                                                 | original failure classification under [[codex-24](#codex-24)] and [[codex-26](#codex-26)]                  |
-| abort, early iterator return, closed stdout, already-aborted request and startup/cleanup race                                                                       | finite child termination, closed/drained wrapper, no leaked carrier and no unhandled forwarding error      |
-| original Electron flag absent, empty or set, and existing helper PATH | exact native environment presence/value and SDK-equivalent helper precedence |
-| non-JSON command                                                                                                     | unchanged stdout bytes                                                                                     |
+### codex-86
+
+When [the native configuration probe](../../../scripts/verify-codex-native-config.mjs) runs through the installed SDK and native Codex against a scripted local provider, verification shall compare inherited and explicitly overridden legacy/modern profiles using actual file and network operations, report native approval differences by platform, call an MCP server inherited from the fixture configuration, and assert unchanged fixture configuration files [[codex-31](#codex-31)], [[codex-4](#codex-4)], [[codex-32](#codex-32)].
 
 ## References
 

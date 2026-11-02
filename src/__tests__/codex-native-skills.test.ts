@@ -157,7 +157,7 @@ async function setup() {
           const executable = probeCodexExecutable();
           super({
             ...options,
-            // The transport wrapper launches the recording fixture in place
+            // The direct SDK launches the recording fixture in place
             // of the native CLI; a permission policy's arguments ride along.
             codexPathOverride: options?.codexPathOverride ?? fixture,
             env: {

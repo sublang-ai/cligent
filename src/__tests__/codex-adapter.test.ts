@@ -261,6 +261,224 @@ async function collect(
 }
 
 describe('CodexAdapter', () => {
+  it('keeps streamed progress while terminal result uses the SDK final agent message', async () => {
+    for (const explicit of [undefined, 'explicit native result']) {
+      const adapter = new CodexAdapter({
+        loadSdk: makeLoader({
+          events: [
+            { type: 'thread.started', thread_id: CANONICAL_THREAD_ID },
+            {
+              type: 'item.completed',
+              item: {
+                type: 'agent_message',
+                id: 'progress',
+                text: 'Inspecting the task.',
+              },
+            },
+            {
+              type: 'item.completed',
+              item: {
+                type: 'agent_message',
+                id: 'final',
+                text: '{"status":"ready"}',
+              },
+            },
+            {
+              type: 'item.completed',
+              item: {
+                type: 'command_execution',
+                id: 'tool',
+                command: 'echo tool',
+                status: 'completed',
+                aggregated_output: 'must not become the answer',
+                exit_code: 0,
+              },
+            },
+            {
+              type: 'turn.completed',
+              ...(explicit ? { result: explicit } : {}),
+              usage: canonicalUsage,
+            },
+          ],
+        }),
+      });
+      const events = await collect(adapter.run('task'));
+      expect(
+        events
+          .filter((e) => e.type === 'text')
+          .map((e) => (e.payload as { content: string }).content),
+      ).toEqual(['Inspecting the task.', '{"status":"ready"}']);
+      expect(
+        (events.find((e) => e.type === 'done')?.payload as DonePayload).result,
+      ).toBe(explicit ?? '{"status":"ready"}');
+    }
+  });
+  it('selects only completed agent messages, prefers explicit results, and resets each run', async () => {
+    const completed = (text: string) => ({
+      type: 'item.completed',
+      item: { type: 'agent_message', text },
+    });
+    const batches = [
+      [
+        completed('progress one'),
+        completed('progress two'),
+        completed('{"ok":true}'),
+        {
+          type: 'item.updated',
+          item: { type: 'agent_message', text: 'unfinished' },
+        },
+        { type: 'turn.completed' },
+      ],
+      [
+        {
+          type: 'item.started',
+          item: { type: 'agent_message', text: 'unfinished' },
+        },
+        { type: 'turn.completed' },
+      ],
+      [
+        completed('fallback'),
+        {
+          type: 'turn.completed',
+          turn: { result: 'turn result' },
+          result: 'event result',
+        },
+      ],
+      [
+        completed('fallback'),
+        { type: 'turn.completed', result: 'event result' },
+      ],
+      [completed('previous'), completed(''), { type: 'turn.completed' }],
+    ];
+    const adapter = new CodexAdapter({ loadSdk: makeQueuedLoader(batches) });
+    for (const [index, result] of [
+      '{"ok":true}',
+      undefined,
+      'turn result',
+      'event result',
+      '',
+    ].entries()) {
+      const events = await collect(adapter.run('task'));
+      expect((events.at(-1)!.payload as DonePayload).result).toBe(result);
+      if (index === 0) {
+        expect(
+          events
+            .filter((e) => e.type === 'text')
+            .map((e) => (e.payload as { content: string }).content),
+        ).toEqual(['progress one', 'progress two', '{"ok":true}']);
+        expect(JSON.parse(result!)).toEqual({ ok: true });
+      }
+    }
+  });
+
+  it.each(['failed', 'exhausted', 'thrown', 'cancelled'] as const)(
+    'does not promote partial progress on %s',
+    async (branch) => {
+      const abort = new AbortController();
+      const adapter = new CodexAdapter({
+        loadSdk: makeLoader({
+          events: [
+            {
+              type: 'item.completed',
+              item: { type: 'agent_message', text: 'partial' },
+            },
+            ...(branch === 'failed'
+              ? [{ type: 'turn.failed', error: { message: 'failure' } }]
+              : []),
+          ],
+          ...(branch === 'thrown'
+            ? { throwFromRun: new Error('stream failure') }
+            : {}),
+          onEventConsumed() {
+            if (branch === 'cancelled') abort.abort();
+          },
+        }),
+      });
+      const events = await collect(
+        adapter.run('task', { abortSignal: abort.signal }),
+      );
+      expect(events.at(-1)!.payload).toMatchObject({
+        status: branch === 'cancelled' ? 'interrupted' : 'error',
+      });
+      expect((events.at(-1)!.payload as DonePayload).result).toBeUndefined();
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    },
+  );
+
+  it.each(['', ' ', '{"explicit":true}'])(
+    'preserves an explicit final string (%j), including empty text',
+    async (result) => {
+      const adapter = new CodexAdapter({
+        loadSdk: makeLoader({
+          events: [
+            {
+              type: 'item.completed',
+              item: { type: 'agent_message', text: 'progress' },
+            },
+            {
+              type: 'turn.completed',
+              turn: { result },
+              result: 'lower priority',
+            },
+          ],
+        }),
+      });
+      const events = await collect(adapter.run('task'));
+      expect((events.at(-1)!.payload as DonePayload).result).toBe(result);
+    },
+  );
+
+  it('keeps final answers independent across concurrent calls on one adapter', async () => {
+    const batch = (text: string) => [
+      { type: 'item.completed', item: { type: 'agent_message', text } },
+      { type: 'turn.completed' },
+    ];
+    const adapter = new CodexAdapter({
+      loadSdk: makeQueuedLoader([batch('first'), batch('second')]),
+    });
+    const [first, second] = await Promise.all([
+      collect(adapter.run('one')),
+      collect(adapter.run('two')),
+    ]);
+    expect((first.at(-1)!.payload as DonePayload).result).toBe('first');
+    expect((second.at(-1)!.payload as DonePayload).result).toBe('second');
+  });
+
+  it('overrides an ASAR host path only with the probed native executable', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      process.versions,
+      'electron',
+    );
+    try {
+      Object.defineProperty(process.versions, 'electron', {
+        value: '44.0.0',
+        configurable: true,
+      });
+      for (const path of [
+        '/Applications/Spex.app/Contents/Resources/app.asar.unpacked/node_modules/codex',
+        'C:\\Program Files\\Spex\\resources\\app.asar.unpacked\\node_modules\\codex.exe',
+      ]) {
+        let captured: MockCodexConstructorOptions | undefined;
+        const adapter = new CodexAdapter({
+          probeExecutable: () => ({ state: 'present', path }),
+          loadSdk: makeLoader({
+            events: [{ type: 'turn.completed' }],
+            onConstruct(options) {
+              captured = options;
+            },
+          }),
+        });
+        await collect(adapter.run('test', { permissions: { mode: 'auto' } }));
+        expect(captured?.codexPathOverride).toBe(path);
+        expect(captured?.env).toBeUndefined();
+      }
+    } finally {
+      if (descriptor)
+        Object.defineProperty(process.versions, 'electron', descriptor);
+      else delete process.versions.electron;
+    }
+  });
+
   it('emits native MCP media once without changing the opaque result or tool count', async () => {
     const content = [
       {
@@ -2429,7 +2647,6 @@ describe('CodexAdapter', () => {
 
     const agentMapped = mapAgentOptionsToCodexOptions({});
     expect(agentMapped.codexOptions).toBeUndefined();
-    expect(agentMapped.codexCliExecArgs).toBeUndefined();
     expect(agentMapped.codexCliConfigOverrides).toBeUndefined();
     expect(agentMapped.threadOptions).not.toHaveProperty('approvalPolicy');
     expect(agentMapped.threadOptions).not.toHaveProperty('sandboxMode');
@@ -2485,7 +2702,6 @@ describe('CodexAdapter', () => {
         approvals_reviewer: 'auto_review',
       },
     });
-    expect(mapped.codexCliExecArgs).toEqual(['--ignore-user-config']);
     expect(mapped.codexCliConfigOverrides).toEqual([
       'permissions.cligent-workspace-extra-writes={extends=":workspace", filesystem={":workspace_roots"={".git"="write", "generated/cache"="write"}}}',
     ]);
@@ -2493,10 +2709,8 @@ describe('CodexAdapter', () => {
     expect(mapped).not.toHaveProperty('networkAccessEnabled');
   });
 
-  it('injects generated Codex profile config through a temporary CLI wrapper', async () => {
+  it('passes generated profile overrides directly to the SDK without replacing its executable', async () => {
     let capturedCodexOptions: MockCodexConstructorOptions | undefined;
-    let wrapperScript: string | undefined;
-    let wrapperPath: string | undefined;
 
     const adapter = new CodexAdapter({
       loadSdk: makeLoader({
@@ -2511,13 +2725,6 @@ describe('CodexAdapter', () => {
         ],
         onConstruct(options) {
           capturedCodexOptions = options;
-          wrapperPath = options?.codexPathOverride;
-          if (wrapperPath) {
-            wrapperScript = readFileSync(
-              wrapperPath.replace(/\.sh$/, '.mjs'),
-              'utf8',
-            );
-          }
         },
       }),
     });
@@ -2533,14 +2740,38 @@ describe('CodexAdapter', () => {
       default_permissions: 'cligent-workspace-extra-writes',
       approvals_reviewer: 'auto_review',
     });
-    expect(wrapperPath).toBeDefined();
-    expect(wrapperScript).toContain('--ignore-user-config');
+    expect(capturedCodexOptions?.codexPathOverride).toBeUndefined();
+    expect(capturedCodexOptions?.env).toBeUndefined();
     const raw = capturedCodexOptions?.configOverrides?.join('\n');
     expect(raw).toContain('projects={');
     expect(raw).toContain('trust_level="trusted"');
     expect(raw).toContain('permissions.cligent-workspace-extra-writes=');
     expect(raw).toContain('".git"="write"');
-    expect(existsSync(wrapperPath!)).toBe(false);
+  });
+
+  it('uses identical public SDK permission mapping on Mac and Windows', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    try {
+      for (const policy of [
+        undefined,
+        { mode: 'auto' },
+        { mode: 'bypass' },
+        { fileWrite: 'deny' },
+        { shellExecute: 'ask' },
+        { mode: 'auto', writablePaths: ['.git'] },
+      ] as const) {
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+        const mac = mapPermissionsToCodexOptions(policy);
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        expect(mapPermissionsToCodexOptions(policy)).toEqual(mac);
+        expect(mac.codexOptions?.config ?? {}).not.toHaveProperty('features');
+        expect(mac.codexOptions?.config ?? {}).not.toHaveProperty(
+          'developer_instructions',
+        );
+      }
+    } finally {
+      Object.defineProperty(process, 'platform', descriptor);
+    }
   });
 
   it('rejects writablePaths that conflict with read-only Codex local access', () => {
@@ -2627,7 +2858,7 @@ describe('CodexAdapter', () => {
         default_permissions: ':workspace',
       },
     });
-    expect(capturedCodexOptions?.codexPathOverride).toBeDefined();
+    expect(capturedCodexOptions?.codexPathOverride).toBeUndefined();
     expect(capturedThreadOptions).toMatchObject({
       workingDirectory: '/tmp/repo',
       model: 'gpt-5-codex',
@@ -2699,7 +2930,7 @@ describe('CodexAdapter', () => {
         approvals_reviewer: 'auto_review',
       },
     });
-    expect(capturedCodexOptions?.codexPathOverride).toBeDefined();
+    expect(capturedCodexOptions?.codexPathOverride).toBeUndefined();
     expect(capturedThreadOptions).toMatchObject({
       approvalPolicy: 'on-request',
     });
@@ -2742,7 +2973,7 @@ describe('CodexAdapter', () => {
         default_permissions: ':danger-full-access',
       },
     });
-    expect(capturedCodexOptions?.codexPathOverride).toBeDefined();
+    expect(capturedCodexOptions?.codexPathOverride).toBeUndefined();
     expect(capturedThreadOptions).toMatchObject({
       approvalPolicy: 'never',
     });
@@ -3100,15 +3331,12 @@ describe('CodexAdapter', () => {
     });
 
     expect(unmanaged.codexCliConfigOverrides).toBeUndefined();
-    expect(managed.codexCliExecArgs).toEqual(['--ignore-user-config']);
     expect(managed.codexCliConfigOverrides).toEqual([
       `projects={${JSON.stringify(projectRoot)}={trust_level="trusted"}}`,
     ]);
-    expect(emptyManaged.codexCliExecArgs).toEqual(['--ignore-user-config']);
     expect(emptyManaged.codexCliConfigOverrides).toEqual(
       managed.codexCliConfigOverrides,
     );
-    expect(readOnlyManaged.codexCliExecArgs).toEqual(['--ignore-user-config']);
     expect(readOnlyManaged.codexCliConfigOverrides).toBeUndefined();
     expect(noCwdManaged.codexCliConfigOverrides).toBeUndefined();
     expect(emptyCwdManaged.codexCliConfigOverrides).toBeUndefined();
@@ -3310,7 +3538,6 @@ describe('CodexAdapter', () => {
     expect(ultra.threadOptions.approvalPolicy).toBe(
       ordinary.threadOptions.approvalPolicy,
     );
-    expect(ultra.codexCliExecArgs).toEqual(ordinary.codexCliExecArgs);
     expect(ultra.codexCliConfigOverrides).toEqual(
       ordinary.codexCliConfigOverrides,
     );
@@ -3378,9 +3605,7 @@ describe('CodexAdapter', () => {
           expect(constructorOptions?.config).toEqual(
             Object.keys(expectedConfig).length > 0 ? expectedConfig : undefined,
           );
-          expect(constructorOptions?.codexPathOverride === undefined).toBe(
-            process.platform === 'win32' && !isolated,
-          );
+          expect(constructorOptions?.codexPathOverride).toBeUndefined();
           expect(threadOptions?.modelReasoningEffort).toBe(
             effort === 'high' ? 'high' : undefined,
           );
@@ -3797,7 +4022,6 @@ describe('CodexAdapter', () => {
         approvals_reviewer: 'auto_review',
       },
     });
-    expect(auto.codexCliExecArgs).toEqual(['--ignore-user-config']);
     expect(auto).not.toHaveProperty('sandboxMode');
     expect(auto).not.toHaveProperty('networkAccessEnabled');
 

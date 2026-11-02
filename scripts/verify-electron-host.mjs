@@ -312,11 +312,8 @@ if (!process.argv.includes('--cligent-electron-host')) {
             browser: true,
             model: 'gpt-5',
             abortSignal: controller.signal,
-            // Exercise the POSIX wrapper as well as raw MCP overrides. Native
-            // Windows has an explicit, accurately reported isolation restriction.
-            ...(process.platform === 'win32'
-              ? {}
-              : { permissions: { fileWrite: 'deny' } }),
+            // Both hosts use direct SDK configuration for permissions and MCP.
+            permissions: { fileWrite: 'deny' },
           },
         ))
           events.push(event);

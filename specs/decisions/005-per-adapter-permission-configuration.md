@@ -142,7 +142,7 @@ The exact per-capability → profile mapping is [[codex-4](../packages/adapters/
 Built-in profiles cannot express a workspace-write surface with network enabled, so that combination is lossy (it rounds to `:workspace`, granting no network); synthesizing granular `[permissions]` profiles is out of scope.
 
 **Determinism caveat.** `default_permissions` is authoritative only when no legacy `sandbox_mode` exists in the active Codex config layers.
-For cligent-managed permission runs, the adapter invokes Codex `exec` with `--ignore-user-config` so the user's `$CODEX_HOME/config.toml` does not silently replace the requested profile; auth and session state still come from `CODEX_HOME`.
+As revised by [DR-040](040-native-windows-codex-isolation.md), managed permission runs inherit user configuration. Public SDK configuration overrides select the requested profile using native precedence; authentication and sessions retain their native home. The former `--ignore-user-config` policy is removed.
 Project-local Codex config layers and future managed configuration routes remain subject to Codex's own precedence rules.
 
 **Inheriting the user's Codex config** — letting Codex's own `default_permissions` / CLI/Desktop config be authoritative instead of cligent picking a profile — is deliberately out of scope.
@@ -167,7 +167,7 @@ The DR does not introduce new error machinery; it constrains where errors should
 ### Out of scope
 
 - Per-adapter knob escape hatches in YAML (e.g., setting `default_permissions` directly bypassing `PermissionPolicy`).
-- Inheriting the user's machine-level Codex permission config; a `mode: 'auto'` Codex posture is always a cligent-selected profile, never a deferral to `~/.codex/config.toml`.
+- Deferring an explicit `mode: 'auto'` Codex profile to a user-selected profile; user configuration still loads under DR-040, with explicit per-run controls taking native precedence.
 - Per-tool ACL rules in YAML distinct from `PermissionPolicy`.
 - Partial runtime permission merges above a tmux-play YAML default; [[tmux-play-93](../packages/tmux-play.md#tmux-play-93)]'s public complete-settings surface replaces that default with a typed complete `PermissionPolicy`, while generic `RunOptions.permissions` keeps DR-003's merge behavior.
 - Automatic permission-mode escalation or down-shift based on context.
