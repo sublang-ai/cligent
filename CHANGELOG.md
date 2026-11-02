@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-11-02
+
 ### Changed
 
 - The supported Codex runtime floor rises to `0.159.1`, the first release whose bundled model catalog carries `gpt-6.1-sol`, the latest Sol model (DR-027); an older Codex runtime that loaded under 0.36.x is now refused with the required version and upgrade named. CI verifies `0.159.1`.
@@ -888,7 +890,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.36.2...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/sublang-ai/cligent/compare/v0.36.2...v0.37.0
 [0.36.2]: https://github.com/sublang-ai/cligent/compare/v0.36.1...v0.36.2
 [0.36.1]: https://github.com/sublang-ai/cligent/compare/v0.36.0...v0.36.1
 [0.36.0]: https://github.com/sublang-ai/cligent/compare/v0.35.0...v0.36.0
