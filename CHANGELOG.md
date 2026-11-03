@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-11-03
+
 ### Fixed
 
 - tmux-play admits a resumed Claude call whose settings select the provider-default model and omits the model, as on a fresh call. Claude Code resumed without a model selects its current default (`ANTHROPIC_MODEL` from the environment or the settings `env`, else the settings `model`, else its built-in default), not the transcript's model, so the previous rejection failed every resumed Claude step for hosts that select the provider default, such as a third-party provider. A new acceptance check verifies the selection against the real runtime for each default source.
@@ -895,7 +897,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/sublang-ai/cligent/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/sublang-ai/cligent/compare/v0.36.2...v0.37.0
 [0.36.2]: https://github.com/sublang-ai/cligent/compare/v0.36.1...v0.36.2
 [0.36.1]: https://github.com/sublang-ai/cligent/compare/v0.36.0...v0.36.1
