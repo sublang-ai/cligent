@@ -1398,15 +1398,6 @@ function assertCompleteSettingsEnforceable(
     'tmux-play call settings subagentEffort',
   );
   if (
-    (adapter === 'claude' || adapter === 'claude-code') &&
-    isResumedCall(resume) &&
-    settings.modelUsesProviderDefault
-  ) {
-    throw new Error(
-      'Claude cannot restore the provider-default model on a resumed session',
-    );
-  }
-  if (
     adapter === 'kimi' &&
     isResumedCall(resume) &&
     (settings.modelUsesProviderDefault ||
