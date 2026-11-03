@@ -154,6 +154,84 @@ describe('engine-86: provider model discovery', () => {
     expect(settingsCalls).toEqual([{ settingSources: ['user'] }]);
   });
 
+  it('passes the probed native executable inside Electron only for an ASAR-unpacked path', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      process.versions,
+      'electron',
+    );
+    const unpacked =
+      '/Applications/Spex.app/Contents/Resources/app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude';
+    const plain =
+      '/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude';
+    const discover = async (path: string) => {
+      let options: Record<string, unknown> | undefined;
+      const result = await discoverAgentModelsWithDeps(
+        'claude',
+        {},
+        {
+          checkRuntime,
+          claudeSettings: noSettings,
+          claudeExecutable: () => ({ state: 'present', path }),
+          claudeQuery(input) {
+            options = (input as { options: Record<string, unknown> }).options;
+            return { supportedModels: async () => [], close() {} };
+          },
+        },
+      );
+      expect(result.status).toBe('available');
+      return options!;
+    };
+    try {
+      Object.defineProperty(process.versions, 'electron', {
+        value: '44.0.0',
+        configurable: true,
+      });
+      expect((await discover(unpacked)).pathToClaudeCodeExecutable).toBe(
+        unpacked,
+      );
+      expect(await discover(plain)).not.toHaveProperty(
+        'pathToClaudeCodeExecutable',
+      );
+      delete process.versions.electron;
+      expect(await discover(unpacked)).not.toHaveProperty(
+        'pathToClaudeCodeExecutable',
+      );
+    } finally {
+      if (descriptor)
+        Object.defineProperty(process.versions, 'electron', descriptor);
+      else delete process.versions.electron;
+    }
+  });
+
+  it('reports a missing Claude native executable as unavailable without opening the SDK', async () => {
+    let opened = false;
+    const result = await discoverAgentModelsWithDeps(
+      'claude',
+      {},
+      {
+        checkRuntime,
+        claudeSettings: noSettings,
+        claudeExecutable: () => ({
+          state: 'missing',
+          package: '@anthropic-ai/claude-agent-sdk-darwin-arm64',
+          platform: 'darwin',
+          arch: 'arm64',
+        }),
+        claudeQuery() {
+          opened = true;
+          return { supportedModels: async () => [], close() {} };
+        },
+      },
+    );
+    expect(result).toEqual({
+      status: 'unavailable',
+      reason: expect.stringContaining(
+        'the optional platform package @anthropic-ai/claude-agent-sdk-darwin-arm64 is not installed for darwin-arm64',
+      ),
+    });
+    expect(opened).toBe(false);
+  });
+
   it('closes Claude discovery on deadline without manufacturing a model', async () => {
     let closed = false;
     const result = await discoverAgentModelsWithDeps(
