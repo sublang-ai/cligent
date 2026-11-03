@@ -9,6 +9,12 @@ import {
   type AgentRuntimeName,
 } from './runtime-targets.js';
 import { assertRuntimeSupported } from './runtime-version.js';
+import {
+  claudeExecutableRefusal,
+  explicitClaudeExecutablePath,
+  probeClaudeExecutable,
+  type ClaudeExecutableProbe,
+} from './adapters/claude-executable.js';
 import { nodeChildEnvironment } from './node-child.js';
 
 export interface DiscoveredModel {
@@ -67,6 +73,9 @@ type ClaudeSettingsResolver = (options: unknown) => Promise<unknown>;
 interface DiscoveryDeps {
   checkRuntime?: (adapter: AgentRuntimeName) => void;
   claudeQuery?: (options: unknown) => ClaudeQuery | Promise<ClaudeQuery>;
+  /** The native-binary lookup; omitted beside an injected `claudeQuery`,
+   * which owns its own executable. */
+  claudeExecutable?: () => ClaudeExecutableProbe;
   /** The Agent SDK's settings resolver, or undefined when it exports none. */
   claudeSettings?: () => Promise<ClaudeSettingsResolver | undefined>;
   command?: (adapter: AgentRuntimeName) => Command | Promise<Command>;
@@ -295,6 +304,18 @@ async function discoverClaude(
     await inputFinished;
   }
   try {
+    // claude-code-56/57: refuse a binary the lookup cannot find, and pass
+    // the one Electron must spawn, exactly as a run does.
+    const probe =
+      deps.claudeExecutable ??
+      (deps.claudeQuery === undefined ? probeClaudeExecutable : undefined);
+    let executablePath: string | undefined;
+    if (probe !== undefined) {
+      const executable = probe();
+      if (executable.state !== 'present')
+        throw new Error(claudeExecutableRefusal(executable));
+      executablePath = explicitClaudeExecutablePath(executable.path);
+    }
     const createQuery =
       deps.claudeQuery ??
       (async (input: unknown) => {
@@ -319,6 +340,9 @@ async function discoverClaude(
           settingSources: [],
           settings: { disableAllHooks: true },
           permissionMode: 'dontAsk',
+          ...(executablePath === undefined
+            ? {}
+            : { pathToClaudeCodeExecutable: executablePath }),
         },
       }),
     );

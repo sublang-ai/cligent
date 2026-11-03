@@ -53,9 +53,8 @@ import type {
   WritablePathsPermissionMapping,
 } from '../types.js';
 import {
-  CLAUDE_SDK_PACKAGE,
-  claudeExecutableCandidates,
-  claudeExecutablePackage,
+  claudeExecutableRefusal,
+  explicitClaudeExecutablePath,
   probeClaudeExecutable,
   type ClaudeExecutableProbe,
 } from './claude-executable.js';
@@ -357,44 +356,6 @@ const INJECTED_SDK_EXECUTABLE: ClaudeExecutableProbe = {
   state: 'present',
   path: 'injected-sdk',
 };
-
-/**
- * The refusal a binary the lookup did not find earns (claude-code-56): on a
- * host the SDK publishes no binary for, that fact, since no reinstall can
- * help; otherwise the package the SDK tries first on this host, the host,
- * and the reinstall that restores it.
- */
-function claudeExecutableRefusal(
-  probe: Exclude<ClaudeExecutableProbe, { state: 'present' }>,
-): string {
-  const host =
-    probe.state === 'no-sdk'
-      ? `${process.platform}-${process.arch}`
-      : `${probe.platform}-${probe.arch}`;
-  if (probe.state === 'unsupported') {
-    return (
-      `ClaudeCodeAdapter cannot run on ${host}: ${CLAUDE_SDK_PACKAGE} ` +
-      `publishes no native binary for ${host}.`
-    );
-  }
-  let pkg: string;
-  if (probe.state === 'missing') {
-    pkg = probe.package;
-  } else {
-    const [first] = claudeExecutableCandidates();
-    pkg =
-      first === undefined ? CLAUDE_SDK_PACKAGE : claudeExecutablePackage(first);
-  }
-  const tested = AGENT_RUNTIME_TARGETS.claude[0]!.tested;
-  return (
-    `ClaudeCodeAdapter found ${CLAUDE_SDK_PACKAGE} but not the native binary ` +
-    `it spawns: the optional platform package ${pkg} is not installed for ` +
-    `${host}. Reinstall so npm installs it: run npm ci in a checkout, or ` +
-    `reinstall the SDK where '@sublang/cligent' resolves it (npm install ` +
-    `${CLAUDE_SDK_PACKAGE}@${tested}, with -g for a global install), without ` +
-    `--omit=optional.`
-  );
-}
 
 const AGENT = 'claude-code' as const;
 
@@ -1833,8 +1794,9 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     let sessionId = inboundResume ?? generateSessionId();
     let resumableSessionIdKnown = false;
     const { queryOptions, cleanupAbort } = mapped;
-    if (process.versions.electron && executablePath.includes('.asar.unpacked'))
-      queryOptions.pathToClaudeCodeExecutable = executablePath;
+    const explicitPath = explicitClaudeExecutablePath(executablePath);
+    if (explicitPath !== undefined)
+      queryOptions.pathToClaudeCodeExecutable = explicitPath;
     if (!inboundResume) {
       // The SDK forwards this typed option to `claude --session-id`. It gives
       // fresh runs a stable id once Claude persists the conversation, but an
