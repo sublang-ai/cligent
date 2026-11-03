@@ -194,7 +194,9 @@ When attachment, MCP, or skill preparation is cancelled through the caller's `ab
 
 ### claude-code-6
 
-When the adapter maps `AgentOptions` to SDK query options, it shall pass through `cwd`, `model`, `maxTurns`, and `maxBudgetUsd` when present and leave their SDK values `undefined` when absent, while passing through only a non-empty `resume` and otherwise leaving it `undefined`.
+When the adapter maps `AgentOptions` to SDK query options, it shall pass through `cwd`, `model`, `maxTurns`, and `maxBudgetUsd` when present and leave their SDK values `undefined` when absent, while passing through only a non-empty `resume` and otherwise leaving it `undefined`:
+
+- With `resume` and no `model`, Claude Code selects the default current when the resumed run starts — `ANTHROPIC_MODEL` from the environment or the settings `env`, else the settings `model`, else its built-in default — never the transcript's earlier model.
 
 ### claude-code-33
 
@@ -826,6 +828,16 @@ Where `Cligent` runs through the adapter and the installed Claude SDK against a 
 ### claude-code-92
 
 Where [[claude-code-219](#claude-code-219)]'s credential, retry, and skip preconditions hold, when a run with `nativeSkills: false` and a throwaway Claude configuration directory supplies a run skill outside its working directory, a native skill in the working directory's `.claude/skills`, and another in the configuration directory's user skills, each native body holding a unique token, and prompts the model to have one general-purpose subagent report its skill listing, the acceptance check shall verify through the session transcript the runtime writes that the main thread's and every subagent's skill listings name only the run's `cligent:<name>` and that neither token appears in any event, while a control run without the switch lists both native skills in its main thread [[claude-code-90](#claude-code-90)].
+
+### claude-code-93
+
+Given the installed native Claude SDK and CLI, a loopback model API fixture recording each request's `model`, and an isolated home and configuration directory with fake credentials, when the adapter starts a session with a concrete `model` and then resumes that session twice with `model` omitted, changing the default between the resumes, acceptance verification shall assert for each default source below that all three runs share one resume token and that each resumed request and `init` name the default current at that resume, not the earlier model [[claude-code-6](#claude-code-6)]:
+
+| Default source | Changed between resumes |
+| --- | --- |
+| `ANTHROPIC_MODEL` in the run environment | the environment value |
+| `env.ANTHROPIC_MODEL` in the user `settings.json` | the settings value |
+| top-level `model` in the user `settings.json` | the settings value |
 
 ## References
 

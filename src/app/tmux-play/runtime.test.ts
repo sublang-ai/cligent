@@ -691,27 +691,35 @@ describe('TmuxPlayRuntime', () => {
     });
   });
 
-  it('fails closed for a resumed Claude default-model reset before records and preserves continuity', async () => {
+  it('admits a resumed Claude provider-default model by omitting the model', async () => {
     const records: TmuxPlayRecord[] = [];
     const observed: AgentOptions[] = [];
     const runtime = await createTmuxPlayRuntime({
       captain: {
         async handleBossTurn(_turn, context) {
-          await context.callPlayer('dev.worker', 'seed');
-          await expectAgentCallSettingsRejection(
-            context.callPlayer('dev.worker', 'reset model', {
-              settings: {
-                model: { kind: 'provider-default' },
-                effort: { kind: 'provider-default' },
-              },
-            }),
-            'Claude cannot restore the provider-default model on a resumed session',
-          );
-          await context.callPlayer('dev.worker', 'continue');
+          await context.callPlayer('dev.worker', 'seed', {
+            settings: {
+              model: { kind: 'value', value: 'claude-sonnet-5-5' },
+              effort: { kind: 'value', value: 'high' },
+            },
+          });
+          await context.callPlayer('dev.worker', 'reset model', {
+            settings: {
+              model: { kind: 'provider-default' },
+              effort: { kind: 'provider-default' },
+            },
+          });
         },
       },
       captainConfig: { adapter: 'claude' },
-      players: [{ id: 'dev.worker', adapter: 'claude' }],
+      players: [
+        {
+          id: 'dev.worker',
+          adapter: 'claude',
+          model: 'claude-opus-5-5',
+          effort: 'max',
+        },
+      ],
       observers: [{ onRecord: (record) => records.push(record) }],
       adapterImports: adapterImports({
         claude: {
@@ -732,12 +740,19 @@ describe('TmuxPlayRuntime', () => {
     await runtime.runBossTurn('go');
 
     expect(observed).toHaveLength(2);
+    expect(observed[0]).toMatchObject({
+      resume: undefined,
+      model: 'claude-sonnet-5-5',
+      effort: 'high',
+    });
     expect(observed[1]).toMatchObject({ resume: 'kept-claude-session' });
+    expect(observed[1]?.model).toBeUndefined();
+    expect(observed[1]?.effort).toBeUndefined();
     expect(
       records
         .filter((record) => record.type === 'player_prompt')
         .map((record) => record.prompt),
-    ).toEqual(['seed', 'continue']);
+    ).toEqual(['seed', 'reset model']);
   });
 
   it('fails closed for resumed OpenCode default-model reset and clears omitted permissions with a concrete model', async () => {

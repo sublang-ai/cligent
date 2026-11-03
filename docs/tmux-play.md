@@ -579,11 +579,12 @@ that call alone: `false` turns the runtime's own skill discovery off, while
 `getNativeSkillSupport(adapter)?.disableSupported` from `@sublang/cligent`
 before supplying `false`, which Kimi cannot honor. Each `model` and `effort`
 selector is either a concrete value or `provider-default`; the latter omits that
-option so Codex or Gemini chooses its current default even on a resumed call.
-Claude and OpenCode support provider defaults on fresh calls and can use default
-effort beside a concrete resumed model, but a resumed provider-default model
-fails closed: Claude Code restores the transcript model, while OpenCode persists
-its session model without exposing a reset. Omitted permissions on
+option so Codex, Gemini, or Claude chooses its current default even on a
+resumed call; Claude Code resumed without a model selects its current default,
+not the transcript's model. OpenCode supports provider defaults on fresh calls
+and can use default effort beside a concrete resumed model, but a resumed
+provider-default model fails closed because OpenCode persists its session model
+without exposing a reset. Omitted permissions on
 a resumed OpenCode complete-settings call clear the prior Cligent-owned session
 ruleset. Kimi supports default reset only for a fresh call because ACP cannot
 restore a resumed session's provider default. Invalid or unenforceable settings
