@@ -163,3 +163,5 @@ export type {
   CostEstimateRecord,
   CostEstimateResult,
 } from './cost-estimation.js';
+
+export { isUltracodeSupported } from './ultracode.js';

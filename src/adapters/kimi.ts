@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { assertUltracodeOption } from '../ultracode.js';
 import { describeCapabilities } from '../capabilities.js';
 import { ApprovalController } from '../internal/approvals.js';
 
@@ -267,6 +268,7 @@ export function mapAgentOptionsToKimiOptions(
   options: AgentOptions<KimiEffort> | undefined,
 ): KimiMappedOptions {
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
+  assertUltracodeOption(AGENT, options?.ultracode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
   assertBuiltInSubagentEffortOption(
     AGENT,
@@ -1299,6 +1301,7 @@ export class KimiAdapter implements AgentAdapter<KimiEffort> {
     options?: AgentOptions<KimiEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
+    assertUltracodeOption(AGENT, options?.ultracode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
     assertBuiltInSubagentEffortOption(
       AGENT,

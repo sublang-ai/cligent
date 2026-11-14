@@ -748,6 +748,14 @@ When an active raw `runParallel()` pool shuts down through cancellation or consu
 | task cancellation while the consumer remains active | retain whole-pool interruption, collecting approval response audit events [[approvals-4](approvals.md#approvals-4)] within concurrent 500-millisecond drains before interrupted terminals |
 | consumer teardown | close pending callbacks and clean up owned generators without requiring further consumption |
 
+### engine-134
+
+The public run and instance options shall accept optional `ultracode: boolean`, merging explicit per-call values over instance defaults independently of effort and forwarding the result unchanged to Claude's native mapping [[claude-code-94](adapters/claude-code.md#claude-code-94)].
+
+### engine-135
+
+When a built-in adapter receives `ultracode`, it shall reject non-booleans and unsupported explicit `true`, accept unsupported `false` without forwarding any native option, and advertise native-request support only for `claude-code` and its `claude` alias through `isUltracodeSupported()`.
+
 ## Verification
 
 ### engine-123
@@ -1010,3 +1018,7 @@ Where `skills` is supplied across direct adapter, instance-default, per-run, par
 ### engine-133
 
 Where `nativeSkills` is supplied as `false`, `true`, omitted, and a malformed value across direct adapter, instance-default, per-run, parallel, and legacy-registry paths, when built-in and custom adapters run, the check shall assert [[engine-132](#engine-132)] omitted, `true`, forwarded `false`, rejection, malformed-value, and custom-adapter outcomes, [[engine-124](#engine-124)] unchanged forwarding, and [[engine-1](#engine-1)] constructor-option placement.
+
+### engine-136
+
+Where a Claude adapter records its native query, when instance defaults and per-call `ultracode` booleans are combined, the integration check shall assert independent effort merging and preservation of explicit false [[engine-134](#engine-134)], with unsupported built-in activation rejected and false accepted without native forwarding [[engine-135](#engine-135)].

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { assertUltracodeOption } from '../ultracode.js';
 import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -1031,7 +1032,6 @@ export function mapEffortToClaudeOptions(
 
   return {
     effort: effort === 'minimal' ? 'low' : effort,
-    settings: { ultracode: false },
   };
 }
 
@@ -1286,6 +1286,7 @@ export function mapAgentOptionsToClaudeQueryOptions(
       ? [...(baseAllowedTools ?? []), ...skillGrants]
       : baseAllowedTools;
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
+  assertUltracodeOption(AGENT, options?.ultracode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
   assertBuiltInSubagentEffortOption(
     AGENT,
@@ -1309,6 +1310,9 @@ export function mapAgentOptionsToClaudeQueryOptions(
     disableClaudeAiConnectors: true,
     attribution: { commit: '', pr: '', sessionUrl: false },
     ...effortOptions.settings,
+    ...(options?.ultracode !== undefined
+      ? { ultracode: options.ultracode }
+      : {}),
     ...(options?.fastMode !== undefined ? { fastMode: options.fastMode } : {}),
     ...(nativeSkillsOff ? { disableBundledSkills: true } : {}),
   };

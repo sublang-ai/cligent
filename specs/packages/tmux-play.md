@@ -1382,6 +1382,10 @@ When the loader or the programmatic runtime factory [[tmux-play-29](#tmux-play-2
 | two roles on the `kimi` adapter whose lists, each entry resolved against the run's working directory to its skill directory with links followed as [[kimi-49](adapters/kimi.md#kimi-49)] compares them, map one skill name to different directories | reject, naming both paths, because their concurrent runs would dispute the name |
 | resolved role list | the role's configured `skills`, which call admission applies under [[tmux-play-93](#tmux-play-93)] |
 
+### tmux-play-229
+
+The Captain and player configuration and per-call settings shall accept, snapshot, and forward optional boolean `ultracode` independently of effort, preserving explicit false and rejecting unsupported true before provider invocation under [[engine-135](engine.md#engine-135)].
+
 ## Verification
 
 ### tmux-play-225
@@ -2606,6 +2610,11 @@ Where YAML and programmatic configurations supply top-level, Captain, player, em
 ### tmux-play-228
 
 Where a programmatic runtime drives a Captain and a player on recording adapters, when calls supply complete settings with `nativeSkills` set to `false`, set to `true`, omitted, and set to a non-boolean, make calls without settings, and supply `nativeSkills: false` to a Kimi Captain and a Kimi player, the check shall assert that `Cligent.run()` receives exactly the supplied boolean on both roles and no `nativeSkills` where settings omit it or are not supplied, that a change to the caller's settings object after admission reaches no run, and that the runtime-owned `Cligent` carries no `nativeSkills` default [[tmux-play-93](#tmux-play-93)], and that the non-boolean and each Kimi `false` raise `AgentCallSettingsError` before any prompt record or provider run, keeping the stored resume token [[tmux-play-93](#tmux-play-93)].
+
+
+### tmux-play-230
+
+When configured and per-call Captain and player settings contain `ultracode`, the integration check shall assert exact boolean forwarding, including false, and rejection of unsupported activation before provider invocation [[tmux-play-229](#tmux-play-229)].
 
 ## References
 

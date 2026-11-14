@@ -376,6 +376,8 @@ export interface AgentOptions<
   maxBudgetUsd?: number;
   effort?: E;
   fastMode?: FM;
+  /** Claude native orchestration switch, independent of effort. */
+  ultracode?: boolean;
   /**
    * The model requested for delegation, per engine-91: a model ID or
    * alias, or the literal `'inherit'` for the run's own model. Adapter-scoped:
@@ -420,6 +422,8 @@ export interface CligentOptions<
   maxBudgetUsd?: number;
   effort?: E;
   fastMode?: FM;
+  /** Claude native orchestration switch, independent of effort. */
+  ultracode?: boolean;
   subagentModel?: SM;
   subagentEffort?: SE;
   allowedTools?: string[];

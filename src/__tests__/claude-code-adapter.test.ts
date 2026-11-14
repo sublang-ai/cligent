@@ -2618,12 +2618,12 @@ describe('ClaudeCodeAdapter', () => {
       [ClaudeEffort | undefined, string | undefined, boolean | undefined]
     > = [
       [undefined, undefined, undefined],
-      ['minimal', 'low', false],
-      ['low', 'low', false],
-      ['medium', 'medium', false],
-      ['high', 'high', false],
-      ['xhigh', 'xhigh', false],
-      ['max', 'max', false],
+      ['minimal', 'low', undefined],
+      ['low', 'low', undefined],
+      ['medium', 'medium', undefined],
+      ['high', 'high', undefined],
+      ['xhigh', 'xhigh', undefined],
+      ['max', 'max', undefined],
       ['ultracode', 'xhigh', true],
     ];
 
@@ -2633,7 +2633,9 @@ describe('ClaudeCodeAdapter', () => {
           ? {}
           : {
               effort: expectedEffort,
-              settings: { ultracode: expectedUltracode },
+              ...(expectedUltracode === undefined
+                ? {}
+                : { settings: { ultracode: expectedUltracode } }),
             },
       );
 
@@ -2656,12 +2658,32 @@ describe('ClaudeCodeAdapter', () => {
     }
   });
 
+  it('maps the explicit Ultracode switch independently on fresh and resumed runs', async () => {
+    for (const effort of [undefined, 'low', 'ultracode'] as const) {
+      for (const ultracode of [true, false]) {
+        for (const resume of [undefined, 'session']) {
+          let captured: MockSdkInnerOptions | undefined;
+          const adapter = new ClaudeCodeAdapter({
+            loadSdk: makeLoader([{ type: 'result', status: 'success', result: 'ok', sessionId: 'session' }], options => { captured = options; }),
+          });
+          await collect(adapter.run('prompt', { effort, ultracode, resume }));
+          const mapped = { queryOptions: captured! };
+          expect(mapped.queryOptions.settings?.ultracode).toBe(ultracode);
+          expect(mapped.queryOptions.effort).toBe(
+            effort === 'ultracode' ? 'xhigh' : effort,
+          );
+          expect(mapped.queryOptions.resume).toBe(resume);
+        }
+      }
+    }
+  });
+
   it('maps fast mode independently into one Claude SDK settings object', async () => {
     const efforts: Array<
       [ClaudeEffort | undefined, string | undefined, boolean | undefined]
     > = [
       [undefined, undefined, undefined],
-      ['medium', 'medium', false],
+      ['medium', 'medium', undefined],
       ['ultracode', 'xhigh', true],
     ];
     const fastModes = [undefined, true, false] as const;
@@ -3075,13 +3097,36 @@ describe('ClaudeCodeAdapter', () => {
 // engine-85: provider metadata and diagnostics cannot grant safe-retry proof.
 it('does not promote a Claude provider error or result subtype to resume rejection', async () => {
   for (const message of [
-    { type: 'error', code: 'SESSION_RESUME_REJECTED', message: 'session not found', retryable: true },
-    { type: 'result', subtype: 'SESSION_RESUME_REJECTED', is_error: true, errors: ['session not found'] },
+    {
+      type: 'error',
+      code: 'SESSION_RESUME_REJECTED',
+      message: 'session not found',
+      retryable: true,
+    },
+    {
+      type: 'result',
+      subtype: 'SESSION_RESUME_REJECTED',
+      is_error: true,
+      errors: ['session not found'],
+    },
   ]) {
-    const adapter = new ClaudeCodeAdapter({ loadSdk: makeLoader([message, { type: 'result', status: 'error', result: 'failed' }]) });
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: makeLoader([
+        message,
+        { type: 'result', status: 'error', result: 'failed' },
+      ]),
+    });
     const events = await collect(adapter.run('continue', { resume: 'saved' }));
     expect(events.some((event) => event.type === 'error')).toBe(true);
-    expect(events.filter((event) => event.type === 'error').every((event) => (event.payload as { code?: string }).code !== 'SESSION_RESUME_REJECTED')).toBe(true);
+    expect(
+      events
+        .filter((event) => event.type === 'error')
+        .every(
+          (event) =>
+            (event.payload as { code?: string }).code !==
+            'SESSION_RESUME_REJECTED',
+        ),
+    ).toBe(true);
     expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
   }
 });

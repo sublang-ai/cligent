@@ -12,7 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Select Claude Ultracode independently of effort with optional `ultracode`
+  booleans on run, instance, and tmux-play role/call settings, and discover
+  native transport support with `isUltracodeSupported`. Explicit false and
+  true apply on fresh and resumed runs; unsupported activation fails clearly.
+  The legacy `effort: 'ultracode'` shorthand remains available.
+
 - Codex accepts `subagentModel` and `subagentEffort` in adapter options and tmux-play role and call settings. Native model and effort defaults accompany explicit delegation instructions on every tuned call, including resume. `inherit` selects the known parent model or omits the model default when unknown. Explicit spawn and role overrides preserve native precedence; full-context forks receive no overrides, and different model or effort selections use fresh spawns. Untuned calls leave native settings and prompts unchanged. Export `CodexSubagentEffort`, excluding `ultra`.
+
+### Changed
+
+- Ordinary Claude effort selections preserve native workflow defaults instead
+  of implicitly disabling Ultracode; an explicit boolean overrides the legacy
+  effort shorthand independently of reasoning effort.
 
 ## [0.38.0] - 2026-11-03
 

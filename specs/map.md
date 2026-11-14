@@ -73,6 +73,8 @@ meta.md       The spec of specs
 
 | [DR-044](decisions/044-codex-subagent-tuning.md) | 044-codex-subagent-tuning.md | Codex subagent defaults and per-call delegation instructions, preserving native precedence |
 
+| [DR-045](decisions/045-independent-claude-ultracode.md) | 045-independent-claude-ultracode.md | Independent Claude Ultracode boolean, legacy effort shorthand, native defaults, and transport support |
+
 ## Packages
 
 | File | Summary |

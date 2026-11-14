@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { assertUltracodeOption } from '../ultracode.js';
 import { describeCapabilities, CapabilityError } from '../capabilities.js';
 
 import { execFile, spawn } from 'node:child_process';
@@ -2944,6 +2945,7 @@ export class OpenCodeAdapter implements AgentAdapter<OpenCodeEffort> {
     options?: AgentOptions<OpenCodeEffort>,
   ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
+    assertUltracodeOption(AGENT, options?.ultracode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
     assertBuiltInSubagentEffortOption(
       AGENT,

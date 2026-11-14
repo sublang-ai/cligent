@@ -6,6 +6,7 @@
 ## Status
 
 Accepted
+Amended by [DR-045](045-independent-claude-ultracode.md) for independent Claude workflow control, retained effort shorthand, and native-default preservation.
 
 ## Context
 

@@ -111,6 +111,7 @@ function mergeOptions<
     maxTurns: overrides.maxTurns ?? defaults.maxTurns,
     maxBudgetUsd: overrides.maxBudgetUsd ?? defaults.maxBudgetUsd,
     effort: overrides.effort ?? defaults.effort,
+    ultracode: overrides.ultracode ?? defaults.ultracode,
     fastMode:
       overrides.fastMode !== undefined ? overrides.fastMode : defaults.fastMode,
     subagentModel:
@@ -299,6 +300,7 @@ export class Cligent<
       maxBudgetUsd: merged.maxBudgetUsd,
       effort: merged.effort,
       fastMode: merged.fastMode,
+      ultracode: merged.ultracode,
       subagentModel: merged.subagentModel,
       subagentEffort: merged.subagentEffort,
       allowedTools: merged.allowedTools,

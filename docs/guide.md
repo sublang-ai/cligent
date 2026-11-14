@@ -1220,3 +1220,11 @@ for await (const event of agent.run('Fix the login bug', {
 | `codex:usage`                  | `status`, `reason`, `resumed`, `threadId?`, `snapshot?`, `baseline?`, `delta?` | Native terminal token-accounting decision |
 | `error`                        | `code`, `message`, `recoverable`                                                     | Error                                                                    |
 | `done`                         | `status`, `resumeToken?`, `usage`, `durationMs`, `fastMode?`                         | Terminal event — always last; Claude may report state and response speed |
+
+Claude accepts optional `ultracode: true` or `false` independently of `effort`,
+including on resumed runs. An explicit boolean overrides the legacy
+`effort: 'ultracode'` shorthand (which still selects `xhigh` plus Ultracode).
+Omitting the flag with ordinary effort preserves native workflow settings.
+`isUltracodeSupported(adapter)` identifies Claude native request support;
+other adapters reject `true` and treat `false` as a no-op. Native model,
+account, and workflow policy still determine availability.

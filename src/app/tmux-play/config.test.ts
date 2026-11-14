@@ -813,6 +813,7 @@ describe('tmux-play config loading', () => {
         "  from: '@sublang/cligent/captains/fanout'",
         '  adapter: claude',
         '  effort: ultracode',
+        '  ultracode: false',
         '  options: {}',
         'players:',
         '  - id: coder',
@@ -833,6 +834,7 @@ describe('tmux-play config loading', () => {
 
     const loaded = await loadTmuxPlayConfig({ configPath });
     expect(loaded.config.captain.effort).toBe('ultracode');
+    expect(loaded.config.captain.ultracode).toBe(false);
     expect(loaded.config.players.map((player) => player.effort)).toEqual([
       'ultra',
       'high',

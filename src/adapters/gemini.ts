@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { assertUltracodeOption } from '../ultracode.js';
 import { describeCapabilities, CapabilityError } from '../capabilities.js';
 
 import { execFile, spawn } from 'node:child_process';
@@ -3357,6 +3358,7 @@ export function mapAgentOptionsToGeminiCommand(
   options: AgentOptions<GeminiEffort> | undefined,
 ): GeminiCommandConfig {
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
+  assertUltracodeOption(AGENT, options?.ultracode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
   assertBuiltInSubagentEffortOption(
     AGENT,
@@ -3612,6 +3614,7 @@ export class GeminiAdapter implements AgentAdapter<GeminiEffort> {
     attachmentScope: { cleanup(): Promise<void> },
   ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
+    assertUltracodeOption(AGENT, options?.ultracode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
     assertBuiltInSubagentEffortOption(
       AGENT,

@@ -211,6 +211,7 @@ describe('Cligent lifecycle', () => {
       },
       maxTurns: 5,
       effort: 'high',
+      ultracode: true,
       allowedTools: ['tool-a'],
     });
 
@@ -219,6 +220,7 @@ describe('Cligent lifecycle', () => {
         model: 'override-model',
         permissions: { shellExecute: 'allow' },
         effort: 'ultracode',
+        ultracode: false,
         allowedTools: ['tool-b'],
       }),
     );
@@ -233,6 +235,7 @@ describe('Cligent lifecycle', () => {
     });
     expect(opts.maxTurns).toBe(5);
     expect(opts.effort).toBe('ultracode');
+    expect(opts.ultracode).toBe(false);
     expect(opts.allowedTools).toEqual(['tool-b']);
   });
 

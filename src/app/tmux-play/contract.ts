@@ -85,6 +85,7 @@ export type TuningSelection<T extends string = string> =
 export interface AgentCallSettings {
   readonly model: TuningSelection;
   readonly effort: TuningSelection<Effort>;
+  readonly ultracode?: boolean;
   readonly fastMode?: boolean;
   /**
    * The model every subagent of this call uses — a model ID or alias, or
@@ -290,6 +291,7 @@ type RuntimePlayerConfigByAdapter = {
   [A in PlayerAdapterName]: RuntimePlayerConfigBase & {
     readonly adapter: A;
     readonly effort?: EffortForAgent<A>;
+    readonly ultracode?: boolean;
     readonly fastMode?: FastModeForAgent<A>;
     readonly subagentModel?: SubagentModelForAgent<A>;
     readonly subagentEffort?: SubagentEffortForAgent<A>;
@@ -317,6 +319,7 @@ type RuntimeCaptainConfigByAdapter = {
   [A in PlayerAdapterName]: RuntimeCaptainConfigBase & {
     readonly adapter: A;
     readonly effort?: EffortForAgent<A>;
+    readonly ultracode?: boolean;
     readonly fastMode?: FastModeForAgent<A>;
     readonly subagentModel?: SubagentModelForAgent<A>;
     readonly subagentEffort?: SubagentEffortForAgent<A>;

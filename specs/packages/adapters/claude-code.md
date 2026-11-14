@@ -285,14 +285,18 @@ When the adapter maps the Claude-specific `AgentOptions.effort` vocabulary in [[
 | `AgentOptions.effort` | SDK `effort` | SDK `settings.ultracode` |
 | --- | --- | --- |
 | omitted | omitted | omitted |
-| `minimal` | `low` | `false` |
-| `low` | `low` | `false` |
-| `medium` | `medium` | `false` |
-| `high` | `high` | `false` |
-| `xhigh` | `xhigh` | `false` |
-| `max` | `max` | `false` |
+| `minimal` | `low` | omitted |
+| `low` | `low` | omitted |
+| `medium` | `medium` | omitted |
+| `high` | `high` | omitted |
+| `xhigh` | `xhigh` | omitted |
+| `max` | `max` | omitted |
 | `ultracode` | `xhigh` | `true` |
 | `ultra` or any other unsupported value | reject before invoking the SDK, naming the adapter and allowed values | not invoked |
+
+### claude-code-94
+
+Per [DR-045](../../decisions/045-independent-claude-ultracode.md), when `AgentOptions.ultracode` is explicitly boolean, the adapter shall override the preceding legacy mapping with that exact SDK `settings.ultracode` value on fresh and resumed runs, independently of effort.
 
 ### claude-code-23
 
@@ -838,6 +842,11 @@ Given the installed native Claude SDK and CLI, a loopback model API fixture reco
 | `ANTHROPIC_MODEL` in the run environment | the environment value |
 | `env.ANTHROPIC_MODEL` in the user `settings.json` | the settings value |
 | top-level `model` in the user `settings.json` | the settings value |
+
+
+### claude-code-95
+
+When fresh and resumed adapter runs combine omitted, ordinary, and legacy Ultracode effort with each explicit `ultracode` boolean, the integration check shall assert the exact SDK effort and independent settings flag [[claude-code-8](#claude-code-8)], [[claude-code-94](#claude-code-94)].
 
 ## References
 

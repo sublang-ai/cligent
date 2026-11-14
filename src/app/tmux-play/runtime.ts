@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { assertUltracodeOption } from '../../ultracode.js';
 import { randomUUID } from 'node:crypto';
 import type { Attachment } from '../../attachments.js';
 import { normalizeMcpServers, type McpServers } from '../../mcp.js';
@@ -95,6 +96,7 @@ interface RunCligentCallOptions {
   readonly attachments?: readonly Attachment[];
   readonly model?: string;
   readonly effort?: Effort;
+  readonly ultracode?: boolean;
   readonly fastMode?: boolean;
   readonly subagentModel?: string;
   readonly subagentEffort?: Effort;
@@ -122,6 +124,7 @@ interface CligentCallResult {
 interface ConfiguredAgentCallSettings {
   readonly model?: string;
   readonly effort?: Effort;
+  readonly ultracode?: boolean;
   readonly fastMode?: boolean;
   readonly subagentModel?: string;
   readonly subagentEffort?: Effort;
@@ -188,6 +191,7 @@ export class TmuxPlayRuntime {
     this.captainSettings = {
       model: options.captainConfig.model,
       effort: options.captainConfig.effort,
+      ultracode: options.captainConfig.ultracode,
       fastMode: options.captainConfig.fastMode,
       subagentModel: options.captainConfig.subagentModel,
       subagentEffort: options.captainConfig.subagentEffort,
@@ -509,6 +513,7 @@ export class TmuxPlayRuntime {
       {
         model: player.model,
         effort: player.effort,
+        ultracode: player.ultracode,
         fastMode: player.fastMode,
         subagentModel: player.subagentModel,
         subagentEffort: player.subagentEffort,
@@ -538,6 +543,7 @@ export class TmuxPlayRuntime {
         attachments,
         model: settings.model,
         effort: settings.effort,
+        ultracode: settings.ultracode,
         fastMode: settings.fastMode,
         subagentModel: settings.subagentModel,
         subagentEffort: settings.subagentEffort,
@@ -631,6 +637,7 @@ export class TmuxPlayRuntime {
         attachments,
         model: settings.model,
         effort: settings.effort,
+        ultracode: settings.ultracode,
         fastMode: settings.fastMode,
         subagentModel: settings.subagentModel,
         subagentEffort: settings.subagentEffort,
@@ -1031,6 +1038,7 @@ export async function createTmuxPlayRuntime(
       browser: options.captainConfig.browser,
       mcpServers: options.captainConfig.mcpServers,
       effort: options.captainConfig.effort,
+      ultracode: options.captainConfig.ultracode,
       fastMode: options.captainConfig.fastMode,
       subagentModel: options.captainConfig.subagentModel,
       subagentEffort: options.captainConfig.subagentEffort,
@@ -1054,6 +1062,7 @@ async function runCligentCall(
         : {}),
       model: options.model,
       effort: options.effort,
+      ultracode: options.ultracode,
       fastMode: options.fastMode,
       subagentModel: options.subagentModel,
       subagentEffort: options.subagentEffort,
@@ -1165,6 +1174,7 @@ function resolveAgentCallSettings(
       model: snapshot.model.kind === 'value' ? snapshot.model.value : undefined,
       effort:
         snapshot.effort.kind === 'value' ? snapshot.effort.value : undefined,
+      ultracode: snapshot.ultracode,
       fastMode: snapshot.fastMode,
       subagentModel: snapshot.subagentModel,
       subagentEffort: snapshot.subagentEffort,
@@ -1214,6 +1224,7 @@ function snapshotAgentCallSettings(
       key !== 'model' &&
       key !== 'effort' &&
       key !== 'fastMode' &&
+      key !== 'ultracode' &&
       key !== 'subagentModel' &&
       key !== 'subagentEffort' &&
       key !== 'instruction' &&
@@ -1233,6 +1244,10 @@ function snapshotAgentCallSettings(
     'effort',
     fields.effort,
   ) as AgentCallSettings['effort'];
+  const ultracode = fields.ultracode;
+  if (ultracode !== undefined && typeof ultracode !== 'boolean') {
+    throw new TypeError('tmux-play call settings ultracode must be a boolean');
+  }
   const fastMode = fields.fastMode;
   if (fastMode !== undefined && typeof fastMode !== 'boolean') {
     throw new TypeError('tmux-play call settings fastMode must be a boolean');
@@ -1272,6 +1287,7 @@ function snapshotAgentCallSettings(
   return Object.freeze({
     model,
     effort,
+    ...(ultracode !== undefined ? { ultracode } : {}),
     ...(fastMode !== undefined ? { fastMode } : {}),
     ...(subagentModel !== undefined ? { subagentModel } : {}),
     ...(subagentEffort !== undefined
@@ -1370,6 +1386,11 @@ function assertCompleteSettingsEnforceable(
   settings: EffectiveAgentCallSettings,
   resume: string | false,
 ): void {
+  assertUltracodeOption(
+    adapter,
+    settings.ultracode,
+    'tmux-play call settings ultracode',
+  );
   if (settings.fastMode !== undefined) {
     assertFastModeSupported(adapter, 'tmux-play call settings fastMode');
   }

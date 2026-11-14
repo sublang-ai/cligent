@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { assertUltracodeOption } from '../ultracode.js';
 import { describeCapabilities, CapabilityError } from '../capabilities.js';
 
 import {
@@ -753,6 +754,7 @@ export function mapAgentOptionsToCodexOptions(
   options: CodexAgentOptions | undefined,
 ): MappedCodexOptions {
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
+  assertUltracodeOption(AGENT, options?.ultracode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
   assertBuiltInSubagentEffortOption(
     AGENT,
@@ -1775,6 +1777,7 @@ export class CodexAdapter implements AgentAdapter<
     options?: CodexAgentOptions,
   ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
+    assertUltracodeOption(AGENT, options?.ultracode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
     assertBuiltInSubagentEffortOption(
       AGENT,

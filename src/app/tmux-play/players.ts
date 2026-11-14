@@ -38,6 +38,7 @@ type PlayerConfigByAdapter = {
   [A in PlayerAdapterName]: PlayerConfigBase & {
     adapter: A;
     effort?: EffortForAgent<A>;
+    ultracode?: boolean;
     fastMode?: FastModeForAgent<A>;
     subagentModel?: SubagentModelForAgent<A>;
     subagentEffort?: SubagentEffortForAgent<A>;
@@ -59,6 +60,7 @@ type ResolvedPlayerByAdapter = {
     /** The player's own skill list, a detached frozen copy; absent inherits. */
     skills?: readonly string[];
     effort?: EffortForAgent<A>;
+    ultracode?: boolean;
     fastMode?: FastModeForAgent<A>;
     subagentModel?: SubagentModelForAgent<A>;
     subagentEffort?: SubagentEffortForAgent<A>;
@@ -89,6 +91,7 @@ export interface CreatePlayerCligentOptions<
   mcpServers?: McpServers;
   skills?: readonly string[];
   effort?: EffortForAgent<A>;
+  ultracode?: boolean;
   fastMode?: FastModeForAgent<A>;
   subagentModel?: SubagentModelForAgent<A>;
   subagentEffort?: SubagentEffortForAgent<A>;
@@ -201,6 +204,7 @@ async function createPlayerCligentInternal<A extends PlayerAdapterName>(
           model: options.model,
           permissions: options.permissions,
           effort: options.effort,
+          ultracode: options.ultracode,
           fastMode: options.fastMode,
           subagentModel: options.subagentModel,
           subagentEffort: options.subagentEffort,
@@ -266,6 +270,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
       mcpServers: config.mcpServers,
       skills: config.skills,
       effort: config.effort,
+      ultracode: config.ultracode,
       fastMode: config.fastMode,
       subagentModel: config.subagentModel,
       subagentEffort: config.subagentEffort,
@@ -282,6 +287,7 @@ async function resolvePlayer<A extends PlayerAdapterName>(
     mcpServers: normalizeMcpServers(config.mcpServers),
     skills: frozenSkillList(config.skills),
     effort: config.effort,
+    ultracode: config.ultracode,
     fastMode: config.fastMode,
     subagentModel: config.subagentModel,
     subagentEffort: config.subagentEffort,

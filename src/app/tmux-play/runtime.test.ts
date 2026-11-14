@@ -488,6 +488,7 @@ describe('TmuxPlayRuntime', () => {
         adapter: 'claude',
         instruction: 'Captain instruction.',
         effort: 'ultracode',
+        ultracode: false,
         fastMode: false,
       },
       players: [
@@ -520,6 +521,7 @@ describe('TmuxPlayRuntime', () => {
           async *run(prompt, options) {
             prompts.push(prompt);
             expect(options?.effort).toBe('ultracode');
+            expect(options?.ultracode).toBe(false);
             expect(options?.fastMode).toBe(false);
             yield textEvent('claude-code', 'captain text');
             yield doneEvent('claude-code', 'captain done');

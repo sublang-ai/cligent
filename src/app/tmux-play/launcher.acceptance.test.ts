@@ -2824,7 +2824,7 @@ describe('tmux-play YAML → adapter effort seam', () => {
     expect(claudeMinimal.effort).toBe('minimal');
     expect(
       mapAgentOptionsToClaudeQueryOptions(claudeMinimal).queryOptions,
-    ).toMatchObject({ effort: 'low', settings: { ultracode: false } });
+    ).toMatchObject({ effort: 'low' });
 
     const codexHigh = mapAgentOptionsToCodexOptions(
       capturedByModel(captured.codex, 'gpt-test-high'),

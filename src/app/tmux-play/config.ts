@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { assertUltracodeOption } from '../../ultracode.js';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import {
@@ -81,6 +82,7 @@ type CaptainConfigByAdapter = {
   [A in PlayerAdapterName]: CaptainConfigBase & {
     adapter: A;
     effort?: EffortForAgent<A>;
+    ultracode?: boolean;
     fastMode?: FastModeForAgent<A>;
     subagentModel?: SubagentModelForAgent<A>;
     subagentEffort?: SubagentEffortForAgent<A>;
@@ -1267,6 +1269,7 @@ function normalizeCaptainConfig(
     'skills',
     'effort',
     'fastMode',
+    'ultracode',
     'subagentModel',
     'subagentEffort',
     'reasoningEffort',
@@ -1300,6 +1303,7 @@ function normalizeCaptainConfig(
     adapter,
     configuredEffort.path,
   );
+  assertUltracodeOption(adapter, input.ultracode, 'captain.ultracode');
   const fastMode = optionalFastMode(input, adapter, 'captain');
   const subagentModel = optionalSubagentModel(input, adapter, 'captain');
   const subagentEffort = optionalSubagentEffort(
@@ -1315,6 +1319,9 @@ function normalizeCaptainConfig(
     ...common,
     adapter,
     ...(effort === undefined ? {} : { effort }),
+    ...(input.ultracode === undefined
+      ? {}
+      : { ultracode: input.ultracode as boolean }),
     ...(fastMode === undefined ? {} : { fastMode }),
     ...(subagentModel === undefined ? {} : { subagentModel }),
     ...(subagentEffort === undefined ? {} : { subagentEffort }),
@@ -1353,6 +1360,7 @@ function normalizePlayerConfig(
     'skills',
     'effort',
     'fastMode',
+    'ultracode',
     'subagentModel',
     'subagentEffort',
     'reasoningEffort',
@@ -1383,6 +1391,7 @@ function normalizePlayerConfig(
     adapter,
     configuredEffort.path,
   );
+  assertUltracodeOption(adapter, input.ultracode, `${path}.ultracode`);
   const fastMode = optionalFastMode(input, adapter, path);
   const subagentModel = optionalSubagentModel(input, adapter, path);
   const subagentEffort = optionalSubagentEffort(
@@ -1397,6 +1406,9 @@ function normalizePlayerConfig(
     ...common,
     adapter,
     ...(effort === undefined ? {} : { effort }),
+    ...(input.ultracode === undefined
+      ? {}
+      : { ultracode: input.ultracode as boolean }),
     ...(fastMode === undefined ? {} : { fastMode }),
     ...(subagentModel === undefined ? {} : { subagentModel }),
     ...(subagentEffort === undefined ? {} : { subagentEffort }),
