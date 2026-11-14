@@ -1145,6 +1145,7 @@ describe('TmuxPlayRuntime', () => {
       subagentEffort: unknown;
     }> = [];
     let codexRuns = 0;
+    let codexOptions: unknown;
     const providerDefaults = {
       model: { kind: 'provider-default' as const },
       effort: { kind: 'provider-default' as const },
@@ -1175,6 +1176,14 @@ describe('TmuxPlayRuntime', () => {
             settings: providerDefaults,
           });
 
+          await context.callPlayer('dev.codex', 'codex delegated', {
+            settings: {
+              ...providerDefaults,
+              subagentModel: 'codex-child',
+              subagentEffort: 'max',
+            },
+          });
+
           for (const subagentModel of ['', '   ', 42, null]) {
             await expectAgentCallSettingsRejection(
               context.callPlayer('dev.claude', 'malformed', {
@@ -1184,10 +1193,10 @@ describe('TmuxPlayRuntime', () => {
             );
           }
           await expectAgentCallSettingsRejection(
-            context.callPlayer('dev.codex', 'unsupported', {
-              settings: { ...providerDefaults, subagentModel: 'gpt-mini' },
+            context.callPlayer('dev.codex', 'malformed', {
+              settings: { ...providerDefaults, subagentModel: '' },
             }),
-            'subagentModel is not supported for adapter "codex"',
+            'subagentModel must be a non-blank string',
           );
           const effortRejections: Array<[Record<string, unknown>, string]> = [
             [{ subagentEffort: 'low' }, 'requires subagentModel'],
@@ -1212,7 +1221,7 @@ describe('TmuxPlayRuntime', () => {
             context.callPlayer('dev.codex', 'unsupported effort', {
               settings: { ...providerDefaults, subagentEffort: 'low' },
             }),
-            'subagentEffort is not supported for adapter "codex"',
+            'subagentEffort for adapter "codex" requires subagentModel',
           );
         },
       },
@@ -1245,7 +1254,8 @@ describe('TmuxPlayRuntime', () => {
         },
         codex: {
           agent: 'codex',
-          async *run() {
+          async *run(_prompt, options) {
+            codexOptions = options;
             codexRuns += 1;
             yield doneEvent('codex', 'done');
           },
@@ -1269,7 +1279,11 @@ describe('TmuxPlayRuntime', () => {
       call('captain configured', 'captain-subagent', 'high'),
       call('captain provider default'),
     ]);
-    expect(codexRuns).toBe(0);
+    expect(codexRuns).toBe(1);
+    expect(codexOptions).toMatchObject({
+      subagentModel: 'codex-child',
+      subagentEffort: 'max',
+    });
     expect(
       records
         .filter((record) => record.type === 'player_prompt')
@@ -1280,6 +1294,7 @@ describe('TmuxPlayRuntime', () => {
       'replaced with effort',
       'provider default',
       'configured again',
+      'codex delegated',
     ]);
   });
 

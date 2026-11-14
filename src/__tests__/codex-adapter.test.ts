@@ -3682,9 +3682,113 @@ describe('CodexAdapter', () => {
     expect(loadCalls).toBe(0);
   });
 
-  // engine-91: Codex binds no subagent-model surface, so any defined value,
-  // including a blank one, is refused before the SDK loads.
-  it('rejects any subagent model before loading the Codex SDK', async () => {
+  it.each([undefined, 'previous-thread'])(
+    'delivers subagent pins and bounded delegation on fresh/resumed calls (%s)',
+    async (resume) => {
+      let constructed: MockCodexConstructorOptions | undefined;
+      let threadOptions: MockThreadOptions | undefined;
+      let receivedPrompt: string | undefined;
+      const adapter = new CodexAdapter({
+        loadSdk: makeLoader({
+          events: [{ type: 'turn.completed' }],
+          onConstruct: (options) => {
+            constructed = options;
+          },
+          onStartThread: (options) => {
+            threadOptions = options;
+            expect(resume).toBeUndefined();
+          },
+          onResumeThread: (threadId, options) => {
+            expect(threadId).toBe(resume);
+            threadOptions = options;
+          },
+          onRun: (prompt) => {
+            receivedPrompt = prompt;
+          },
+        }),
+      });
+      await collect(
+        new Cligent(adapter, {
+          model: 'parent-model',
+          effort: 'high',
+          subagentModel: 'default-child',
+          subagentEffort: 'low',
+        }).run('Keep the user prompt intact.', {
+          resume,
+          subagentModel: 'selected-child',
+          subagentEffort: 'max',
+        }),
+      );
+      expect(constructed?.config).toMatchObject({
+        agents: {
+          default_subagent_model: 'selected-child',
+          default_subagent_reasoning_effort: 'max',
+        },
+      });
+      expect(threadOptions).toMatchObject({
+        model: 'parent-model',
+        modelReasoningEffort: 'high',
+      });
+      expect(receivedPrompt).toMatch(/delegat/i);
+      expect(receivedPrompt).toMatch(/bound(?:ed| tightly)/i);
+      expect(receivedPrompt).toContain('selected-child');
+      expect(receivedPrompt).toContain('fork_context=false');
+      expect(receivedPrompt).toMatch(/\n\nKeep the user prompt intact\.$/);
+      expect(constructed?.config).not.toHaveProperty('developer_instructions');
+      expect(constructed?.config).not.toHaveProperty('agents.enabled');
+    },
+  );
+
+  it('maps inherit to a known parent model without forcing an unknown parent', () => {
+    const known = mapAgentOptionsToCodexOptions({
+      model: 'parent-model',
+      subagentModel: 'inherit',
+    });
+    const unknown = mapAgentOptionsToCodexOptions({ subagentModel: 'inherit' });
+    expect(known.codexOptions?.config).toMatchObject({
+      agents: { default_subagent_model: 'parent-model' },
+    });
+    expect(unknown.codexOptions?.config?.agents ?? {}).not.toHaveProperty(
+      'default_subagent_model',
+    );
+    expect(known.codexOptions?.config?.agents ?? {}).not.toHaveProperty(
+      'default_subagent_reasoning_effort',
+    );
+    expect(unknown.codexOptions?.config ?? {}).not.toHaveProperty(
+      'developer_instructions',
+    );
+  });
+
+  it('adds no subagent configuration when omitted and rejects invalid effort before loading', async () => {
+    const omitted = mapAgentOptionsToCodexOptions({});
+    expect(omitted.codexOptions?.config ?? {}).not.toHaveProperty('agents');
+    let loadCalls = 0;
+    const adapter = new CodexAdapter({
+      loadSdk: async () => {
+        loadCalls++;
+        return makeLoader({ events: [] })();
+      },
+    });
+    await expect(
+      collect(adapter.run('prompt', { subagentEffort: 'low' })),
+    ).rejects.toThrow('requires subagentModel');
+    for (const subagentEffort of ['ultracode', 'ultra', '', null, 42]) {
+      await expect(
+        collect(
+          adapter.run('prompt', {
+            subagentModel: 'child',
+            subagentEffort,
+          } as unknown as AgentOptions<CodexEffort, boolean, string>),
+        ),
+      ).rejects.toThrow(
+        'must be one of: minimal, low, medium, high, xhigh, max',
+      );
+    }
+    expect(loadCalls).toBe(0);
+  });
+
+  // engine-91: malformed values are refused before the SDK loads.
+  it('rejects malformed subagent models before loading the Codex SDK', async () => {
     let loadCalls = 0;
     const loader = makeLoader({ events: [] });
     const adapter = new CodexAdapter({
@@ -3694,15 +3798,15 @@ describe('CodexAdapter', () => {
       },
     });
 
-    for (const subagentModel of ['gpt-6-sol-mini', '']) {
+    for (const subagentModel of ['', '  ', null, 7]) {
       const invalid = {
         subagentModel,
       } as unknown as AgentOptions<CodexEffort, boolean>;
       expect(() => mapAgentOptionsToCodexOptions(invalid)).toThrow(
-        'subagentModel is not supported for adapter "codex"',
+        'subagentModel for adapter "codex" must be a non-blank string',
       );
       await expect(collect(adapter.run('prompt', invalid))).rejects.toThrow(
-        'subagentModel is not supported for adapter "codex"',
+        'subagentModel for adapter "codex" must be a non-blank string',
       );
     }
     expect(loadCalls).toBe(0);

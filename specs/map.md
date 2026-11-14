@@ -71,6 +71,8 @@ meta.md       The spec of specs
 | [DR-042](decisions/042-windows-powershell-module-cache.md) | 042-windows-powershell-module-cache.md | Windows module-analysis cache stays outside the caller working directory |
 | [DR-043](decisions/043-audited-development-matchers.md) | 043-audited-development-matchers.md | Exact development matcher substitutions with consumer compatibility checks and unchanged runtime/audit safeguards |
 
+| [DR-044](decisions/044-codex-subagent-tuning.md) | 044-codex-subagent-tuning.md | Codex subagent defaults and per-call delegation instructions, preserving native precedence |
+
 ## Packages
 
 | File | Summary |

@@ -29,6 +29,7 @@ import {
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
+  DELEGATION_GUIDANCE,
   assertBuiltInSubagentEffortOption,
   assertBuiltInSubagentModelOption,
   subagentEffortValues,
@@ -1064,14 +1065,7 @@ export function subagentDirective(
     effort === undefined
       ? `${subject}; give each one the effort its task warrants.`
       : `${subject} at ${effort} effort.`;
-  return (
-    `${first} Offload to them the work you can specify completely and ` +
-    'bound tightly — well-defined, fine-grained tasks a subagent can ' +
-    'implement well — and keep the deep thinking, reasoning, and design ' +
-    'work yourself. Offloading must never lower the quality of what you ' +
-    'deliver: brief each subagent fully, and verify its result before you ' +
-    'build on it.'
-  );
+  return `${first} ${DELEGATION_GUIDANCE}`;
 }
 
 /** claude-code-67: the one prompt every registered definition carries. */

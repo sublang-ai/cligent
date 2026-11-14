@@ -32,6 +32,8 @@ import {
 import { assertSupportedEffort } from '../effort.js';
 import { assertBuiltInFastModeOption } from '../fast-mode.js';
 import {
+  DELEGATION_GUIDANCE,
+  type CodexSubagentEffort,
   assertBuiltInSubagentEffortOption,
   assertBuiltInSubagentModelOption,
 } from '../subagent-model.js';
@@ -81,6 +83,13 @@ import {
   isUsageRecord,
   readUsageCounter,
 } from './usage.js';
+
+type CodexAgentOptions = AgentOptions<
+  CodexEffort,
+  boolean,
+  string,
+  CodexSubagentEffort
+>;
 
 type CodexApprovalPolicy = 'never' | 'untrusted' | 'on-request';
 type CodexWorkspaceExtraWritesProfile = 'cligent-workspace-extra-writes';
@@ -741,7 +750,7 @@ export function mapEffortToCodexEffort(
 }
 
 export function mapAgentOptionsToCodexOptions(
-  options: AgentOptions<CodexEffort, boolean> | undefined,
+  options: CodexAgentOptions | undefined,
 ): MappedCodexOptions {
   assertBuiltInFastModeOption(AGENT, options?.fastMode);
   assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
@@ -807,12 +816,24 @@ export function mapAgentOptionsToCodexOptions(
           service_tier: options.fastMode ? 'fast' : 'default',
           features: { fast_mode: true },
         };
+  const delegateModel =
+    options?.subagentModel === 'inherit'
+      ? options.model
+      : options?.subagentModel;
+  const delegateEffort = options?.subagentEffort;
+  const agentDefaults: Record<string, CodexConfigValue> = {};
+  if (delegateModel !== undefined)
+    agentDefaults.default_subagent_model = delegateModel;
+  if (delegateEffort !== undefined)
+    agentDefaults.default_subagent_reasoning_effort = delegateEffort;
+  const hasAgentDefaults = Object.keys(agentDefaults).length > 0;
   const codexConfig =
-    permissionConfig || configEffort || fastModeConfig
+    permissionConfig || configEffort || fastModeConfig || hasAgentDefaults
       ? {
           ...(permissionConfig ?? {}),
           ...(configEffort ? { model_reasoning_effort: configEffort } : {}),
           ...(fastModeConfig ?? {}),
+          ...(hasAgentDefaults ? { agents: agentDefaults } : {}),
         }
       : undefined;
   const codexOptions =
@@ -1567,7 +1588,12 @@ export async function loadCodexSdk(): Promise<CodexSdk> {
   };
 }
 
-export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
+export class CodexAdapter implements AgentAdapter<
+  CodexEffort,
+  boolean,
+  string,
+  CodexSubagentEffort
+> {
   readonly agent = AGENT;
 
   private readonly loadSdk: () => Promise<CodexSdk>;
@@ -1737,7 +1763,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
 
   async *run(
     prompt: string,
-    options?: AgentOptions<CodexEffort, boolean>,
+    options?: CodexAgentOptions,
   ): AsyncGenerator<AgentEvent, void, void> {
     yield* withMcpResources(options, (scoped) =>
       this.runWithMcpResources(prompt, scoped),
@@ -1746,7 +1772,7 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
 
   private async *runWithMcpResources(
     prompt: string,
-    options?: AgentOptions<CodexEffort, boolean>,
+    options?: CodexAgentOptions,
   ): AsyncGenerator<AgentEvent, void, void> {
     assertBuiltInFastModeOption(AGENT, options?.fastMode);
     assertBuiltInSubagentModelOption(AGENT, options?.subagentModel);
@@ -1780,6 +1806,22 @@ export class CodexAdapter implements AgentAdapter<CodexEffort, boolean> {
         sessionId,
       );
     };
+    if (options?.subagentModel !== undefined) {
+      const model =
+        options.subagentModel === 'inherit'
+          ? 'your own model'
+          : JSON.stringify(options.subagentModel);
+      const effort =
+        options.subagentEffort === undefined
+          ? 'choose the reasoning effort each task warrants'
+          : `use ${options.subagentEffort} reasoning effort`;
+      const directive =
+        `For this turn, delegate to subagents using ${model} and ${effort}. ${DELEGATION_GUIDANCE} ` +
+        'For a different model or effort, start a fresh subagent (fork_context=false) with the selected model and effort. ' +
+        'Choose a role whose model and effort are compatible with the selection, since role settings take precedence. ' +
+        'A full-context fork inherits both, so omit spawn overrides on that fork.';
+      prompt = `${directive}\n\n${prompt}`;
+    }
     let sdkPrompt: Parameters<NonNullable<CodexThread['runStreamed']>>[0] =
       prompt;
     let skills: PreparedSkill[] = [];

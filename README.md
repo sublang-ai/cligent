@@ -117,13 +117,13 @@ account, provider, and policy, and fast serving may cost more. Use the exported
 `FAST_MODE_SUPPORT` metadata before presenting the option; see the
 [fast-mode guide](docs/guide.md#fast-mode) for request and observation limits.
 
-Claude alone accepts the optional `subagentModel` and `subagentEffort`: the
-model every subagent of the run uses — or `inherit` for the run's own — and the
-effort it runs at, which the agent otherwise chooses per task. Claude Code's
-forced subagent-model setting binds the model, registered subagent definitions
-carry the effort, and a short delegation directive in the system prompt tells
-the agent to delegate deliberately. Other adapters reject a defined value of
-either before any provider work. Use `SUBAGENT_MODEL_SUPPORT` before presenting
+Claude and Codex accept optional `subagentModel` and `subagentEffort` tuning.
+Use a named model or `inherit` for the parent model, with an optional effort.
+Claude forces the model and registers effort-specific delegates. Codex sends
+native defaults and explicit spawn instructions on every tuned call, including
+resume; explicit spawn settings and role overrides retain native precedence.
+Codex defaults never enforce settings across every subagent. Other adapters
+reject either option before provider work. Use `SUBAGENT_MODEL_SUPPORT` before presenting
 the options; see the
 [subagent guide](docs/guide.md#subagent-model-and-effort).
 

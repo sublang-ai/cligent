@@ -200,14 +200,14 @@ When the loader resolves optional `subagentModel` on the Captain or a player, it
 
 | Input and adapter | Outcome |
 | --- | --- |
-| string containing a non-whitespace character, including the literal `inherit`, with `claude` | accept under [[engine-93](engine.md#engine-93)] and retain the exact string as the role's call default |
-| any other present value with `claude` | reject before runtime start with an error naming the path and adapter |
-| any present value with Codex, Gemini, OpenCode, or Kimi | reject before runtime start under [[engine-91](engine.md#engine-91)] with an error naming the path and adapter |
+| string containing a non-whitespace character, including the literal `inherit`, with `claude` or `codex` | accept under [[engine-93](engine.md#engine-93)] and retain the exact string as the role's call default |
+| any other present value with `claude` or `codex` | reject before runtime start with an error naming the path and adapter |
+| any present value with Gemini, OpenCode, or Kimi | reject before runtime start under [[engine-91](engine.md#engine-91)] with an error naming the path and adapter |
 | field absent | retain no subagent-model override under [[engine-91](engine.md#engine-91)] |
 
 ### tmux-play-212
 
-Where tmux-play exports adapter-discriminated Captain, player, and runtime configuration types, those types shall preserve [[engine-90](engine.md#engine-90)]'s subagent-model and subagent-effort capability correlation by exposing `subagentModel?: string` and `subagentEffort?: ClaudeSubagentEffort` only on the Claude members accepted by [[tmux-play-211](#tmux-play-211)] and [[tmux-play-216](#tmux-play-216)].
+Where tmux-play exports adapter-discriminated Captain, player, and runtime configuration types, those types shall preserve [[engine-90](engine.md#engine-90)]'s subagent-model and subagent-effort capability correlation by exposing `subagentModel?: string` on Claude and Codex members, `subagentEffort?: ClaudeSubagentEffort` on Claude members, and `subagentEffort?: CodexSubagentEffort` on Codex members accepted by [[tmux-play-211](#tmux-play-211)] and [[tmux-play-216](#tmux-play-216)].
 
 ### tmux-play-216
 
@@ -215,10 +215,10 @@ When the loader resolves optional `subagentEffort` on the Captain or a player, i
 
 | Input and adapter | Outcome |
 | --- | --- |
-| any present value with Codex, Gemini, OpenCode, or Kimi | reject before runtime start under [[engine-97](engine.md#engine-97)] with an error naming the path and adapter |
-| any present value with `claude` on a role without an accepted [[tmux-play-211](#tmux-play-211)] `subagentModel` | reject before runtime start with an error naming the path and adapter and stating that `subagentModel` is required |
-| a value outside the [[engine-40](engine.md#engine-40)] `ClaudeEffort` values other than `ultracode` with `claude` | reject before runtime start with an error naming the path, adapter, and accepted values |
-| a value inside them with `claude` beside a `subagentModel` | accept under [[engine-97](engine.md#engine-97)] and retain the exact value as the role's call default |
+| any present value with Gemini, OpenCode, or Kimi | reject before runtime start under [[engine-97](engine.md#engine-97)] with an error naming the path and adapter |
+| any present value with `claude` or `codex` on a role without an accepted [[tmux-play-211](#tmux-play-211)] `subagentModel` | reject before runtime start with an error naming the path and adapter and stating that `subagentModel` is required |
+| a value outside the [[engine-40](engine.md#engine-40)] adapter effort values other than `ultracode` and `ultra` with `claude` or `codex` | reject before runtime start with an error naming the path, adapter, and accepted values |
+| a value inside them with `claude` or `codex` beside a `subagentModel` | accept under [[engine-97](engine.md#engine-97)] and retain the exact value as the role's call default |
 | field absent | retain no subagent-effort override, leaving the effort to the agent under [[engine-97](engine.md#engine-97)] |
 
 ### tmux-play-86
@@ -2499,7 +2499,7 @@ Where YAML Captain and player configurations under [[tmux-play-6](#tmux-play-6)]
 | Input | Assertion |
 | --- | --- |
 | `true` and `false` on Claude and Codex Captain and player roles | the exact boolean reaches the role call default under [[tmux-play-206](#tmux-play-206)] |
-| omitted on Claude and Codex | no role call override is created under [[tmux-play-206](#tmux-play-206)] |
+| omitted on Claude and Codex and Codex | no role call override is created under [[tmux-play-206](#tmux-play-206)] |
 | non-boolean on Claude or Codex | nonzero startup failure names the exact Captain or player path and adapter under [[tmux-play-206](#tmux-play-206)] |
 | any present value, including `false`, on each of Gemini, OpenCode, and Kimi | nonzero startup failure names the exact Captain or player path and adapter, starts no runtime, and emits no `runtime_error` under [[tmux-play-206](#tmux-play-206)] |
 
@@ -2513,22 +2513,22 @@ Where YAML Captain and player configurations under [[tmux-play-6](#tmux-play-6)]
 
 | Input | Assertion |
 | --- | --- |
-| a model ID or `inherit` on Claude Captain and player roles | the exact string reaches the role call default under [[tmux-play-211](#tmux-play-211)] |
-| a model ID with `subagentEffort: low` on Claude Captain and player roles | the exact effort reaches the role call default beside the model under [[tmux-play-216](#tmux-play-216)] |
-| `subagentEffort` without `subagentModel`, `ultracode`, or a value outside the vocabulary on Claude | loading fails with an error naming the exact Captain or player path and adapter under [[tmux-play-216](#tmux-play-216)] |
-| `subagentEffort` on each of Codex, Gemini, OpenCode, and Kimi | loading fails with an error naming the exact Captain or player path and adapter under [[tmux-play-216](#tmux-play-216)] |
-| omitted on Claude | no role call override is created under [[tmux-play-211](#tmux-play-211)] |
-| empty, whitespace-only, or non-string on Claude | loading fails with an error naming the exact Captain or player path and adapter under [[tmux-play-211](#tmux-play-211)] |
-| any present value on each of Codex, Gemini, OpenCode, and Kimi | loading fails with an error naming the exact Captain or player path and adapter under [[tmux-play-211](#tmux-play-211)] |
+| a model ID or `inherit` on Claude and Codex Captain and player roles | the exact string reaches the role call default under [[tmux-play-211](#tmux-play-211)] |
+| a model ID with `subagentEffort: low` on Claude and Codex Captain and player roles | the exact effort reaches the role call default beside the model under [[tmux-play-216](#tmux-play-216)] |
+| `subagentEffort` without `subagentModel`, `ultracode`, or a value outside the vocabulary on Claude or Codex, including Codex `ultra` | loading fails with an error naming the exact Captain or player path and adapter under [[tmux-play-216](#tmux-play-216)] |
+| `subagentEffort` on each of Gemini, OpenCode, and Kimi | loading fails with an error naming the exact Captain or player path and adapter under [[tmux-play-216](#tmux-play-216)] |
+| omitted on Claude and Codex | no role call override is created under [[tmux-play-211](#tmux-play-211)] |
+| empty, whitespace-only, or non-string on Claude and Codex | loading fails with an error naming the exact Captain or player path and adapter under [[tmux-play-211](#tmux-play-211)] |
+| any present value on each of Gemini, OpenCode, and Kimi | loading fails with an error naming the exact Captain or player path and adapter under [[tmux-play-211](#tmux-play-211)] |
 | a misspelled `subagentModel` or `subagentEffort` key | loading fails with an error naming the offending path under [[tmux-play-8](#tmux-play-8)] |
 
 ### tmux-play-214
 
-Where a TypeScript consumer uses the public tmux-play declarations, the type-level check shall assert [[tmux-play-29](#tmux-play-29)] and [[tmux-play-212](#tmux-play-212)] acceptance of `subagentModel?: string` and `subagentEffort?: ClaudeSubagentEffort` on Claude Captain, player, and runtime configuration members, rejection of `ultracode` as a subagent effort, and rejection of both on the Codex, Gemini, OpenCode, and Kimi members.
+Where a TypeScript consumer uses the public tmux-play declarations, the type-level check shall assert [[tmux-play-29](#tmux-play-29)] and [[tmux-play-212](#tmux-play-212)] acceptance of `subagentModel?: string` on Claude and Codex Captain, player, and runtime configuration members, with `subagentEffort?: ClaudeSubagentEffort` on Claude and `subagentEffort?: CodexSubagentEffort` on Codex, rejection of `ultracode` and `ultra` respectively, and rejection of both on the Gemini, OpenCode, and Kimi members.
 
 ### tmux-play-215
 
-Where a runtime holds a configured Claude `subagentModel` and `subagentEffort` for its Captain and a player, when calls are admitted with and without complete call settings, the check shall assert this matrix:
+Where a runtime holds a configured Claude or Codex `subagentModel` and `subagentEffort` for its Captain and a player, when calls are admitted with and without complete call settings, the check shall assert this matrix:
 
 | Input | Assertion |
 | --- | --- |
@@ -2536,7 +2536,7 @@ Where a runtime holds a configured Claude `subagentModel` and `subagentEffort` f
 | settings supplying a model ID or `inherit` with and without an effort | those exact values reach `Cligent.run()` [[tmux-play-93](#tmux-play-93)] |
 | settings omitting `subagentModel` and `subagentEffort` | `Cligent.run()` receives neither and never the configured values [[tmux-play-93](#tmux-play-93)] |
 | settings supplying a model ID and omitting `subagentEffort` | `Cligent.run()` receives the model and no `subagentEffort`, never the configured effort [[tmux-play-93](#tmux-play-93)] |
-| settings supplying an empty, whitespace-only, or non-string `subagentModel`, a `subagentEffort` without `subagentModel` or outside the Claude vocabulary less `ultracode`, or either value for a Codex role | an `AgentCallSettingsError` before the prompt record and provider run [[tmux-play-93](#tmux-play-93)] |
+| settings supplying an empty, whitespace-only, or non-string `subagentModel`, a `subagentEffort` without `subagentModel` or outside the role adapter vocabulary less `ultracode` and `ultra`, or either value for a Gemini, OpenCode, or Kimi role | an `AgentCallSettingsError` before the prompt record and provider run [[tmux-play-93](#tmux-play-93)] |
 
 ### tmux-play-203
 

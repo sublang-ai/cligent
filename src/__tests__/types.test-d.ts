@@ -36,6 +36,7 @@ import type {
   ClaudeSubagentEffort,
   CligentOptions,
   CodexEffort,
+  CodexSubagentEffort,
   DiscoveredModel,
   DonePayload,
   DoneUsage,
@@ -629,7 +630,7 @@ describe('core types', () => {
       opencode: AdapterSubagentModel<OpenCodeAdapter>;
     }>().toEqualTypeOf<{
       claude: string;
-      codex: never;
+      codex: string;
       gemini: never;
       kimi: never;
       opencode: never;
@@ -639,7 +640,6 @@ describe('core types', () => {
     const codexAdapter = new CodexAdapter();
     const geminiAdapter = new GeminiAdapter();
     void claudeAdapter.run('prompt', { subagentModel: 'claude-haiku-4-5' });
-    // @ts-expect-error - Codex has no per-run subagent-model surface.
     void codexAdapter.run('prompt', { subagentModel: 'gpt-6-sol-mini' });
     // @ts-expect-error - the value is a model ID string.
     void claudeAdapter.run('prompt', { subagentModel: true });
@@ -659,9 +659,7 @@ describe('core types', () => {
     const custom = new Cligent(customSupported, { subagentModel: 'small' });
     void claude.run('prompt', { subagentModel: 'claude-sonnet-5-5' });
     void custom.run('prompt', { subagentModel: 'large' });
-    // @ts-expect-error - NoInfer keeps constructor defaults adapter-scoped.
     new Cligent(codexAdapter, { subagentModel: 'gpt-6-sol-mini' });
-    // @ts-expect-error - unsupported Cligent instances reject strings.
     void codex.run('prompt', { subagentModel: 'gpt-6-sol-mini' });
     // @ts-expect-error - unsupported Cligent instances reject strings.
     void gemini.run('prompt', { subagentModel: 'gemini-flash' });
@@ -679,7 +677,6 @@ describe('core types', () => {
       {
         agent: codex,
         prompt: 'Codex',
-        // @ts-expect-error - parallel overrides retain adapter capability.
         overrides: { subagentModel: 'gpt-6-sol-mini' },
       },
     ]);
@@ -772,7 +769,7 @@ describe('core types', () => {
       opencode: AdapterSubagentEffort<OpenCodeAdapter>;
     }>().toEqualTypeOf<{
       claude: ClaudeSubagentEffort;
-      codex: never;
+      codex: CodexSubagentEffort;
       gemini: never;
       kimi: never;
       opencode: never;
@@ -786,8 +783,15 @@ describe('core types', () => {
     });
     // @ts-expect-error - ultracode is session-scoped, never a subagent effort.
     void claudeAdapter.run('prompt', { subagentEffort: 'ultracode' });
-    // @ts-expect-error - Codex has no per-run subagent-effort surface.
     void codexAdapter.run('prompt', { subagentEffort: 'low' });
+    void codexAdapter.run('prompt', {
+      subagentModel: 'inherit',
+      // @ts-expect-error - ultra is session-scoped.
+      subagentEffort: 'ultra',
+    });
+    expectTypeOf<CodexSubagentEffort>().toEqualTypeOf<
+      Exclude<CodexEffort, 'ultra'>
+    >();
 
     type CustomEffort = 'quick' | 'deep';
     const customDefault = {} as AgentAdapter<CustomEffort>;
@@ -804,7 +808,6 @@ describe('core types', () => {
       subagentEffort: 'low',
     });
     void claude.run('prompt', { subagentEffort: 'max' });
-    // @ts-expect-error - NoInfer keeps constructor defaults adapter-scoped.
     new Cligent(codexAdapter, { subagentEffort: 'low' });
     void Cligent.parallel([
       {
@@ -817,8 +820,7 @@ describe('core types', () => {
       {
         adapter: codexAdapter,
         prompt: 'Codex',
-        // @ts-expect-error - parallel options retain adapter capability.
-        options: { subagentEffort: 'low' },
+        options: { subagentModel: 'inherit', subagentEffort: 'max' },
       },
     ]);
     const registry = new AdapterRegistry();
@@ -862,15 +864,17 @@ describe('core types', () => {
     ).toEqualTypeOf<true>();
     expectTypeOf(
       SUBAGENT_MODEL_SUPPORT.codex.requestSupported,
-    ).toEqualTypeOf<false>();
+    ).toEqualTypeOf<true>();
 
     let candidate: string = 'claude';
     if (isSubagentModelSupported(candidate)) {
-      expectTypeOf(candidate).toMatchTypeOf<'claude' | 'claude-code'>();
+      expectTypeOf(candidate).toMatchTypeOf<
+        'claude' | 'claude-code' | 'codex'
+      >();
     }
     let asserted: string = 'claude-code';
     assertSubagentModelSupported(asserted);
-    expectTypeOf(asserted).toMatchTypeOf<'claude' | 'claude-code'>();
+    expectTypeOf(asserted).toMatchTypeOf<'claude' | 'claude-code' | 'codex'>();
   });
 });
 

@@ -440,7 +440,8 @@ Per [DR-028](../decisions/028-subagent-model.md) and [DR-029](../decisions/029-s
 | `AgentAdapter<E, FM, SM, SE>`, `AgentOptions<E, FM, SM, SE>`, `CligentOptions<E, FM, SM, SE>`, `RunOptions<E, FM, SM, SE>`, and `Cligent<E, FM, SM, SE>` | expose `subagentModel?: SM` and `subagentEffort?: SE` and retain both through constructor defaults and run overrides |
 | `Cligent.parallel()` and `runParallel()` | preserve each source adapter's `SM` and `SE` independently |
 | Claude Code | bind `SM` to `string` and `SE` to the exported `ClaudeSubagentEffort`, the [[engine-40](#engine-40)] `ClaudeEffort` values other than `ultracode` |
-| Codex, Gemini, OpenCode, or Kimi | bind both to `never`, making an explicit value of either a compile-time error |
+| Codex | bind `SM` to `string` and `SE` to the exported `CodexSubagentEffort`, the [[engine-40](#engine-40)] `CodexEffort` values other than `ultra` |
+| Gemini, OpenCode, or Kimi | bind both to `never`, making an explicit value of either a compile-time error |
 | custom adapter omitting `SM` | default both to `never` |
 | custom adapter opting into `SM` | bind `string`, with `SE` defaulting to its effort vocabulary without `ultracode` unless it binds `SE` itself, `never` opting out |
 | existing one-, two-, or three-parameter generic source | remain source- and assignment-compatible when it supplies neither `subagentModel` nor `subagentEffort`, including assignment of an inferred supported or unsupported adapter and `Cligent` instance to its existing `AgentAdapter<E>`, `AgentAdapter<E, FM>`, `AgentAdapter<E, FM, SM>`, `Cligent<E>`, `Cligent<E, FM>`, or `Cligent<E, FM, SM>` annotation whose `E` is that adapter's own vocabulary, or a wider one where a three-parameter annotation binds `SM` as the adapter does |
@@ -452,8 +453,8 @@ When a `subagentModel` option reaches a typed or dynamic adapter path, Cligent s
 | Input and adapter | Outcome |
 | --- | --- |
 | omitted | add no Cligent subagent configuration, leaving the runtime's own subagent-model order in force |
-| the literal `inherit` on a request-supported adapter | forward it to the adapter's native control, binding every subagent the run starts to the run's own model |
-| any other string containing a non-whitespace character on a request-supported adapter | forward it verbatim to the adapter's native control for the model of every subagent the run starts, without checking it against any model catalog |
+| the literal `inherit` on a request-supported adapter | request the parent model through the adapter's native control, with adapter-specific precedence |
+| any other string containing a non-whitespace character on a request-supported adapter | forward it verbatim to the adapter's native control, with adapter-specific precedence, without checking it against any model catalog |
 | a defined non-string, empty, or whitespace-only value on a request-supported built-in adapter | reject before backend invocation with an error naming the adapter, validation path, and expected non-blank string |
 | any defined value on an unsupported built-in adapter | reject before backend invocation with an error naming the adapter and validation path |
 | any defined value on a dynamically registered custom adapter | let that adapter validate its declared capability and value |
@@ -469,7 +470,7 @@ When a `subagentEffort` option reaches a typed or dynamic adapter path, Cligent 
 | omitted | leave each subagent's effort to the agent's choice per task where an accepted [[engine-91](#engine-91)] `subagentModel` is present, and otherwise add nothing |
 | any defined value on an unsupported built-in adapter | reject before backend invocation with an error naming the adapter and validation path |
 | any defined value on a request-supported built-in adapter without a `subagentModel` | reject before backend invocation with an error naming the adapter and validation path and stating that `subagentModel` is required |
-| a defined value outside the adapter's [[engine-40](#engine-40)] vocabulary less its orchestration values, including a non-string, empty, or `ultracode` value, on a request-supported built-in adapter with a `subagentModel` | reject before backend invocation with an error naming the adapter, validation path, and accepted values |
+| a defined value outside the adapter's [[engine-40](#engine-40)] vocabulary less its orchestration values, including a non-string, empty, `ultracode`, or `ultra` value, on a request-supported built-in adapter with a `subagentModel` | reject before backend invocation with an error naming the adapter, validation path, and accepted values |
 | a value inside that vocabulary on a request-supported built-in adapter with a `subagentModel` | forward it to the adapter's native control for the effort of the subagents the run starts |
 | any defined value on a dynamically registered custom adapter | let that adapter validate its declared capability and value |
 
@@ -480,12 +481,12 @@ The exported `SUBAGENT_MODEL_SUPPORT` object shall be deeply frozen at runtime a
 | Adapter | `requestSupported` |
 | --- | ---: |
 | `claude-code` | `true` |
-| `codex` | `false` |
+| `codex` | `true` |
 | `gemini` | `false` |
 | `opencode` | `false` |
 | `kimi` | `false` |
 
-The `notes` define support as native-request delivery of both `subagentModel` and `subagentEffort`, disclose Claude's forced subagent-model variables, delegation directive, and registered subagent definitions under [[claude-code-60](adapters/claude-code.md#claude-code-60)], [[claude-code-61](adapters/claude-code.md#claude-code-61)], and [[claude-code-67](adapters/claude-code.md#claude-code-67)], and state that the other four adapters expose no per-run subagent-model or subagent-effort surface under [[engine-91](#engine-91)] and [[engine-97](#engine-97)].
+The `notes` define support as native-request delivery of both `subagentModel` and `subagentEffort`, disclose Claude's forced subagent-model variables, delegation directive, and registered subagent definitions under [[claude-code-60](adapters/claude-code.md#claude-code-60)], [[claude-code-61](adapters/claude-code.md#claude-code-61)], and [[claude-code-67](adapters/claude-code.md#claude-code-67)], disclose Codex's native defaults and per-call prompt directive, explicit-spawn and role overrides, and absence of runtime-wide enforcement under [[codex-87](adapters/codex.md#codex-87)] and [[codex-88](adapters/codex.md#codex-88)], and state that the other three adapters expose no per-run subagent-model or subagent-effort surface under [[engine-91](#engine-91)] and [[engine-97](#engine-97)].
 
 ### engine-93
 
@@ -860,7 +861,7 @@ Where request-supported adapter integrations produce refusal, standard-speed fal
 
 ### engine-94
 
-Where a TypeScript consumer uses the public subagent-model and subagent-effort API, the type-level check shall assert [[engine-1](#engine-1)] constructor-option placement of both options; [[engine-90](#engine-90)] built-in, custom, direct, and heterogeneous-parallel capability correlation for both, including the literal `inherit`, every `ClaudeSubagentEffort` value, and rejection of `ultracode`; and source and assignment compatibility for existing one-, two-, and three-parameter `AgentAdapter`, `AgentOptions`, `CligentOptions`, `RunOptions`, and `Cligent` uses that omit both options, including a three-parameter annotation widening a Claude adapter's effort to `Effort`.
+Where a TypeScript consumer uses the public subagent-model and subagent-effort API, the type-level check shall assert [[engine-1](#engine-1)] constructor-option placement of both options; [[engine-90](#engine-90)] built-in, custom, direct, and heterogeneous-parallel capability correlation for both, including the literal `inherit`, every `ClaudeSubagentEffort` and `CodexSubagentEffort` value, and rejection of their respective `ultracode` and `ultra` orchestration values; and source and assignment compatibility for existing one-, two-, and three-parameter `AgentAdapter`, `AgentOptions`, `CligentOptions`, `RunOptions`, and `Cligent` uses that omit both options, including a three-parameter annotation widening a Claude adapter's effort to `Effort`.
 
 ### engine-95
 
@@ -868,7 +869,7 @@ Where a consumer imports subagent-model metadata and helpers from the public ent
 
 ### engine-96
 
-Where supported built-in adapters, unsupported built-in adapters, and custom adapters are exercised at the engine integration boundary through direct, instance-default, per-run, parallel, and legacy-registry paths, the check shall assert [[engine-91](#engine-91)] omitted, `inherit`, forwarded, malformed-value, unsupported-adapter, custom-validation, and upstream-refusal outcomes, [[engine-97](#engine-97)] omitted, forwarded, missing-`subagentModel`, out-of-vocabulary, `ultracode`, unsupported-adapter, and custom-validation outcomes, [[engine-3](#engine-3)] per-call precedence over an instance default for each option, and pre-backend rejection of either option for Codex, Gemini, OpenCode, and Kimi.
+Where supported built-in adapters, unsupported built-in adapters, and custom adapters are exercised at the engine integration boundary through direct, instance-default, per-run, parallel, and legacy-registry paths, the check shall assert [[engine-91](#engine-91)] omitted, `inherit`, forwarded, malformed-value, unsupported-adapter, custom-validation, and upstream-refusal outcomes, [[engine-97](#engine-97)] omitted, forwarded, missing-`subagentModel`, out-of-vocabulary, `ultracode`, `ultra`, unsupported-adapter, and custom-validation outcomes, [[engine-3](#engine-3)] per-call precedence over an instance default for each option, and pre-backend rejection of either option for Gemini, OpenCode, and Kimi.
 
 ### engine-68
 

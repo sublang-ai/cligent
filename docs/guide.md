@@ -366,23 +366,22 @@ observation and never echo the requested boolean as one.
 
 ## Subagent model and effort
 
-`subagentModel` names the model every subagent of a run uses, separately from
-the run's own `model`, and `subagentEffort` names the effort they run at. They
-let a strong main agent keep the reasoning and design work while it hands
-well-defined, fine-grained tasks to subagents on a cheaper or faster model,
-without those subagents silently inheriting the main agent's effort. Only
-Claude Code accepts the options. Codex, Gemini, Kimi, and OpenCode expose no
-per-run subagent surface, so their adapter-bound TypeScript options admit no
-value and dynamic calls reject any defined value before provider work starts.
+`subagentModel` selects subagent model tuning separately from the run's own
+`model`, and `subagentEffort` optionally pins their requested effort. Claude
+Code and Codex accept both. They instruct the main agent to delegate bounded,
+fine-grained tasks, retain deep reasoning and design, brief delegates fully,
+and verify results. Gemini, Kimi, and OpenCode reject either option before
+provider work starts.
 
 - `subagentModel` is a model ID or alias string, passed verbatim, or the
   literal `inherit` for the run's own model. It must contain a non-whitespace
   character.
-- `subagentEffort` is a Claude effort value other than `ultracode`: `minimal`,
-  `low`, `medium`, `high`, `xhigh`, or `max`. It requires `subagentModel`;
-  omitted beside it, the agent chooses an effort for each task. Without
-  `subagentModel`, outside that vocabulary, or on another adapter it is
-  rejected before provider work.
+- `subagentEffort` requires `subagentModel`. Claude accepts `minimal`, `low`,
+  `medium`, `high`, `xhigh`, and `max`; Codex accepts its `CodexEffort` values
+  except `ultra`: `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
+  Omission leaves effort selection to the player and native runtime. Invalid
+  efforts, an effort without a model, and unsupported adapters fail before
+  provider work.
 - A per-run value of either overrides a constructor default.
 - Omitting `subagentModel` adds no Cligent subagent configuration and leaves
   the runtime's own order in force.
@@ -469,6 +468,24 @@ and `composeClaudeSystemPrompt(parts)`, which joins ordered parts with a blank
 line into the system prompt the adapter sends. The package exports the
 `ClaudeSubagentEffort` type for the accepted efforts.
 
+For Codex, the constructor configuration sends
+`agents.default_subagent_model` with the named model. With `inherit`, it sends
+the parent `model` explicitly when known; otherwise it omits that default for
+native parent inheritance. A pinned effort travels as
+`agents.default_subagent_reasoning_effort`. Each tuned outbound prompt,
+including resumed calls, tells the player to explicitly select the named or
+parent model and any pinned effort when spawning. A different model or effort
+requires a fresh spawn (`fork_context=false`); a full-context fork carries no
+model or effort override. These are defaults and instructions: native explicit
+spawn settings override defaults, and custom role model or effort settings
+retain their native precedence. The defaults do not enforce settings across
+every subagent. See the [official Codex subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+
+Untuned Codex calls add neither defaults nor the directive. Tuning leaves
+native agent enablement and unrelated settings alone, and introduces no
+cross-project model default. `CodexSubagentEffort` is exported beside
+`ClaudeSubagentEffort`.
+
 Use `SUBAGENT_MODEL_SUPPORT` and its helpers to decide where to offer both
 options. The metadata is deeply frozen, and `claude` is accepted as an alias for
 `claude-code`.
@@ -476,7 +493,7 @@ options. The metadata is deeply frozen, and `claude` is accepted as an alias for
 | Adapter       | `requestSupported` |
 | ------------- | ------------------ |
 | `claude-code` | `true`             |
-| `codex`       | `false`            |
+| `codex`       | `true`            |
 | `gemini`      | `false`            |
 | `opencode`    | `false`            |
 | `kimi`        | `false`            |

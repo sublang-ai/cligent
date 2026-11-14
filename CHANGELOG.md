@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Codex accepts `subagentModel` and `subagentEffort` in adapter options and tmux-play role and call settings. Native model and effort defaults accompany explicit delegation instructions on every tuned call, including resume. `inherit` selects the known parent model or omits the model default when unknown. Explicit spawn and role overrides preserve native precedence; full-context forks receive no overrides, and different model or effort selections use fresh spawns. Untuned calls leave native settings and prompts unchanged. Export `CodexSubagentEffort`, excluding `ultra`.
+
 ## [0.38.0] - 2026-11-03
 
 ### Fixed

@@ -65,7 +65,7 @@ describe('built-in subagent-model metadata', () => {
   it('publishes the exact frozen transport matrix', () => {
     expect(SUBAGENT_MODEL_SUPPORT).toEqual({
       'claude-code': { requestSupported: true, notes: expect.any(String) },
-      codex: { requestSupported: false, notes: expect.any(String) },
+      codex: { requestSupported: true, notes: expect.any(String) },
       gemini: { requestSupported: false, notes: expect.any(String) },
       opencode: { requestSupported: false, notes: expect.any(String) },
       kimi: { requestSupported: false, notes: expect.any(String) },
@@ -93,7 +93,13 @@ describe('built-in subagent-model metadata', () => {
     expect(claude).toContain(
       "Explore and Plan keep their own definitions and the agent's effort",
     );
-    for (const adapter of ['codex', 'gemini', 'opencode', 'kimi'] as const) {
+    const codex = SUBAGENT_MODEL_SUPPORT.codex.notes;
+    expect(codex).toContain('defaults');
+    expect(codex).toContain('delegation directive');
+    expect(codex).toContain('spawn');
+    expect(codex).toContain('role');
+    expect(codex).toContain('override');
+    for (const adapter of ['gemini', 'opencode', 'kimi'] as const) {
       expect(SUBAGENT_MODEL_SUPPORT[adapter].notes).toContain(
         'no per-run subagent-model or subagent-effort surface',
       );
@@ -107,13 +113,14 @@ describe('built-in subagent-model metadata', () => {
     expect(getSubagentModelSupport('codex')).toBe(SUBAGENT_MODEL_SUPPORT.codex);
     expect(isSubagentModelSupported('claude')).toBe(true);
     expect(isSubagentModelSupported('claude-code')).toBe(true);
-    for (const adapter of ['codex', 'gemini', 'opencode', 'kimi']) {
+    expect(isSubagentModelSupported('codex')).toBe(true);
+    for (const adapter of ['gemini', 'opencode', 'kimi']) {
       expect(isSubagentModelSupported(adapter)).toBe(false);
     }
     expect(() => assertSubagentModelSupported('claude')).not.toThrow();
     expect(() =>
       assertSubagentModelSupported('codex', 'players[0].subagentModel'),
-    ).toThrow('players[0].subagentModel is not supported for adapter "codex"');
+    ).not.toThrow();
     expect(() => assertSubagentModelSupported('gemini')).toThrow(
       'subagentModel is not supported for adapter "gemini"',
     );
@@ -130,6 +137,58 @@ describe('built-in subagent-model metadata', () => {
 
 // engine-96
 describe('supported built-in subagent-model requests', () => {
+  it('forwards Codex defaults and parallel overrides to native subagent configuration', async () => {
+    const configs: unknown[] = [];
+    const adapter = new CodexAdapter({
+      loadSdk: async () => ({
+        Codex: class {
+          constructor(options?: { config?: unknown }) {
+            configs.push(options?.config);
+          }
+          startThread() {
+            return {
+              async runStreamed() {
+                return {
+                  events: (async function* () {
+                    yield { type: 'turn.completed' };
+                  })(),
+                };
+              },
+            };
+          }
+        },
+      }),
+    });
+    const cligent = new Cligent(adapter, {
+      subagentModel: 'default-child',
+      subagentEffort: 'low',
+    });
+    await collect(cligent.run('default'));
+    await collect(
+      Cligent.parallel([
+        {
+          agent: cligent,
+          prompt: 'parallel',
+          overrides: { subagentModel: 'parallel-child', subagentEffort: 'max' },
+        },
+      ]),
+    );
+    expect(configs).toMatchObject([
+      {
+        agents: {
+          default_subagent_model: 'default-child',
+          default_subagent_reasoning_effort: 'low',
+        },
+      },
+      {
+        agents: {
+          default_subagent_model: 'parallel-child',
+          default_subagent_reasoning_effort: 'max',
+        },
+      },
+    ]);
+  });
+
   it('forwards instance defaults and parallel overrides to the Claude query', async () => {
     const requests: unknown[] = [];
     const query = successQuery(requests);
@@ -341,15 +400,6 @@ describe('supported built-in subagent-model requests', () => {
 describe('unsupported built-in subagent-model requests', () => {
   it.each([
     [
-      'codex',
-      () => {
-        const backend = vi.fn(async () => {
-          throw new Error('unexpected Codex backend invocation');
-        });
-        return { backend, adapter: new CodexAdapter({ loadSdk: backend }) };
-      },
-    ],
-    [
       'gemini',
       () => {
         const backend = vi.fn(() => {
@@ -446,10 +496,10 @@ describe('unsupported built-in subagent-model requests', () => {
   });
 
   it('rejects an unsupported parallel option before backend invocation', async () => {
-    const loadSdk = vi.fn(async () => {
-      throw new Error('unexpected Codex backend invocation');
+    const spawnProcess = vi.fn(() => {
+      throw new Error('unexpected Gemini backend invocation');
     });
-    const adapter = new CodexAdapter({ loadSdk });
+    const adapter = new GeminiAdapter({ spawnProcess });
     const events = await collect(
       runParallel([
         {
@@ -463,9 +513,9 @@ describe('unsupported built-in subagent-model requests', () => {
     expect(
       events.find((event) => event.type === 'error')?.payload,
     ).toMatchObject({
-      message: 'subagentModel is not supported for adapter "codex"',
+      message: 'subagentModel is not supported for adapter "gemini"',
     });
-    expect(loadSdk).not.toHaveBeenCalled();
+    expect(spawnProcess).not.toHaveBeenCalled();
   });
 });
 

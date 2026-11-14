@@ -136,7 +136,7 @@ Remove the blocks to fall back to each adapter's SDK default; cligent itself shi
 
 - Adapters: `claude`, `codex`, `gemini`, `kimi`, `opencode`.
 - Player IDs match `^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$`, are unique, and may not be `captain`. Dot-delimited IDs such as `dev.coder` provide namespacing. Multiple players may share an adapter or model; `players: []` selects the Boss/Captain-only form.
-- `subagentModel` and `subagentEffort` are accepted only on `claude` Captain and player entries; see [Subagent model and effort](#subagent-model-and-effort).
+- `subagentModel` and `subagentEffort` are accepted on `claude` and `codex` Captain and player entries; see [Subagent model and effort](#subagent-model-and-effort).
 - `skills` is accepted at the top level and on the Captain and each player; see [Skills](#skills).
 - `captain.from` is a local path (`./captains/router.mjs`) or a package subpath. The runtime owns every `Cligent`; the Captain just orchestrates.
 - `captain.options` is opaque to the runtime and forwarded to the factory. The built-in `fanout` captain accepts no options — YAML keys under `captain.options` are forwarded but inert. Each player's full `finalText` is included in the summary prompt verbatim; the Captain instruction ("do not copy raw player logs wholesale") is the soft check, and cligent imposes no hard cap on player output length. Workloads that need a cap should wrap the fanout captain or write a custom one.
@@ -248,9 +248,8 @@ network, or installed runtime.
 
 ### Subagent model and effort
 
-The Captain and each Claude player may name the model their subagents run on,
-separately from `model`, and the effort they run at. Only Claude accepts the
-optional `subagentModel` and `subagentEffort` keys:
+Claude and Codex Captain and player entries accept optional `subagentModel`
+and `subagentEffort` tuning, separately from the role's own model and effort:
 
 ```yaml
 captain:
@@ -269,11 +268,12 @@ players:
 | Adapter                               | `subagentModel`                                                                                                                               | `subagentEffort`                                                                              |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `claude`                              | The model ID or alias every subagent the role starts runs on, or `inherit` for the role's own; the role is also told to delegate deliberately | One of `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; omitted, the role chooses per task |
-| `codex`, `gemini`, `opencode`, `kimi` | Rejected when present                                                                                                                         | Rejected when present                                                                         |
+| `codex` | A named model or `inherit`; native default plus explicit spawn guidance on every tuned call, including resume | `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`; omitted, native/player selection |
+| `gemini`, `opencode`, `kimi` | Rejected when present                                                                                                                         | Rejected when present                                                                         |
 
 `subagentModel` must be a string with a non-whitespace character.
 `subagentEffort` requires `subagentModel` on the same role and is never
-`ultracode`. With either setting, the built-in `general-purpose`, which a
+`ultracode` for Claude or `ultra` for Codex. With Claude tuning, the built-in `general-purpose`, which a
 subagent started without a type runs as, is replaced: at the pinned effort, or
 at `medium` when the role chooses, so no subagent inherits the role's effort by
 omission. The built-in `Explore` and `Plan` keep their own definitions,
@@ -281,8 +281,16 @@ read-only tools included, and the role's own effort. The loader checks both
 against the role's adapter before runtime startup and names the offending
 Captain or player path and adapter on error.
 Omission adds no override. The generated home config always omits both. See
-the [subagent guide](guide.md#subagent-model-and-effort) for what the Claude
-adapter sends.
+the [subagent guide](guide.md#subagent-model-and-effort) for adapter details.
+Codex sends `agents.default_subagent_model` with the selected model, using the
+known parent model for `inherit`, or omitting it when unknown. A pinned effort
+uses `agents.default_subagent_reasoning_effort`. Every tuned call tells the
+player to explicitly choose the named or parent model and any pinned effort
+at spawn; different settings require `fork_context=false`, and full-context
+forks accept no overrides. Explicit spawn settings and role-defined overrides
+retain native precedence. These defaults never enforce settings across every
+subagent and leave native enablement alone. Omission adds neither overrides
+nor instructions; there is no cross-project forced model.
 
 ### Legacy `reasoningEffort` compatibility
 
@@ -568,7 +576,7 @@ permissions as runtime-held call defaults. A supplied `settings` object is the
 entire effective call configuration: omitted `fastMode` or `subagentModel`
 restores provider-default selection and omitted `subagentEffort` leaves the
 effort to the agent, rather than merging the YAML value; `subagentModel` and
-`subagentEffort` are accepted only for a Claude role, and `subagentEffort` only
+`subagentEffort` are accepted for Claude and Codex roles, and `subagentEffort` only
 beside `subagentModel`; a supplied `skills` array of non-blank strings without
 NUL replaces the role's list for that call; omitted `skills`, `instruction`,
 and `permissions` mean none, and none is merged with YAML defaults. A boolean

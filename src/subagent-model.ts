@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { EFFORT_SUPPORT, type ClaudeEffort } from './effort.js';
+import {
+  EFFORT_SUPPORT,
+  type ClaudeEffort,
+  type CodexEffort,
+} from './effort.js';
 import type { AgentType } from './types.js';
 
 export type BuiltinSubagentModelAgent =
@@ -12,6 +16,14 @@ export interface SubagentModelSupport {
   readonly notes: string;
 }
 
+export const DELEGATION_GUIDANCE =
+  'Offload to them the work you can specify completely and ' +
+  'bound tightly — well-defined, fine-grained tasks a subagent can ' +
+  'implement well — and keep the deep thinking, reasoning, and design ' +
+  'work yourself. Offloading must never lower the quality of what you ' +
+  'deliver: brief each subagent fully, and verify its result before you ' +
+  'build on it.';
+
 /** Built-in per-run subagent-model request transport (engine-92). */
 export const SUBAGENT_MODEL_SUPPORT = Object.freeze({
   'claude-code': Object.freeze({
@@ -20,9 +32,9 @@ export const SUBAGENT_MODEL_SUPPORT = Object.freeze({
       "Support means native-request delivery of subagentModel and subagentEffort, not selected-model, account, provider, or installed-runtime availability. Claude sets CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1, with CLAUDE_CODE_SUBAGENT_MODEL for a named model or alone for inherit, so the model binds every subagent of the run; registers subagent definitions, one carrying the pinned effort or one per effort for the agent to choose, replacing general-purpose by name at the pinned effort or, where the agent chooses, at medium, while Explore and Plan keep their own definitions and the agent's effort; and composes a delegation directive into the system prompt. It changes which model and effort subagents use, never whether the agent may start them.",
   }),
   codex: Object.freeze({
-    requestSupported: false,
+    requestSupported: true,
     notes:
-      'Codex exposes no per-run subagent-model or subagent-effort surface.',
+      'Codex sends native per-run subagent model and reasoning effort defaults and a delegation directive in the prompt. Explicit spawn settings and custom role definitions can override these defaults. A full-history fork inherits the parent model and effort.',
   }),
   gemini: Object.freeze({
     requestSupported: false,
@@ -40,10 +52,8 @@ export const SUBAGENT_MODEL_SUPPORT = Object.freeze({
   }),
 }) satisfies Readonly<Record<BuiltinSubagentModelAgent, SubagentModelSupport>>;
 
-export type SubagentModelForAgent<A extends AgentType | 'claude'> = A extends
-  'claude' | 'claude-code'
-  ? string
-  : never;
+export type SubagentModelForAgent<A extends AgentType | 'claude'> =
+  A extends SubagentModelSupportedAgent ? string : never;
 
 /** Claude's orchestration effort, which no subagent definition can carry. */
 type ClaudeOrchestrationEffort =
@@ -56,6 +66,11 @@ type ClaudeOrchestrationEffort =
 export type ClaudeSubagentEffort = Exclude<
   ClaudeEffort,
   ClaudeOrchestrationEffort
+>;
+
+export type CodexSubagentEffort = Exclude<
+  CodexEffort,
+  (typeof EFFORT_SUPPORT)['codex']['orchestrationValues'][number]
 >;
 
 /**
@@ -72,9 +87,11 @@ export type DefaultSubagentEffort<E extends string, SM extends string> = [
 export type SubagentEffortForAgent<A extends AgentType | 'claude'> = A extends
   'claude' | 'claude-code'
   ? ClaudeSubagentEffort
-  : never;
+  : A extends 'codex'
+    ? CodexSubagentEffort
+    : never;
 
-type SubagentModelSupportedAgent = 'claude' | 'claude-code';
+type SubagentModelSupportedAgent = 'claude' | 'claude-code' | 'codex';
 
 function canonicalSubagentModelAgent(
   agent: AgentType | 'claude',

@@ -14,7 +14,7 @@ import type {
   RuntimeCaptainConfig,
   RuntimePlayerConfig,
 } from '../app/tmux-play/index.js';
-import type { ClaudeSubagentEffort } from '../index.js';
+import type { ClaudeSubagentEffort, CodexSubagentEffort } from '../index.js';
 import type {
   ClaudeEffort,
   CodexEffort,
@@ -89,7 +89,7 @@ type ConfigSurfaceFastModes = {
 
 type ExpectedSubagentModelMap = {
   claude: string | undefined;
-  codex: undefined;
+  codex: string | undefined;
   gemini: undefined;
   kimi: undefined;
   opencode: undefined;
@@ -189,7 +189,7 @@ describe('tmux-play effort types (tmux-play-190)', () => {
       Promise<Cligent<ClaudeEffort, boolean, string>>
     >();
     expectTypeOf(codex).toEqualTypeOf<
-      Promise<Cligent<CodexEffort, boolean>>
+      Promise<Cligent<CodexEffort, boolean, string, CodexSubagentEffort>>
     >();
     expectTypeOf(gemini).toEqualTypeOf<Promise<Cligent<GeminiEffort>>>();
     expectTypeOf(kimi).toEqualTypeOf<Promise<Cligent<KimiEffort>>>();
@@ -208,7 +208,6 @@ describe('tmux-play effort types (tmux-play-190)', () => {
     // @ts-expect-error - unsupported adapters expose no fast-mode request
     void createPlayerCligent('gemini', { fastMode: false });
     void createPlayerCligent('claude', { subagentModel: 'claude-haiku-4-5' });
-    // @ts-expect-error - unsupported adapters expose no subagent model
     void createPlayerCligent('codex', { subagentModel: 'gpt-6-sol-mini' });
   });
 });
@@ -280,7 +279,7 @@ describe('tmux-play subagent-model types (tmux-play-214)', () => {
     }>();
   });
 
-  it('accepts Claude roles and rejects every other adapter', () => {
+  it('accepts Claude and Codex roles and rejects unsupported adapters', () => {
     const captain = {
       from: '@example/captain',
       adapter: 'claude',
@@ -304,8 +303,7 @@ describe('tmux-play subagent-model types (tmux-play-214)', () => {
       subagentModel: 'claude-haiku-4-5',
     } satisfies RuntimePlayerConfig;
 
-    // @ts-expect-error - a Codex Captain has no subagent model
-    const invalidCaptain: CaptainConfig = {
+    const codexCaptain: CaptainConfig = {
       from: '@example/captain', adapter: 'codex', subagentModel: 'x', options: {},
     };
     // @ts-expect-error - a Gemini player has no subagent model
@@ -326,7 +324,7 @@ describe('tmux-play subagent-model types (tmux-play-214)', () => {
       player,
       runtimeCaptain,
       runtimePlayer,
-      invalidCaptain,
+      codexCaptain,
       invalidPlayer,
       invalidRuntimeCaptain,
       invalidRuntimePlayer,
@@ -347,7 +345,7 @@ type SubagentEffortMap<T> = {
 
 type ExpectedSubagentEffortMap = {
   claude: ClaudeSubagentEffort | undefined;
-  codex: undefined;
+  codex: CodexSubagentEffort | undefined;
   gemini: undefined;
   kimi: undefined;
   opencode: undefined;
@@ -368,7 +366,7 @@ describe('tmux-play subagent-effort types (tmux-play-214)', () => {
     }>();
   });
 
-  it('accepts Claude roles and rejects ultracode and every other adapter', () => {
+  it('accepts Claude and Codex roles and rejects orchestration efforts and unsupported adapters', () => {
     const captain = {
       from: '@example/captain',
       adapter: 'claude',
@@ -392,8 +390,9 @@ describe('tmux-play subagent-effort types (tmux-play-214)', () => {
     const invalidPlayer: PlayerConfig = {
       id: 'reviewer',
       adapter: 'codex',
-      // @ts-expect-error - a Codex player has no subagent effort
-      subagentEffort: 'low',
+      subagentModel: 'inherit',
+      // @ts-expect-error - ultra is never a subagent effort
+      subagentEffort: 'ultra',
     };
     const invalidRuntimeCaptain: RuntimeCaptainConfig = {
       adapter: 'gemini',

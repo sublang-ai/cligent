@@ -264,8 +264,8 @@ When `run(prompt, options)` invokes SDK `runStreamed()`, the adapter shall selec
 
 | Prepared attachments | SDK input                                                                                                                                                                    |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| none                 | original `prompt` string unchanged                                                                                                                                           |
-| one or more          | an array containing `{ type: 'text', text: prompt }` followed by one `{ type: 'local_image', path }` entry per attachment in caller order, using each prepared absolute path |
+| none                 | prompt composed under [[codex-88](#codex-88)], unchanged when tuning is omitted                                                                                                                                           |
+| one or more          | an array containing `{ type: 'text', text }` with the prompt composed under [[codex-88](#codex-88)], followed by one `{ type: 'local_image', path }` entry per attachment in caller order, using each prepared absolute path |
 
 ### codex-69
 
@@ -442,6 +442,33 @@ When a run selects `nativeSkills: false` [[skills-10](../skills.md#skills-10)], 
 | a `skills.config` override longer than 131,071 UTF-8 bytes, which with a terminator fill the 32 pages of 4 KiB that Linux allows one argument string [[20]], or on Windows longer than 16,000 UTF-8 bytes, under half the 32,767 characters of its command line [[21]] | reject before managed-browser preparation, any plugin root, or SDK invocation, naming `nativeSkills`, the number of native skills, and the bound, so that no host refuses to start the runtime |
 | plugin skills, the run's `cligent:<name>` [[codex-75](#codex-75)] included, and the user configuration's own `skills.config` rules | unchanged, the runtime applying the run's rules after the user's |
 | caller abort before or during enumeration | the interrupted terminal [[codex-69](#codex-69)] selects for preparation, without a plugin root or SDK invocation |
+
+### Subagent Tuning
+
+### codex-87
+
+When the adapter maps accepted `subagentModel` and `subagentEffort` selections [[engine-91](../engine.md#engine-91)], [[engine-97](../engine.md#engine-97)], it shall compose this native constructor configuration while preserving unrelated configuration and native agent enablement, per [DR-044](../../decisions/044-codex-subagent-tuning.md) and [[22]]:
+
+| Selection | Added `CodexOptions.config.agents` defaults |
+| --- | --- |
+| named model | `default_subagent_model` is the exact supplied string |
+| `inherit` and non-blank parent `model` supplied | `default_subagent_model` is that exact parent model |
+| `inherit` and parent model unknown | omit `default_subagent_model`, leaving native parent inheritance |
+| effort supplied beside a model selection | `default_subagent_reasoning_effort` is that exact effort |
+| effort omitted | omit the effort default |
+| model selection omitted | add neither default |
+
+These defaults preserve native explicit-spawn precedence and subsequent role-defined model or effort overrides; they do not enforce runtime-wide settings.
+
+### codex-88
+
+When the adapter prepares the outbound prompt for any call, including resume, it shall compose a delegation directive exactly when `subagentModel` is present, preserving the caller's prompt and attachment order under [[codex-67](#codex-67)]:
+
+- scope the directive to this turn and name the selected model or the parent model for `inherit`, instructing explicit model selection at spawn;
+- name the pinned effort when supplied and instruct its explicit selection at spawn, otherwise leave effort to the player per task;
+- require a fresh spawn (`fork_context=false`) for a different model or effort and no model or effort overrides on a full-context fork;
+- honor native explicit-spawn precedence and role-defined overrides rather than claiming runtime-wide enforcement;
+- delegate only fully specified, tightly bounded, fine-grained work, retaining deep thinking, reasoning, and design, briefing each delegate fully, and verifying its result before use.
 
 ## Internal Behavior
 
@@ -837,6 +864,14 @@ When [the direct SDK probe](../../../scripts/verify-codex-sdk.mjs) uses a POSIX 
 
 When [the native configuration probe](../../../scripts/verify-codex-native-config.mjs) runs through the installed SDK and native Codex against a scripted local provider, verification shall compare inherited and explicitly overridden legacy/modern profiles using actual file and network operations, report native approval differences by platform, call an MCP server inherited from the fixture configuration, and assert unchanged fixture configuration files [[codex-31](#codex-31)], [[codex-4](#codex-4)], [[codex-32](#codex-32)].
 
+### codex-89
+
+When integration checks execute fresh and resumed calls through the installed SDK and a recording executable, verification shall assert the named-model, known-parent `inherit`, unknown-parent `inherit`, every accepted pinned-effort, omitted-effort, and untuned cases of native defaults [[codex-87](#codex-87)], and the corresponding outbound directives, caller prompt preservation, full-context versus fresh-spawn guidance, native precedence disclosure, and attachment ordering [[codex-88](#codex-88)], [[codex-67](#codex-67)].
+
+### codex-90
+
+When acceptance checks execute the installed SDK and native Codex against a loopback Responses provider in isolated homes without provider credentials, verification shall observe a real fresh child using the configured subagent model and effort, an explicitly overridden fresh child retaining native spawn precedence, and unchanged parent model and effort [[codex-87](#codex-87)], together with the parent prompt’s native `fork_context=false` directive [[codex-88](#codex-88)].
+
 ## References
 
 [1]: https://github.com/openai/codex/blob/main/sdk/typescript/README.md 'Codex TypeScript SDK'
@@ -861,3 +896,5 @@ When [the native configuration probe](../../../scripts/verify-codex-native-confi
 [19]: https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/config/src/skills_config.rs "Codex 0.159.0 skills.config rules"
 [20]: https://man7.org/linux/man-pages/man2/execve.2.html "Linux execve: each argument string limited to 32 pages, MAX_ARG_STRLEN"
 [21]: https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw "Windows CreateProcessW: a command line of at most 32,767 characters"
+
+[22]: https://learn.chatgpt.com/docs/agent-configuration/subagents "Codex subagent defaults and native precedence"

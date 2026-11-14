@@ -377,14 +377,15 @@ export interface AgentOptions<
   effort?: E;
   fastMode?: FM;
   /**
-   * The model every subagent of the run uses, per engine-91: a model ID or
+   * The model requested for delegation, per engine-91: a model ID or
    * alias, or the literal `'inherit'` for the run's own model. Adapter-scoped:
-   * only adapters binding `SM` to `string` accept it.
+   * Claude forces the model; Codex sets the native spawn default.
    */
   subagentModel?: SM;
   /**
    * The effort the run's subagents use, per engine-97; on Claude the
-   * built-in Explore and Plan keep the run's own. Requires `subagentModel`;
+   * built-in Explore and Plan keep the run's own. Codex sets the native
+   * spawn effort default. Requires `subagentModel`;
    * when omitted with it, the agent chooses an effort per task.
    * Adapter-scoped: only adapters binding `SE` accept it.
    */

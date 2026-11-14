@@ -90,7 +90,10 @@ export {
   isSubagentModelSupported,
   assertSubagentModelSupported,
 } from './subagent-model.js';
-export type { ClaudeSubagentEffort } from './subagent-model.js';
+export type {
+  ClaudeSubagentEffort,
+  CodexSubagentEffort,
+} from './subagent-model.js';
 
 export {
   EFFORT_SUPPORT,

@@ -5,6 +5,7 @@
 
 ## Status
 
+Amended by [DR-044](044-codex-subagent-tuning.md): Codex supports the shared tuning options through native defaults and per-call delegation instructions, preserving native spawn and role precedence.
 Accepted (2026-09-30).
 Amends [DR-021](021-agent-runtime-fast-mode.md) in nothing; reuses its adapter-scoped option pattern.
 Amends the Claude query preparation of [[claude-code-34](../packages/adapters/claude-code.md#claude-code-34)]: the per-run environment clone may carry two Cligent-set variables.
