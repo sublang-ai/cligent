@@ -243,7 +243,7 @@ process.stdin.on('end', () => {
         if ('subagentModel' in options) {
           expect(recorded.input).toMatch(/bound(?:ed| tightly)/i);
           expect(recorded.input).toMatch(/^For this turn,/);
-          expect(recorded.input).toContain('fork_context=false');
+          expect(recorded.input).toContain('fresh-context option advertised by the spawn tool');
           expect(recorded.input).toMatch(/full.context/i);
           expect(recorded.input).toMatch(/role/i);
           expect(recorded.input).toMatch(/verif/i);

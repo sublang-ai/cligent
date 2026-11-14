@@ -241,10 +241,19 @@ const DEFAULT_ROLE_BY_ADAPTER: {
   [A in PlayerAdapterName]: {
     readonly model?: string;
     readonly effort?: EffortForAgent<A>;
+    readonly subagentModel?: SubagentModelForAgent<A>;
   };
 } = {
-  claude: { model: 'claude-opus-5-5', effort: 'xhigh' },
-  codex: { model: 'gpt-6.1-sol', effort: 'xhigh' },
+  claude: {
+    model: 'claude-fable-5-2',
+    effort: 'xhigh',
+    subagentModel: 'claude-opus-5-5',
+  },
+  codex: {
+    model: 'gpt-6-astra',
+    effort: 'xhigh',
+    subagentModel: 'gpt-6.1-sol',
+  },
   gemini: {},
   kimi: {},
   opencode: {},
@@ -304,6 +313,9 @@ function defaultCaptainConfig<A extends PlayerAdapterName>(
     adapter,
     ...(role.model !== undefined ? { model: role.model } : {}),
     ...(role.effort !== undefined ? { effort: role.effort } : {}),
+    ...(role.subagentModel !== undefined
+      ? { subagentModel: role.subagentModel }
+      : {}),
     instruction: 'Coordinate players and answer the Boss.',
     permissions: { mode: 'auto' },
     options: {},
@@ -319,6 +331,9 @@ function defaultPlayerConfig<A extends PlayerAdapterName>(
     adapter,
     ...(role.model !== undefined ? { model: role.model } : {}),
     ...(role.effort !== undefined ? { effort: role.effort } : {}),
+    ...(role.subagentModel !== undefined
+      ? { subagentModel: role.subagentModel }
+      : {}),
     instruction:
       `You are the ${adapter} player in a fanout Captain session. ` +
       'Provide an independent answer.',

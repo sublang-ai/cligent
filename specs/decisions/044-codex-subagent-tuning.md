@@ -23,7 +23,7 @@ A supplied effort becomes `agents.default_subagent_reasoning_effort`; omission a
 These settings are native defaults, never runtime-wide enforcement: explicit spawn choices and role-defined overrides retain native precedence [[1]].
 
 Every tuned outbound prompt, fresh or resumed, instructs the player to explicitly select the named model or parent model at spawn, and the pinned effort when supplied, while honoring native role overrides.
-It tells the player to use a fresh spawn (`fork_context=false`) for a different model or effort and to pass no overrides on a full-context fork.
+It tells the player to use a fresh spawn for a different model or effort and to pass no overrides on a full-context fork; [DR-046](046-primary-and-subagent-defaults.md) makes the fresh-context wording independent of the advertised spawn schema.
 The player delegates only fully specified, bounded, fine-grained work, retains deep reasoning and design, briefs the delegate fully, and verifies its result.
 Untuned calls add neither defaults nor the directive.
 Native agent enablement, unrelated agent settings, and configuration files remain untouched.

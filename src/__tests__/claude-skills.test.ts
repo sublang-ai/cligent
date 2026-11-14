@@ -100,7 +100,9 @@ import { join, relative } from 'node:path';
 import { createInterface } from 'node:readline';
 const [recording, mode, ...args] = process.argv.slice(2);
 const flag = args.indexOf('--plugin-dir-no-mcp');
-const plugin = flag === -1 ? undefined : args[flag + 1];
+const plugin = flag === -1
+  ? args.find((arg) => arg.startsWith('--plugin-dir-no-mcp='))?.slice('--plugin-dir-no-mcp='.length)
+  : args[flag + 1];
 const walk = (dir) => readdirSync(dir).sort().flatMap((name) => {
   const path = join(dir, name);
   const stats = lstatSync(path);
@@ -424,7 +426,9 @@ describe('Claude run skills through the installed SDK', () => {
         for (const [index, launch] of [fresh!, resumed!].entries()) {
           // Exactly one local plugin, MCP discovery skipped (claude-code-70).
           expect(
-            launch.args.filter((arg) => arg.startsWith('--plugin-dir')),
+            launch.args
+              .filter((arg) => arg.startsWith('--plugin-dir'))
+              .map((arg) => arg.split('=')[0]),
           ).toEqual(['--plugin-dir-no-mcp']);
           const plugin = launch.plugin!;
           pluginRoots.push(plugin.root);
@@ -639,7 +643,7 @@ describe('Claude run skills through the installed SDK', () => {
     });
     expect(payloads<DonePayload>(events, 'done')[0]!.status).toBe('error');
     const [launch] = await launches(space);
-    expect(launch!.args).toContain('--plugin-dir-no-mcp');
+    expect(flagValue(launch!.args, '--plugin-dir-no-mcp')).toBeDefined();
     const root = flagValue(launch!.args, '--plugin-dir-no-mcp')!;
     await expectRemoved(space, [root]);
 

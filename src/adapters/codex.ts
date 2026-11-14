@@ -1820,7 +1820,7 @@ export class CodexAdapter implements AgentAdapter<
           : `use ${options.subagentEffort} reasoning effort`;
       const directive =
         `For this turn, delegate to subagents using ${model} and ${effort}. ${DELEGATION_GUIDANCE} ` +
-        'For a different model or effort, start a fresh subagent (fork_context=false) with the selected model and effort. ' +
+        'For a different model or effort, start a fresh subagent without passing conversation history, using the fresh-context option advertised by the spawn tool, and select the model and effort. ' +
         'Choose a role whose model and effort are compatible with the selection, since role settings take precedence. ' +
         'A full-context fork inherits both, so omit spawn overrides on that fork.';
       prompt = `${directive}\n\n${prompt}`;

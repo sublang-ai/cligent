@@ -299,27 +299,24 @@ describe('tmux-play config loading', () => {
       'claude',
       'codex',
     ]);
-    expect(loaded.config.captain.model).toBe('claude-opus-5-5');
+    expect(loaded.config.captain.model).toBe('claude-fable-5-2');
     expect(loaded.config.captain.effort).toBe('xhigh');
     expect(loaded.config.players.map((player) => player.model)).toEqual([
-      'claude-opus-5-5',
-      'gpt-6.1-sol',
+      'claude-fable-5-2',
+      'gpt-6-astra',
     ]);
     expect(loaded.config.players.map((player) => player.effort)).toEqual([
       'xhigh',
       'xhigh',
     ]);
     expect(loaded.config.captain).not.toHaveProperty('fastMode');
-    expect(loaded.config.players.every((player) => !('fastMode' in player))).toBe(
-      true,
-    );
-    expect(loaded.config.captain).not.toHaveProperty('subagentModel');
+    expect(
+      loaded.config.players.every((player) => !('fastMode' in player)),
+    ).toBe(true);
+    expect(loaded.config.captain.subagentModel).toBe('claude-opus-5-5');
     expect(loaded.config.captain).not.toHaveProperty('subagentEffort');
     expect(
-      loaded.config.players.every(
-        (player) =>
-          !('subagentModel' in player) && !('subagentEffort' in player),
-      ),
+      loaded.config.players.every((player) => !('subagentEffort' in player)),
     ).toBe(true);
     expect(loaded.config.players.map((player) => player.instruction)).toEqual([
       'You are the claude player in a fanout Captain session. Provide an independent answer.',
@@ -357,7 +354,12 @@ describe('tmux-play config loading', () => {
     expect(homeSource).toContain('turn_finished: desktop');
     expect(homeSource).not.toContain('turn_aborted:');
     expect(homeSource).not.toContain('fastMode:');
-    expect(homeSource).not.toContain('subagentModel:');
+    expect(loaded.config.players.map((player) => player.subagentModel)).toEqual([
+      'claude-opus-5-5',
+      'gpt-6.1-sol',
+    ]);
+    expect(homeSource).toContain('subagentModel: claude-opus-5-5');
+    expect(homeSource).toContain('subagentModel: gpt-6.1-sol');
     expect(homeSource).not.toContain('subagentEffort:');
   });
 
@@ -379,7 +381,7 @@ describe('tmux-play config loading', () => {
 
     expect(notices).toEqual([['codex']]);
     expect(loaded.config.captain.adapter).toBe('codex');
-    expect(loaded.config.captain.model).toBe('gpt-6.1-sol');
+    expect(loaded.config.captain.model).toBe('gpt-6-astra');
     expect(loaded.config.players.map((player) => player.adapter)).toEqual([
       'codex',
     ]);

@@ -16,6 +16,12 @@ import { Cligent } from '../cligent.js';
 import * as mcp from '../mcp.js';
 import type { AgentEvent, AgentOptions } from '../types.js';
 
+function flagValue(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  if (index !== -1) return args[index + 1];
+  return args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
+}
+
 const roots: string[] = [];
 const SESSION_ID = '81b5a8e2-1fc9-462e-b548-f8b9c99d3f31';
 const IMAGE_DATA =
@@ -295,10 +301,10 @@ describe('Claude MCP and media through the installed SDK', () => {
     expect(JSON.parse(args[args.indexOf('--mcp-config') + 1]!)).toEqual({
       mcpServers: servers,
     });
-    expect(args[args.indexOf('--allowedTools') + 1]).toBe(
+    expect(flagValue(args, '--allowedTools')).toBe(
       'mcp__browser__*,mcp__remote__*',
     );
-    expect(args[args.indexOf('--disallowedTools') + 1]).toBe(
+    expect(flagValue(args, '--disallowedTools')).toBe(
       'mcp__browser__delete_profile,AskUserQuestion',
     );
     expect(JSON.parse(args[args.indexOf('--settings') + 1]!)).toMatchObject({

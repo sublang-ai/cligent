@@ -79,7 +79,8 @@ notifications:
 captain:
   from: '@sublang/cligent/captains/fanout'
   adapter: claude
-  model: claude-opus-5-5
+  model: claude-fable-5-2
+  subagentModel: claude-opus-5-5
   effort: xhigh
   instruction: Coordinate the players and answer the Boss.
   permissions:
@@ -88,11 +89,15 @@ captain:
 players:
   - id: claude
     adapter: claude
+    model: claude-fable-5-2
+    subagentModel: claude-opus-5-5
     effort: xhigh
     permissions:
       mode: auto
   - id: codex
     adapter: codex
+    model: gpt-6-astra
+    subagentModel: gpt-6.1-sol
     effort: xhigh
     permissions:
       mode: auto

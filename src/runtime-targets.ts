@@ -102,22 +102,13 @@ export const AGENT_RUNTIME_TARGETS: Readonly<
     Object.freeze({
       kind: 'peer' as const,
       package: '@anthropic-ai/claude-agent-sdk',
-      repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.284',
-      // The first release whose baked-in model catalog, which Claude Code
-      // calls its source of truth for per-model IDs and metadata, carries
-      // `claude-sonnet-5-5`, the latest Sonnet: 0.3.283 lacks the entry and
-      // still maps the `sonnet` alias to `claude-sonnet-5`, and 0.3.284, the
-      // next published release, carries it with its low-to-max efforts and
-      // adaptive thinking and makes it the `sonnet` default. The other
-      // latest lines arrived earlier: `claude-opus-5-5` in 0.3.280 (0.3.278
-      // lacks it and 0.3.279 was never published), `claude-fable-5-1` in
-      // 0.3.257 (0.3.252 lacks it and 0.3.253 through 0.3.256 were never
-      // published), while 0.3.251 already carries `claude-haiku-4-5`.
-      // Bisected against the published darwin-arm64 and linux-x64 platform
-      // binaries, because the catalog is data inside the bundled executable
-      // rather than something the SDK's API surface reveals.
-      supportedFrom: '0.3.284',
-      tested: '0.3.284',
+      repairSpec: '@anthropic-ai/claude-agent-sdk@0.3.325',
+      // Fable 5.2 first appears in the bundled native catalog in 0.3.321:
+      // the preceding published SDK 0.3.319 carries Fable 5.1 only; 0.3.320
+      // was not published. Inspected the official darwin-arm64 binaries.
+      // 0.3.325 retains both Fable 5.2 and the Opus 5.5 subagent model.
+      supportedFrom: '0.3.321',
+      tested: '0.3.325',
     }),
   ]),
   codex: Object.freeze([

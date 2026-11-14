@@ -466,7 +466,7 @@ When the adapter prepares the outbound prompt for any call, including resume, it
 
 - scope the directive to this turn and name the selected model or the parent model for `inherit`, instructing explicit model selection at spawn;
 - name the pinned effort when supplied and instruct its explicit selection at spawn, otherwise leave effort to the player per task;
-- require a fresh spawn (`fork_context=false`) for a different model or effort and no model or effort overrides on a full-context fork;
+- require a fresh subagent without conversation history, using the fresh-context option advertised by the spawn tool, for a different model or effort and no model or effort overrides on a full-context fork;
 - honor native explicit-spawn precedence and role-defined overrides rather than claiming runtime-wide enforcement;
 - delegate only fully specified, tightly bounded, fine-grained work, retaining deep thinking, reasoning, and design, briefing each delegate fully, and verifying its result before use.
 
@@ -870,7 +870,7 @@ When integration checks execute fresh and resumed calls through the installed SD
 
 ### codex-90
 
-When acceptance checks execute the installed SDK and native Codex against a loopback Responses provider in isolated homes without provider credentials, verification shall observe a real fresh child using the configured subagent model and effort, an explicitly overridden fresh child retaining native spawn precedence, and unchanged parent model and effort [[codex-87](#codex-87)], together with the parent prompt’s native `fork_context=false` directive [[codex-88](#codex-88)].
+When acceptance checks execute the installed SDK and native Codex against a loopback Responses provider in isolated homes without provider credentials, verification shall observe a real fresh GPT-6.1 Sol child using configured low effort under both a GPT-6 Astra parent with the collaboration spawn schema and a legacy parent with the multi-agent spawn schema, an explicitly overridden fresh child retaining native spawn precedence, and unchanged parent model and effort [[codex-87](#codex-87)], together with the parent prompt’s schema-neutral fresh-context directive [[codex-88](#codex-88)].
 
 ## References
 

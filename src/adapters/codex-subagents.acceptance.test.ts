@@ -32,6 +32,7 @@ interface ProviderRequest {
     type: string;
     call_id?: string;
     output?: string;
+    tools?: ProviderRequest['tools'];
     content?: Array<{ text?: string }>;
   }>;
   tools: Array<{
@@ -42,9 +43,16 @@ interface ProviderRequest {
   client_metadata?: Record<string, string>;
 }
 
-for (const override of [false, true]) {
+const parentProfiles = [
+  { model: 'gpt-6-astra', namespace: 'collaboration' },
+  { model: 'gpt-5.4', namespace: 'multi_agent_v1' },
+] as const;
+
+for (const [profile, override] of parentProfiles.flatMap((profile) =>
+  [false, true].map((override) => [profile, override] as const),
+)) {
   acceptanceIt(
-    `runs a fresh native Codex child with ${override ? 'explicit spawn overrides' : 'adapter defaults'} (codex-90)`,
+    `runs a fresh native ${profile.model} child with ${override ? 'explicit spawn overrides' : 'adapter defaults'} (codex-90)`,
     async () => {
       expect(
         launcher,
@@ -94,12 +102,14 @@ for (const override of [false, true]) {
                   id: 'fc_spawn',
                   type: 'function_call',
                   call_id: 'call_spawn',
-                  namespace: 'multi_agent_v1',
+                  namespace: profile.namespace,
                   name: 'spawn_agent',
                   status: 'completed',
                   arguments: JSON.stringify({
                     message: CHILD_PROMPT,
-                    fork_context: false,
+                    ...(profile.namespace === 'collaboration'
+                      ? { task_name: 'child', fork_turns: 'none' }
+                      : { fork_context: false }),
                     ...(override
                       ? { model: 'gpt-6-sol', reasoning_effort: 'medium' }
                       : {}),
@@ -147,7 +157,11 @@ for (const override of [false, true]) {
               object: 'response',
               status: 'completed',
               output: [item],
-              usage: { input_tokens: 10, output_tokens: 10, total_tokens: 20 },
+              usage: {
+                input_tokens: 10,
+                output_tokens: 10,
+                total_tokens: 20,
+              },
             },
           });
           response.end();
@@ -210,9 +224,9 @@ for (const override of [false, true]) {
         });
         for await (const event of new Cligent(adapter, {
           cwd: root,
-          model: 'gpt-5.4',
+          model: profile.model,
           effort: 'high',
-          subagentModel: 'gpt-6-luna',
+          subagentModel: 'gpt-6.1-sol',
           subagentEffort: 'low',
         }).run(PARENT_PROMPT, { abortSignal: controller.signal }))
           events.push(event);
@@ -249,24 +263,39 @@ for (const override of [false, true]) {
         expect(children, diagnostics).toHaveLength(1);
         for (const parent of parents)
           expect(parent).toMatchObject({
-            model: 'gpt-5.4',
+            model: profile.model,
             reasoning: { effort: 'high' },
           });
         expect(children[0], diagnostics).toMatchObject({
-          model: override ? 'gpt-6-sol' : 'gpt-6-luna',
+          model: override ? 'gpt-6-sol' : 'gpt-6.1-sol',
           reasoning: { effort: override ? 'medium' : 'low' },
         });
-        const spawn = requests[0]?.tools
+        const tools =
+          profile.namespace === 'collaboration'
+            ? requests[0]?.input.find(
+                (item) => item.type === 'additional_tools',
+              )?.tools
+            : requests[0]?.tools;
+        const spawn = tools
           .flatMap((tool) => tool.tools ?? [])
           .find((tool) => tool.name === 'spawn_agent');
         expect(spawn?.parameters, diagnostics).toMatchObject({
-          properties: { fork_context: { type: 'boolean' } },
+          properties:
+            profile.namespace === 'collaboration'
+              ? { fork_turns: { type: 'string' } }
+              : { fork_context: { type: 'boolean' } },
         });
-        const parentInput = JSON.stringify(parents[0]?.input);
+        const parentInput = JSON.stringify(
+          parents[0]?.input.filter((item) =>
+            JSON.stringify(item).includes(PARENT_PROMPT),
+          ),
+        );
         expect(parentInput).toContain(PARENT_PROMPT);
-        expect(parentInput).toContain('fork_context=false');
+        expect(parentInput).toContain(
+          'fresh-context option advertised by the spawn tool',
+        );
         expect(parentInput).not.toContain('fork_turns');
-        expect(parentInput).toContain('gpt-6-luna');
+        expect(parentInput).toContain('gpt-6.1-sol');
         expect(parentInput).toContain('low reasoning effort');
         expect(JSON.stringify(children[0]?.input)).toContain(CHILD_PROMPT);
         expect(JSON.stringify(children[0]?.input)).not.toContain('PARENT_ONLY');
@@ -276,7 +305,7 @@ for (const override of [false, true]) {
             item.call_id === 'call_spawn',
         )?.output;
         expect(JSON.parse(result ?? '{}'), diagnostics).toHaveProperty(
-          'agent_id',
+          profile.namespace === 'collaboration' ? 'task_name' : 'agent_id',
         );
         expect(events.at(-1)?.payload, diagnostics).toMatchObject({
           status: 'success',

@@ -217,7 +217,9 @@ function settingsOf(args: string[]): Record<string, unknown> {
 // select (claude-code-9, claude-code-70, claude-code-85). A plugin root is a
 // fresh directory per run, so only its flag and parent are compared.
 function selectedControls(args: string[], space: Workspace) {
-  const pluginFlags = args.filter((arg) => arg.startsWith('--plugin-dir'));
+  const pluginFlags = args
+    .filter((arg) => arg.startsWith('--plugin-dir'))
+    .map((arg) => arg.split('=')[0]);
   const pluginRoot = flagValue(args, '--plugin-dir-no-mcp');
   return {
     tools: flagValue(args, '--tools'),

@@ -15,7 +15,7 @@ npm install @sublang/cligent
 Each adapter that uses an SDK has an optional peer dependency. Install only the ones you need:
 
 ```bash
-npm install "@anthropic-ai/claude-agent-sdk@>=0.3.284"   # Claude Code
+npm install "@anthropic-ai/claude-agent-sdk@>=0.3.321"   # Claude Code
 npm install "@openai/codex-sdk@>=0.159.1"                 # Codex CLI
 npm install "@opencode-ai/sdk@>=1.18.29"                  # OpenCode
 # Gemini CLI uses a child process — no SDK required
@@ -475,8 +475,9 @@ native parent inheritance. A pinned effort travels as
 `agents.default_subagent_reasoning_effort`. Each tuned outbound prompt,
 including resumed calls, tells the player to explicitly select the named or
 parent model and any pinned effort when spawning. A different model or effort
-requires a fresh spawn (`fork_context=false`); a full-context fork carries no
-model or effort override. These are defaults and instructions: native explicit
+requires a fresh subagent without conversation history, using the fresh-context
+option advertised by the spawn tool; a full-context fork carries no model or
+effort override. These are defaults and instructions: native explicit
 spawn settings override defaults, and custom role model or effort settings
 retain their native precedence. The defaults do not enforce settings across
 every subagent. See the [official Codex subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents).

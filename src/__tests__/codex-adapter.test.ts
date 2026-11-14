@@ -3732,7 +3732,7 @@ describe('CodexAdapter', () => {
       expect(receivedPrompt).toMatch(/delegat/i);
       expect(receivedPrompt).toMatch(/bound(?:ed| tightly)/i);
       expect(receivedPrompt).toContain('selected-child');
-      expect(receivedPrompt).toContain('fork_context=false');
+      expect(receivedPrompt).toContain('fresh-context option advertised by the spawn tool');
       expect(receivedPrompt).toMatch(/\n\nKeep the user prompt intact\.$/);
       expect(constructed?.config).not.toHaveProperty('developer_instructions');
       expect(constructed?.config).not.toHaveProperty('agents.enabled');

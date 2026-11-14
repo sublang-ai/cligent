@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Codex delegation instructions use the spawn tool's advertised fresh-context option, supporting both Astra collaboration tools and legacy multi-agent tools.
+- Generated tmux-play roles use Claude Fable 5.2 with Opus 5.5 subagents and GPT-6 Astra with GPT-6.1 Sol subagents. Existing configurations and omitted SDK options retain their behavior.
+- Claude Agent SDK now requires 0.3.321 for its bundled Fable 5.2 catalog; development and repair installs use verified 0.3.325. This runtime floor change requires a minor release.
 - Ordinary Claude effort selections preserve native workflow defaults instead
   of implicitly disabling Ultracode; an explicit boolean overrides the legacy
   effort shorthand independently of reasoning effort.

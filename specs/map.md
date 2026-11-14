@@ -75,6 +75,8 @@ meta.md       The spec of specs
 
 | [DR-045](decisions/045-independent-claude-ultracode.md) | 045-independent-claude-ultracode.md | Independent Claude Ultracode boolean, legacy effort shorthand, native defaults, and transport support |
 
+| [DR-046](decisions/046-primary-and-subagent-defaults.md) | 046-primary-and-subagent-defaults.md | Shipped parent/subagent pins and schema-neutral Codex fresh-context instructions |
+
 ## Packages
 
 | File | Summary |
