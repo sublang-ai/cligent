@@ -5,15 +5,15 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getSessionMessages, query } from '@anthropic-ai/claude-agent-sdk';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
 import type { AgentEvent, AgentOptions } from '../types.js';
 
 // claude-code-93: real native SDK/CLI against a loopback Messages fixture.
-// Fresh omission follows current defaults; resumed omission follows the last
-// actual primary model in the durable session, even through a fresh adapter.
+// Fresh omission follows current defaults; resumed omission delegates native
+// session selection and ANTHROPIC_MODEL overrides without reading history.
 // No credentials or paid requests occur.
 
 function streamReply(response: ServerResponse, model: string): void {
@@ -58,9 +58,11 @@ interface RunResult {
   token: string;
   initModel: string | undefined;
   requestModels: string[];
+  requestBetas: string[];
 }
 
-type DefaultSource = 'environment' | 'settings env' | 'settings model';
+type DefaultSource =
+  'environment' | 'settings env' | 'settings model' | 'settings context';
 
 const cases: Array<{
   source: DefaultSource;
@@ -90,12 +92,23 @@ const cases: Array<{
       return {};
     },
   },
+  {
+    source: 'settings context',
+    apply: async (configDir, value) => {
+      await writeFile(
+        join(configDir, 'settings.json'),
+        JSON.stringify({ model: value }),
+      );
+      return {};
+    },
+  },
 ];
 
 describe('Claude resume without a model', () => {
   let server: Server;
   let endpoint = '';
   let requests: string[] = [];
+  let betas: string[] = [];
 
   beforeAll(async () => {
     server = createServer(async (request, response) => {
@@ -112,7 +125,8 @@ describe('Claude resume without a model', () => {
       };
       const model = body.model ?? '';
       requests.push(model);
-      streamReply(response, model);
+      betas.push(String(request.headers['anthropic-beta'] ?? ''));
+      streamReply(response, 'service-reported-different-model');
     });
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -129,7 +143,7 @@ describe('Claude resume without a model', () => {
   });
 
   for (const { source, apply } of cases) {
-    it(`keeps the last observed primary model across defaults and adapters (${source})`, async () => {
+    it(`delegates omission to native selection across defaults and differing reply models (${source})`, async () => {
       const root = await mkdtemp(join(tmpdir(), 'cligent-resume-'));
       const home = join(root, 'home');
       const configDir = join(home, '.claude');
@@ -164,10 +178,11 @@ describe('Claude resume without a model', () => {
         };
         // Every turn starts a new SDK subprocess and a new adapter. The seam
         // only captures stderr; environment resolution sees the actual run env.
+        let sdkModel: string | undefined;
         const adapter = new ClaudeCodeAdapter({
           loadSdk: async () => ({
-            getSessionMessages,
             query(parameters) {
+              sdkModel = parameters.options?.model;
               return query({
                 ...parameters,
                 options: {
@@ -181,6 +196,7 @@ describe('Claude resume without a model', () => {
           }),
         });
         requests = [];
+        betas = [];
         const events: AgentEvent[] = [];
         const abort = new AbortController();
         const timer = setTimeout(() => abort.abort(), 60_000);
@@ -195,6 +211,7 @@ describe('Claude resume without a model', () => {
         } finally {
           clearTimeout(timer);
         }
+        expect(sdkModel).toBe(options.model);
         const done = events.find((event) => event.type === 'done');
         const init = events.find((event) => event.type === 'init');
         const diagnostics = JSON.stringify(
@@ -212,6 +229,7 @@ describe('Claude resume without a model', () => {
           initModel: (init?.payload as { reportedModel?: string } | undefined)
             ?.reportedModel,
           requestModels: [...requests],
+          requestBetas: [...betas],
         };
       };
 
@@ -220,16 +238,32 @@ describe('Claude resume without a model', () => {
       };
 
       try {
-        await setDefault('probe-default-a');
+        await setDefault(
+          source === 'settings context' ? 'opus[1m]' : 'probe-default-a',
+        );
         const fresh = await run({});
-        expect(fresh.requestModels).toEqual(['probe-default-a']);
-        expect(fresh.initModel).toBe('probe-default-a');
+
+        expect(fresh.requestModels).toEqual([
+          source === 'settings context' ? 'claude-opus-5-5' : 'probe-default-a',
+        ]);
+        if (source !== 'settings context')
+          expect(fresh.initModel).toBe('probe-default-a');
 
         await setDefault('probe-default-b');
         const first = await run({ resume: fresh.token });
         expect(first.token).toBe(fresh.token);
-        expect(first.requestModels).toEqual(['probe-default-a']);
-        expect(first.initModel).toBe('probe-default-a');
+        const firstExpected =
+          source === 'settings context'
+            ? 'claude-opus-5-5'
+            : source === 'settings model'
+              ? 'probe-default-a'
+              : 'probe-default-b';
+        expect(first.requestModels).toEqual([firstExpected]);
+        if (source !== 'settings context')
+          expect(first.initModel).toBe(firstExpected);
+        else {
+          expect(first.requestBetas).toEqual(fresh.requestBetas);
+        }
 
         const switched = await run({
           resume: fresh.token,
@@ -242,8 +276,12 @@ describe('Claude resume without a model', () => {
         await setDefault('probe-default-c');
         const second = await run({ resume: fresh.token });
         expect(second.token).toBe(fresh.token);
-        expect(second.requestModels).toEqual(['probe-explicit']);
-        expect(second.initModel).toBe('probe-explicit');
+        const secondExpected =
+          source === 'settings model' || source === 'settings context'
+            ? 'probe-explicit'
+            : 'probe-default-c';
+        expect(second.requestModels).toEqual([secondExpected]);
+        expect(second.initModel).toBe(secondExpected);
 
         const independent = await run({});
         expect(independent.token).not.toBe(fresh.token);

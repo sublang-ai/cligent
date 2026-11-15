@@ -200,11 +200,9 @@ When the adapter maps `AgentOptions` to SDK query options, it shall select the m
 | --- | --- |
 | explicit model | the caller's model, including on a resumed session |
 | omitted model, fresh session | omitted so the current native default applies |
-| omitted model, resumed session with an actual primary assistant model in durable history | the last such observed model, across adapter and process lifetimes, regardless of current environment or settings defaults |
-| omitted model, resumed session with no actual primary assistant model in durable history | omitted, retaining native resume on the same token without inventing an identifier |
+| omitted model, resumed session | omitted, delegating continuity and any `ANTHROPIC_MODEL` override from the environment or settings `env` to the native runtime on the same token |
 
-- A durable-history read error surfaced by the SDK propagates instead of starting a new session.
-- Subagent models and synthetic assistant identifiers do not establish the primary model.
+The adapter does not read session history or derive a request selection from service-reported model identifiers.
 
 ### claude-code-33
 
@@ -845,14 +843,18 @@ Where [[claude-code-219](#claude-code-219)]'s credential, retry, and skip precon
 
 ### claude-code-93
 
-Given the installed native Claude SDK and CLI, its real durable-history reader, a loopback model API fixture recording each request's `model`, and an isolated actual process environment, home, and configuration directory with fake credentials, when fresh adapters start an omitted-model session, resume it after changing defaults, explicitly switch its model, resume it again after another default change, and start an independent omitted-model session, acceptance verification shall assert for each source below that the resumed runs retain the original token and select first the last observed default model and then the explicit switch, while the independent session selects the current default [[claude-code-6](#claude-code-6)]:
+Given the installed native Claude SDK and CLI, a loopback API fixture whose reply model differs from the requested selection, and isolated environment, home and configuration, when fresh adapters start a session, resume after changing defaults, explicitly switch models, resume after another default change and start an independent session, acceptance verification shall assert omitted models reach the SDK unchanged, the original token is retained on resume and native selection follows this matrix [[claude-code-6](#claude-code-6)]:
 
-| Default source | Changed between runs |
+| Default source | Resumed omission |
 | --- | --- |
-| `ANTHROPIC_MODEL` in the process environment | the environment value |
-| `env.ANTHROPIC_MODEL` in the user `settings.json` | the settings value |
-| top-level `model` in the user `settings.json` | the settings value |
+| process `ANTHROPIC_MODEL` | current environment value |
+| user settings `env.ANTHROPIC_MODEL` | current settings environment value |
+| user settings top-level `model` | original native session selection, then the explicit switch |
+| user settings top-level `model: opus[1m]` | original request model and beta headers remain unchanged until an explicit switch; this fixture does not establish 1M context enablement |
 
+### claude-code-96
+
+Given the built adapter, installed real SDK and native binary, and executable Node 18.3.0 and 18.14.0 runtimes, when the packed-distributable probe imports and probes the adapter under both runtimes, verification shall assert importability below the SDK minimum [[claude-code-2](#claude-code-2)], the SDK manifest's declared minimum of 18.14.0 and availability false at 18.3.0 and true at 18.14.0 [[claude-code-13](#claude-code-13)].
 
 ### claude-code-95
 

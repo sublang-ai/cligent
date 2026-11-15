@@ -22,10 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Codex accepts `subagentModel` and `subagentEffort` in adapter options and tmux-play role and call settings. Native model and effort defaults accompany explicit delegation instructions on every tuned call, including resume. `inherit` selects the known parent model or omits the model default when unknown. Explicit spawn and role settings retain native precedence across fresh and full-history spawns. Untuned calls leave native settings and prompts unchanged. Export `CodexSubagentEffort`, excluding `ultra`.
 
+- The exported `defaultAgentModels(adapter, env, scope?)` selects model pairs using the caller’s environment and authorized user configuration, including the active Codex provider and base URL in `config.toml`. A server can supply a trusted seat-owned Codex home. Generated tmux-play roles use Claude Fable 5.2 with Opus 5.5 subagents and GPT-6 Astra with GPT-6.1 Sol subagents. Provider detection ignores `OPENAI_BASE_URL` and returns no pair for the retired top-level Codex `profile` selector. Hosts remain responsible for project and managed routes.
+
 ### Changed
 
+- Resumed Claude calls without an explicit model delegate selection to Claude Code. This reverses the 0.38.0 changelog entry: changing the top-level settings `model` alone keeps the session model. An `ANTHROPIC_MODEL` in the environment or settings `env` overrides it.
+
 - Codex lets the parent choose the history each delegated task needs and follow its advertised spawn options.
-- The exported `defaultAgentModels(adapter, env, scope?)` selects model pairs using the caller’s environment and authorized user configuration, including the active Codex provider and base URL in `config.toml`. A server can supply a trusted seat-owned Codex home. Generated tmux-play roles use Claude Fable 5.2 with Opus 5.5 subagents and GPT-6 Astra with GPT-6.1 Sol subagents. Existing configurations and omitted SDK options retain their behavior.
 - Claude Agent SDK now requires 0.3.321 for its bundled Fable 5.2 catalog; development and repair installs use verified 0.3.325, whose Node minimum is 18.14.0. Cligent itself retains its Node 18.3.0 floor.
 - When tools exclude the Agent tool, Claude omits child tuning and delegation instructions.
 - Ordinary Claude effort selections preserve native workflow defaults instead
@@ -34,8 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Codex default model selection ignores `OPENAI_BASE_URL`, which the native CLI does not use, and returns no pair for the retired top-level `profile` selector that the CLI rejects. Provider detection is limited to supplied environment and authorized user or seat settings; project and managed routing remains the host’s responsibility.
-- Resumed Claude calls without an explicit model retain the last actual primary model in durable session history, including after an explicit switch and across adapter or process restarts. Fresh calls still use current native defaults. When no primary model was recorded, the same native session resumes without an invented model; SDK history read errors propagate.
 - With `nativeSkills: false`, Claude hides the built-in plugin's `plugin-authoring` skill from subagents while preserving caller-provided skills and the plugin's other components.
 - The Codex Linux sandbox preflight uses the command accepted by the pinned underlying CLI so acceptance checks reach the sandbox.
 

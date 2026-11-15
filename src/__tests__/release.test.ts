@@ -544,10 +544,17 @@ describe('release preparation', () => {
     };
     expect(lockfile.version).toBe(chosenVersion);
     expect(lockfile.packages['']?.version).toBe(chosenVersion);
-    expect(evidence).toMatch(/^- \[x\] All unit tests pass — `npm test`:/m);
-    expect(evidence).toMatch(
-      /^- \[x\] `npm run smoke:release` passes locally:/m,
-    );
+    // A review candidate can defer these checks until its commit exists.
+    // A tagged preparation must have recorded both successes.
+    const checkmark = resolveCommit(projectRoot, `v${chosenVersion}`)
+      ? 'x'
+      : '[ x]';
+    for (const label of [
+      'All unit tests pass — `npm test`:',
+      '`npm run smoke:release` passes locally:',
+    ]) {
+      expect(evidence).toMatch(new RegExp(`^- \\[${checkmark}\\] ${label}`, 'm'));
+    }
     expect(evidence).toMatch(
       /^- \[x\] All release changes through the audited head are committed;/m,
     );

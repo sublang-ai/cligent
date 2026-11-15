@@ -694,7 +694,7 @@ describe('TmuxPlayRuntime', () => {
     });
   });
 
-  it('admits resumed Claude model omission for durable primary-model continuity', async () => {
+  it('forwards the Claude resume token and omits provider-default tuning', async () => {
     const records: TmuxPlayRecord[] = [];
     const observed: AgentOptions[] = [];
     const runtime = await createTmuxPlayRuntime({
@@ -706,7 +706,7 @@ describe('TmuxPlayRuntime', () => {
               effort: { kind: 'value', value: 'high' },
             },
           });
-          await context.callPlayer('dev.worker', 'reset model', {
+          await context.callPlayer('dev.worker', 'continue', {
             settings: {
               model: { kind: 'provider-default' },
               effort: { kind: 'provider-default' },
@@ -755,7 +755,7 @@ describe('TmuxPlayRuntime', () => {
       records
         .filter((record) => record.type === 'player_prompt')
         .map((record) => record.prompt),
-    ).toEqual(['seed', 'reset model']);
+    ).toEqual(['seed', 'continue']);
   });
 
   it('fails closed for resumed OpenCode default-model reset and clears omitted permissions with a concrete model', async () => {
