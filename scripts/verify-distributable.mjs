@@ -27,11 +27,13 @@ import { AGENT_RUNTIME_TARGETS } from '../dist/runtime-targets.js';
 
 const PACKAGE_NAME = '@sublang/cligent';
 const NODE_RUNTIME_VERSION = '18.3.0';
+const CLAUDE_NODE_RUNTIME_VERSION = '18.14.0';
 const TYPESCRIPT_VERSION = '5.4.5';
 const NODE_TYPES_VERSION = '18.19.24';
 const EXPECTED_RUNTIME_DEPENDENCIES = Object.freeze({
   '@agentclientprotocol/sdk': '1.4.0',
   '@playwright/mcp': '0.0.77',
+  'smol-toml': '1.9.1',
   yaml: '^2.8.4',
   zod: '4.6.6',
 });
@@ -844,11 +846,11 @@ if (!expectedVersion) {
 }
 if (!expectedSdkRoot) throw new Error('CLAUDE_PROBE_SDK_ROOT is required');
 if (
-  process.env.CLAUDE_PROBE_REQUIRE_NODE_FLOOR === '1' &&
-  process.versions.node !== '${NODE_RUNTIME_VERSION}'
+  process.env.CLAUDE_PROBE_EXPECTED_NODE &&
+  process.versions.node !== process.env.CLAUDE_PROBE_EXPECTED_NODE
 ) {
   throw new Error(
-    'expected Node ${NODE_RUNTIME_VERSION}, got ' + process.versions.node,
+    'expected Node ' + process.env.CLAUDE_PROBE_EXPECTED_NODE + ', got ' + process.versions.node,
   );
 }
 
@@ -888,9 +890,10 @@ if (installed !== expectedVersion) {
   );
 }
 const available = await new ClaudeCodeAdapter().isAvailable();
-if (!available) throw new Error('Claude adapter did not load its installed SDK');
+const expectedAvailable = process.env.CLAUDE_PROBE_EXPECTED_STATE === 'satisfied';
+if (available !== expectedAvailable) throw new Error('Unexpected Claude SDK availability on Node ' + process.version);
 const readiness = classifyRuntime(target, available);
-if (readiness.state !== 'satisfied' || readiness.installed !== expectedVersion) {
+if (readiness.state !== process.env.CLAUDE_PROBE_EXPECTED_STATE || readiness.installed !== expectedVersion) {
   throw new Error(
     'Claude readiness did not use SDK ' +
       expectedVersion +
@@ -912,7 +915,7 @@ if (resolvedSdkRoot !== expectedSdkRoot) {
   );
 }
 const description = describeRuntimeReadiness(readiness);
-if (!description.includes('@anthropic-ai/claude-agent-sdk ' + expectedVersion)) {
+if (available && !description.includes('@anthropic-ai/claude-agent-sdk ' + expectedVersion)) {
   throw new Error('Claude readiness names the wrong authority: ' + description);
 }
 process.stdout.write('claude SDK authority verified: ' + expectedVersion + '\\n');
@@ -1326,15 +1329,16 @@ function runClaudeRuntimeAuthorityProbe(options) {
     CLAUDE_PROBE_ADAPTER: options.adapterSpecifier,
     CLAUDE_PROBE_EXPECTED_VERSION: options.expectedVersion,
     CLAUDE_PROBE_SDK_ROOT: options.sdkRoot,
-    CLAUDE_PROBE_REQUIRE_NODE_FLOOR: options.nodeRuntimeFloor ? '1' : '',
+    CLAUDE_PROBE_EXPECTED_NODE: options.nodeVersion ?? '',
+    CLAUDE_PROBE_EXPECTED_STATE: options.expectedState ?? 'satisfied',
   };
-  const { stdout } = options.nodeRuntimeFloor
+  const { stdout } = options.nodeVersion
     ? run(
         npm,
         [
           'exec',
           '--yes',
-          `--package=node@${NODE_RUNTIME_VERSION}`,
+          `--package=node@${options.nodeVersion}`,
           '--',
           'node',
           probePath,
@@ -1452,14 +1456,12 @@ try {
     ),
     { zod: '^3.25.0 || ^4.0.0' },
   );
-  assertRuntimeDependencyShape(
-    'yaml',
-    readJson(join(consumerDirectory, 'node_modules', 'yaml', 'package.json')),
-  );
-  assertRuntimeDependencyShape(
-    'zod',
-    readJson(join(consumerDirectory, 'node_modules', 'zod', 'package.json')),
-  );
+  for (const name of ['smol-toml', 'yaml', 'zod']) {
+    assertRuntimeDependencyShape(
+      name,
+      readJson(join(consumerDirectory, 'node_modules', name, 'package.json')),
+    );
+  }
 
   const installedNodeTypes = readJson(
     join(consumerDirectory, 'node_modules', '@types', 'node', 'package.json'),
@@ -1607,20 +1609,27 @@ try {
   writeAmbientPackageDecoy(nestedRoot, '@openai/codex', {
     withCodexEntry: true,
   });
-  runClaudeRuntimeAuthorityProbe({
+  const nestedClaudeProbe = {
     rootSpecifier: '@sublang/cligent',
     adapterSpecifier: '@sublang/cligent/adapters/claude-code',
     expectedVersion: nestedClaudeSdkVersion,
     sdkRoot: nestedClaudeSdkRoot,
     cwd: codexNestedConsumerDirectory,
+  };
+  assertEqual(
+    readJson(join(nestedClaudeSdkRoot, 'package.json')).engines?.node,
+    `>=${CLAUDE_NODE_RUNTIME_VERSION}`,
+    'tested Claude SDK Node floor',
+  );
+  runClaudeRuntimeAuthorityProbe(nestedClaudeProbe);
+  runClaudeRuntimeAuthorityProbe({
+    ...nestedClaudeProbe,
+    nodeVersion: NODE_RUNTIME_VERSION,
+    expectedState: 'missing',
   });
   runClaudeRuntimeAuthorityProbe({
-    rootSpecifier: '@sublang/cligent',
-    adapterSpecifier: '@sublang/cligent/adapters/claude-code',
-    expectedVersion: nestedClaudeSdkVersion,
-    sdkRoot: nestedClaudeSdkRoot,
-    cwd: codexNestedConsumerDirectory,
-    nodeRuntimeFloor: true,
+    ...nestedClaudeProbe,
+    nodeVersion: CLAUDE_NODE_RUNTIME_VERSION,
   });
   runCodexResolutionProbe('nested-strategy consumer', {
     adapterSpecifier: '@sublang/cligent/adapters/codex',

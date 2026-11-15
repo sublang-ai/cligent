@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { cp, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -43,15 +43,15 @@ if (!process.argv.includes('--cligent-electron-host')) {
         main: 'scripts/verify-electron-host.mjs',
       }),
     );
+    const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+    // The native peers also need their platform packages; the Playwright MCP
+    // transport loads its browser packages from the unpacked dependency tree.
     for (const name of [
+      ...Object.keys(manifest.dependencies),
       '@openai',
       '@anthropic-ai',
-      '@playwright',
       'playwright',
       'playwright-core',
-      '@agentclientprotocol',
-      'zod',
-      'yaml',
     ])
       await cp(
         join(root, 'node_modules', name),

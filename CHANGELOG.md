@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-11-14
+
 ### Added
 
 - Select Claude Ultracode independently of effort with optional `ultracode`
@@ -24,11 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Codex lets the parent choose the history each delegated task needs and follow its advertised spawn options.
 - The exported `defaultAgentModels(adapter, env, scope?)` selects model pairs using the caller’s environment and authorized user configuration, including the active Codex provider and base URL in `config.toml`. A server can supply a trusted seat-owned Codex home. Generated tmux-play roles use Claude Fable 5.2 with Opus 5.5 subagents and GPT-6 Astra with GPT-6.1 Sol subagents. Existing configurations and omitted SDK options retain their behavior.
-- Claude Agent SDK now requires 0.3.321 for its bundled Fable 5.2 catalog; development and repair installs use verified 0.3.325. This runtime floor change requires a minor release.
+- Claude Agent SDK now requires 0.3.321 for its bundled Fable 5.2 catalog; development and repair installs use verified 0.3.325, whose Node minimum is 18.14.0. Cligent itself retains its Node 18.3.0 floor.
 - When tools exclude the Agent tool, Claude omits child tuning and delegation instructions.
 - Ordinary Claude effort selections preserve native workflow defaults instead
   of implicitly disabling Ultracode; an explicit boolean overrides the legacy
   effort shorthand independently of reasoning effort.
+
+### Security
+
+- Update the development MCP SDK’s HTTP dependencies to patched Hono 4.13.16
+  and @hono/node-server 2.1.6 in both maintainer lockfiles.
 
 ## [0.38.0] - 2026-11-03
 
@@ -917,7 +924,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/sublang-ai/cligent/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/sublang-ai/cligent/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/sublang-ai/cligent/compare/v0.36.2...v0.37.0
 [0.36.2]: https://github.com/sublang-ai/cligent/compare/v0.36.1...v0.36.2

@@ -277,7 +277,7 @@ Where the packed tarball and each exact optional agent SDK target are installed 
 | OpenCode    | `@opencode-ai/sdk`                     | the SDK's identity and version                                                                              |
 
 - in every nested case, the adapter loads through its subpath export [[package-7](#package-7)]; and
-- every nested case runs on the Node 18.3.0 runtime floor [[package-2](#package-2)] without an ESM loader resolution surface.
+- every nested case checks resolution on the Node 18.3.0 runtime floor [[package-2](#package-2)] without an ESM loader resolution surface, with Claude reporting the installed SDK version and unavailability below its own Node floor, then loading successfully on the tested Claude SDK’s declared Node minimum.
 
 ### package-201
 

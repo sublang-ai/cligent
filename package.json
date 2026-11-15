@@ -1,6 +1,6 @@
 {
   "name": "@sublang/cligent",
-  "version": "0.38.0",
+  "version": "0.39.0",
   "description": "Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini CLI, Kimi Code, OpenCode, and more)",
   "type": "module",
   "license": "Apache-2.0",
@@ -127,7 +127,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@hono/node-server": "2.1.5",
+      "@hono/node-server": "2.1.6",
       "eslint>minimatch": "11.0.3",
       "@eslint/config-array>minimatch": "11.0.3",
       "@typescript-eslint/typescript-estree>minimatch": "11.0.3"

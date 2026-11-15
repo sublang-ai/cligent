@@ -75,7 +75,8 @@ Cligent stores no credentials and never starts an authentication flow itself.
 
 Runtime and declaration requirements:
 
-- Node.js 18.3.0 or newer for Cligent itself; using the Kimi adapter also
+- Node.js 18.3.0 or newer for Cligent itself. The tested Claude Agent SDK
+  requires Node.js 18.14.0 or newer. Using the Kimi adapter also
   requires the external Kimi CLI to run under Node.js 22.19 or newer.
 - TypeScript 5.4 or newer when consuming the package declarations.
 
