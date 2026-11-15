@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of implicitly disabling Ultracode; an explicit boolean overrides the legacy
   effort shorthand independently of reasoning effort.
 
+### Fixed
+
+- Resumed Claude calls without an explicit model retain the last actual primary model in durable session history, including after an explicit switch and across adapter or process restarts. Fresh calls still use current native defaults. When no primary model was recorded, the same native session resumes without an invented model; SDK history read errors propagate.
+- With `nativeSkills: false`, Claude hides the built-in plugin's `plugin-authoring` skill from subagents while preserving caller-provided skills and the plugin's other components.
+- The Codex Linux sandbox preflight uses the command accepted by the pinned underlying CLI so acceptance checks reach the sandbox.
+
 ### Security
 
 - Update the development MCP SDK’s HTTP dependencies to patched Hono 4.13.16
