@@ -694,7 +694,7 @@ describe('TmuxPlayRuntime', () => {
     });
   });
 
-  it('admits a resumed Claude provider-default model by omitting the model', async () => {
+  it('admits resumed Claude model omission for durable primary-model continuity', async () => {
     const records: TmuxPlayRecord[] = [];
     const observed: AgentOptions[] = [];
     const runtime = await createTmuxPlayRuntime({

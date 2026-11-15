@@ -6,6 +6,7 @@
 ## Status
 
 Implemented and verified locally; review and integration pending.
+Historical intent shipped in 0.38.0; its resumed-model selection is superseded by [DR-048](../decisions/048-claude-durable-primary-model-continuity.md).
 
 ## Intent
 

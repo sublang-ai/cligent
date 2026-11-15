@@ -194,9 +194,17 @@ When attachment, MCP, or skill preparation is cancelled through the caller's `ab
 
 ### claude-code-6
 
-When the adapter maps `AgentOptions` to SDK query options, it shall pass through `cwd`, `model`, `maxTurns`, and `maxBudgetUsd` when present and leave their SDK values `undefined` when absent, while passing through only a non-empty `resume` and otherwise leaving it `undefined`:
+When the adapter maps `AgentOptions` to SDK query options, it shall select the model under [DR-048](../../decisions/048-claude-durable-primary-model-continuity.md) according to this matrix while passing through `cwd`, `maxTurns`, and `maxBudgetUsd` when present, leaving their SDK values `undefined` when absent, and passing through only a non-empty `resume`:
 
-- With `resume` and no `model`, Claude Code selects the default current when the resumed run starts — `ANTHROPIC_MODEL` from the environment or the settings `env`, else the settings `model`, else its built-in default — never the transcript's earlier model.
+| Model and session | SDK model |
+| --- | --- |
+| explicit model | the caller's model, including on a resumed session |
+| omitted model, fresh session | omitted so the current native default applies |
+| omitted model, resumed session with an actual primary assistant model in durable history | the last such observed model, across adapter and process lifetimes, regardless of current environment or settings defaults |
+| omitted model, resumed session with no actual primary assistant model in durable history | omitted, retaining native resume on the same token without inventing an identifier |
+
+- A durable-history read error surfaced by the SDK propagates instead of starting a new session.
+- Subagent models and synthetic assistant identifiers do not establish the primary model.
 
 ### claude-code-33
 
@@ -837,11 +845,11 @@ Where [[claude-code-219](#claude-code-219)]'s credential, retry, and skip precon
 
 ### claude-code-93
 
-Given the installed native Claude SDK and CLI, a loopback model API fixture recording each request's `model`, and an isolated home and configuration directory with fake credentials, when the adapter starts a session with a concrete `model` and then resumes that session twice with `model` omitted, changing the default between the resumes, acceptance verification shall assert for each default source below that all three runs share one resume token and that each resumed request and `init` name the default current at that resume, not the earlier model [[claude-code-6](#claude-code-6)]:
+Given the installed native Claude SDK and CLI, its real durable-history reader, a loopback model API fixture recording each request's `model`, and an isolated actual process environment, home, and configuration directory with fake credentials, when fresh adapters start an omitted-model session, resume it after changing defaults, explicitly switch its model, resume it again after another default change, and start an independent omitted-model session, acceptance verification shall assert for each source below that the resumed runs retain the original token and select first the last observed default model and then the explicit switch, while the independent session selects the current default [[claude-code-6](#claude-code-6)]:
 
-| Default source | Changed between resumes |
+| Default source | Changed between runs |
 | --- | --- |
-| `ANTHROPIC_MODEL` in the run environment | the environment value |
+| `ANTHROPIC_MODEL` in the process environment | the environment value |
 | `env.ANTHROPIC_MODEL` in the user `settings.json` | the settings value |
 | top-level `model` in the user `settings.json` | the settings value |
 

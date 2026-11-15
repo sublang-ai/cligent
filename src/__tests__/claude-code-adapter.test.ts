@@ -1038,6 +1038,113 @@ describe('ClaudeCodeAdapter', () => {
     }
   });
 
+  it('recovers the last actual resumed model past trailing user and synthetic history', async () => {
+    let captured: MockSdkInnerOptions | undefined;
+    const getSessionMessages = vi.fn(async () => [
+      { type: 'assistant', message: { model: 'claude-haiku-4-5' } },
+      { type: 'assistant', message: { model: 'claude-sonnet-4-6' } },
+      { type: 'assistant', message: { model: '<synthetic>' } },
+      { type: 'assistant', message: { model: '  ' } },
+      { type: 'assistant', message: null },
+      { type: 'user', message: { model: 'ignored-user-model' } },
+    ]);
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        ...(await makeLoader([], (options) => {
+          captured = options;
+        })()),
+        getSessionMessages,
+      }),
+    });
+
+    await collect(
+      adapter.run('continue', { resume: 'saved', cwd: '/tmp/project' }),
+    );
+
+    expect(getSessionMessages).toHaveBeenCalledExactlyOnceWith('saved', {
+      dir: '/tmp/project',
+    });
+    expect(captured).toMatchObject({
+      resume: 'saved',
+      model: 'claude-sonnet-4-6',
+    });
+    expect(captured?.sessionId).toBeUndefined();
+  });
+
+  it('retains the resume token without a model when history has no actual model', async () => {
+    let captured: MockSdkInnerOptions | undefined;
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        ...(await makeLoader([], (options) => {
+          captured = options;
+        })()),
+        getSessionMessages: async () => [
+          { type: 'assistant', message: { model: '<synthetic>' } },
+          { type: 'user', message: { model: 'ignored-user-model' } },
+        ],
+      }),
+    });
+
+    await collect(adapter.run('continue', { resume: 'saved' }));
+
+    expect(captured?.resume).toBe('saved');
+    expect(captured?.model).toBeUndefined();
+    expect(captured?.sessionId).toBeUndefined();
+  });
+
+  it('uses an explicit resumed model without reading history', async () => {
+    let captured: MockSdkInnerOptions | undefined;
+    const getSessionMessages = vi.fn(async () => {
+      throw new Error('must not read');
+    });
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        ...(await makeLoader([], (options) => {
+          captured = options;
+        })()),
+        getSessionMessages,
+      }),
+    });
+
+    await collect(
+      adapter.run('continue', { resume: 'saved', model: 'claude-haiku-4-5' }),
+    );
+
+    expect(getSessionMessages).not.toHaveBeenCalled();
+    expect(captured).toMatchObject({
+      resume: 'saved',
+      model: 'claude-haiku-4-5',
+    });
+  });
+
+  it('reports a resumed history lookup failure before starting any query', async () => {
+    const query = vi.fn();
+    const adapter = new ClaudeCodeAdapter({
+      loadSdk: async () => ({
+        query,
+        getSessionMessages: async () => {
+          throw new Error('history unavailable');
+        },
+      }),
+    });
+
+    const events = await collect(adapter.run('continue', { resume: 'saved' }));
+
+    expect(query).not.toHaveBeenCalled();
+    expect(events.filter((event) => event.type === 'error')).toMatchObject([
+      {
+        payload: {
+          code: 'SDK_STREAM_ERROR',
+          message: 'history unavailable',
+          recoverable: false,
+        },
+      },
+    ]);
+    expect(events.filter((event) => event.type === 'done')).toMatchObject([
+      { payload: { status: 'error' } },
+    ]);
+  });
+
   it('treats an empty resume value as absent for SDK query options', async () => {
     let captured: (MockSdkInnerOptions & { prompt: string }) | undefined;
 

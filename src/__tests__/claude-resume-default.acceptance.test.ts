@@ -5,16 +5,16 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { getSessionMessages, query } from '@anthropic-ai/claude-agent-sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ClaudeCodeAdapter } from '../adapters/claude-code.js';
 import type { AgentEvent, AgentOptions } from '../types.js';
 
 // claude-code-93: real native SDK/CLI against a loopback Messages fixture.
-// A resume without a model must request the default current at that
-// resume, never the session's earlier model. No credentials or paid
-// requests occur.
+// Fresh omission follows current defaults; resumed omission follows the last
+// actual primary model in the durable session, even through a fresh adapter.
+// No credentials or paid requests occur.
 
 function streamReply(response: ServerResponse, model: string): void {
   response.writeHead(200, {
@@ -64,10 +64,7 @@ type DefaultSource = 'environment' | 'settings env' | 'settings model';
 
 const cases: Array<{
   source: DefaultSource;
-  apply: (
-    configDir: string,
-    value: string,
-  ) => Promise<Record<string, string>>;
+  apply: (configDir: string, value: string) => Promise<Record<string, string>>;
 }> = [
   {
     source: 'environment',
@@ -132,7 +129,7 @@ describe('Claude resume without a model', () => {
   });
 
   for (const { source, apply } of cases) {
-    it(`requests the default current at each resume (${source})`, async () => {
+    it(`keeps the last observed primary model across defaults and adapters (${source})`, async () => {
       const root = await mkdtemp(join(tmpdir(), 'cligent-resume-'));
       const home = join(root, 'home');
       const configDir = join(home, '.claude');
@@ -142,43 +139,47 @@ describe('Claude resume without a model', () => {
       let stderr = '';
       let runEnv: Record<string, string> = {};
 
-      const adapter = new ClaudeCodeAdapter({
-        loadSdk: async () => ({
-          query(parameters) {
-            const inherited = Object.fromEntries(
-              Object.entries(parameters.options?.env ?? {}).filter(
-                ([key]) =>
-                  !key.startsWith('ANTHROPIC_') && !key.startsWith('CLAUDE_'),
-              ),
-            );
-            return query({
-              ...parameters,
-              options: {
-                ...parameters.options,
-                stderr: (data) => {
-                  stderr = (stderr + data).slice(-8000);
-                },
-                env: {
-                  ...inherited,
-                  HOME: home,
-                  USERPROFILE: home,
-                  TMPDIR: root,
-                  CLAUDE_CONFIG_DIR: configDir,
-                  ANTHROPIC_API_KEY: 'local-fixture-not-a-real-key',
-                  ANTHROPIC_BASE_URL: endpoint,
-                  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-                  CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
-                  DISABLE_TELEMETRY: '1',
-                  DISABLE_ERROR_REPORTING: '1',
-                  ...runEnv,
-                },
-              },
-            });
-          },
-        }),
-      });
+      const originalEnv = { ...process.env };
+      const isolatedEnv = Object.fromEntries(
+        Object.entries(originalEnv).filter(
+          ([key]) =>
+            !key.startsWith('ANTHROPIC_') && !key.startsWith('CLAUDE_'),
+        ),
+      );
 
       const run = async (options: AgentOptions): Promise<RunResult> => {
+        process.env = {
+          ...isolatedEnv,
+          HOME: home,
+          USERPROFILE: home,
+          TMPDIR: root,
+          CLAUDE_CONFIG_DIR: configDir,
+          ANTHROPIC_API_KEY: 'local-fixture-not-a-real-key',
+          ANTHROPIC_BASE_URL: endpoint,
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+          CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+          DISABLE_TELEMETRY: '1',
+          DISABLE_ERROR_REPORTING: '1',
+          ...runEnv,
+        };
+        // Every turn starts a new SDK subprocess and a new adapter. The seam
+        // only captures stderr; environment resolution sees the actual run env.
+        const adapter = new ClaudeCodeAdapter({
+          loadSdk: async () => ({
+            getSessionMessages,
+            query(parameters) {
+              return query({
+                ...parameters,
+                options: {
+                  ...parameters.options,
+                  stderr: (data) => {
+                    stderr = (stderr + data).slice(-8000);
+                  },
+                },
+              });
+            },
+          }),
+        });
         requests = [];
         const events: AgentEvent[] = [];
         const abort = new AbortController();
@@ -220,21 +221,36 @@ describe('Claude resume without a model', () => {
 
       try {
         await setDefault('probe-default-a');
-        const fresh = await run({ model: 'probe-explicit' });
-        expect(fresh.requestModels).toEqual(['probe-explicit']);
-        expect(fresh.initModel).toBe('probe-explicit');
+        const fresh = await run({});
+        expect(fresh.requestModels).toEqual(['probe-default-a']);
+        expect(fresh.initModel).toBe('probe-default-a');
 
+        await setDefault('probe-default-b');
         const first = await run({ resume: fresh.token });
         expect(first.token).toBe(fresh.token);
         expect(first.requestModels).toEqual(['probe-default-a']);
         expect(first.initModel).toBe('probe-default-a');
 
-        await setDefault('probe-default-b');
+        const switched = await run({
+          resume: fresh.token,
+          model: 'probe-explicit',
+        });
+        expect(switched.token).toBe(fresh.token);
+        expect(switched.requestModels).toEqual(['probe-explicit']);
+        expect(switched.initModel).toBe('probe-explicit');
+
+        await setDefault('probe-default-c');
         const second = await run({ resume: fresh.token });
         expect(second.token).toBe(fresh.token);
-        expect(second.requestModels).toEqual(['probe-default-b']);
-        expect(second.initModel).toBe('probe-default-b');
+        expect(second.requestModels).toEqual(['probe-explicit']);
+        expect(second.initModel).toBe('probe-explicit');
+
+        const independent = await run({});
+        expect(independent.token).not.toBe(fresh.token);
+        expect(independent.requestModels).toEqual(['probe-default-c']);
+        expect(independent.initModel).toBe('probe-default-c');
       } finally {
+        process.env = originalEnv;
         await rm(root, { recursive: true, force: true });
       }
     });

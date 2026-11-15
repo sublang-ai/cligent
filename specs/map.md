@@ -73,6 +73,7 @@ meta.md       The spec of specs
 | [DR-045](decisions/045-independent-claude-ultracode.md) | 045-independent-claude-ultracode.md | Independent Claude Ultracode boolean, legacy effort shorthand, native defaults, and transport support; amends DR-009 for independent Claude workflow control |
 | [DR-046](decisions/046-primary-and-subagent-defaults.md) | 046-primary-and-subagent-defaults.md | Shipped parent/subagent pins and schema-neutral Codex spawn instructions, amended by DR-047 |
 | [DR-047](decisions/047-provider-aware-model-defaults-and-fork-history.md) | 047-provider-aware-model-defaults-and-fork-history.md | Shared provider-aware model pairs and verified Codex fork history semantics; amends DR-028/029 for tool exclusions, DR-044 for fork history and DR-046 for provider scope |
+| [DR-048](decisions/048-claude-durable-primary-model-continuity.md) | 048-claude-durable-primary-model-continuity.md | Claude omitted-model resumes follow durable primary observations; supersedes 0.38.0 resumed-model selection |
 
 ## Packages
 

@@ -240,6 +240,10 @@ interface ClaudeQueryOptions {
 }
 
 interface ClaudeAgentSdk {
+  getSessionMessages?(
+    sessionId: string,
+    options: { dir: string },
+  ): Promise<ReadonlyArray<{ type: string; message: unknown }>>;
   query(options: {
     prompt: ClaudePrompt;
     options?: Omit<ClaudeQueryOptions, 'prompt'>;
@@ -988,9 +992,7 @@ function isObjectWithType(value: unknown): value is { type: string } {
 }
 
 export async function loadClaudeAgentSdk(): Promise<ClaudeAgentSdk> {
-  const mod = (await import('@anthropic-ai/claude-agent-sdk')) as {
-    query?: unknown;
-  };
+  const mod = await import('@anthropic-ai/claude-agent-sdk');
 
   if (typeof mod.query !== 'function') {
     throw new Error('@anthropic-ai/claude-agent-sdk does not export query()');
@@ -1004,7 +1006,29 @@ export async function loadClaudeAgentSdk(): Promise<ClaudeAgentSdk> {
 
   return {
     query: mod.query as ClaudeAgentSdk['query'],
+    getSessionMessages: mod.getSessionMessages,
   };
+}
+
+/** The SDK reads the main conversation chain in chronological order.
+ * Synthetic assistant notices can follow the last actual model response. */
+async function resumedClaudeModel(
+  sdk: ClaudeAgentSdk,
+  sessionId: string,
+  dir: string,
+): Promise<string | undefined> {
+  if (!sdk.getSessionMessages) return undefined;
+  const messages = await sdk.getSessionMessages(sessionId, { dir });
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const entry = messages[i]!;
+    if (entry.type !== 'assistant') continue;
+    const message = entry.message;
+    if (!message || typeof message !== 'object' || !('model' in message))
+      continue;
+    const model = asString(message.model)?.trim();
+    if (model && model !== '<synthetic>') return model;
+  }
+  return undefined;
 }
 
 interface MappedClaudeOptions {
@@ -1937,6 +1961,13 @@ export class ClaudeCodeAdapter implements AgentAdapter<
     let stream: AsyncIterable<unknown> | undefined;
 
     try {
+      if (inboundResume && queryOptions.model === undefined) {
+        queryOptions.model = await resumedClaudeModel(
+          sdk,
+          inboundResume,
+          queryOptions.cwd ?? process.cwd(),
+        );
+      }
       stream = sdk.query({ prompt: sdkPrompt, options: queryOptions });
       for await (const item of approvalEvents.merge(
         stream,
