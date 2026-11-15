@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -204,7 +205,7 @@ describe('Codex real resumed token accounting (codex-60)', () => {
       } finally {
         // Native shutdown can finish writing its isolated SQLite state just
         // after the terminal event, so tolerate that bounded cleanup race.
-        rmSync(root, {
+        await rm(root, {
           recursive: true,
           force: true,
           maxRetries: 5,

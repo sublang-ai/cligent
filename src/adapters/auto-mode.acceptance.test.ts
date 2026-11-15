@@ -22,6 +22,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -864,7 +865,7 @@ async function runCodexHostileUserConfigProbe(): Promise<CodexHostileUserConfigO
     rmSync(root, { recursive: true, force: true });
     // Native shutdown can finish writing SQLite state and coordination locks
     // after the terminal event, so tolerate that bounded cleanup race.
-    rmSync(codexHome, {
+    await rm(codexHome, {
       recursive: true,
       force: true,
       maxRetries: 5,

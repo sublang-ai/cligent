@@ -17,9 +17,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
-  rmSync,
   writeFileSync,
 } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -83,11 +83,12 @@ interface ProbeOutcome {
 
 const roots: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllEnvs();
   for (const root of roots.splice(0)) {
-    // Native background handles can outlive the terminal SDK event.
-    rmSync(root, { recursive: true, force: true, maxRetries: 20 });
+    // Recursive async removal re-reads a directory if the native clone adds
+    // files between enumeration and removal.
+    await rm(root, { recursive: true, force: true, maxRetries: 20 });
   }
 });
 
