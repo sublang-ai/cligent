@@ -287,7 +287,7 @@ against the role's adapter before runtime startup and names the offending
 Captain or player path and adapter on error.
 On the direct Anthropic and OpenAI services the generated home config pins
 the parent and child models shown above and leaves subagent effort open.
-Claude user-level cloud or custom routes and Codex custom providers or endpoints in the environment or user config keep their model selection. See
+Claude cloud or custom routes in the environment or user settings keep their model selection. Codex reads the provider and endpoint from its user config. See
 the [subagent guide](guide.md#subagent-model-and-effort) for adapter details.
 Codex sends `agents.default_subagent_model` with the selected model, using the
 known parent model for `inherit`, or omitting it when unknown. A pinned effort

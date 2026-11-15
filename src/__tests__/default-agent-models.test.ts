@@ -23,11 +23,6 @@ it('offers the runtime-owned model pairs only on direct provider routes', () => 
         ANTHROPIC_BASE_URL: 'https://api.anthropic.com' + path,
       }),
     ).toEqual(claude);
-    expect(
-      defaultAgentModels('codex', {
-        OPENAI_BASE_URL: 'https://api.openai.com' + path,
-      }),
-    ).toEqual(codex);
   }
   expect(defaultAgentModels('claude', {})).toEqual(claude);
   expect(defaultAgentModels('codex', {})).toEqual(codex);
@@ -48,7 +43,7 @@ it('offers the runtime-owned model pairs only on direct provider routes', () => 
   }
   expect(
     defaultAgentModels('codex', { OPENAI_BASE_URL: 'https://gateway.example' }),
-  ).toEqual({});
+  ).toEqual(codex);
 });
 
 it('leaves provider-specific model IDs to the configured cloud service', () => {
@@ -132,7 +127,7 @@ it('uses the active native Codex user provider and preserves native defaults whe
       ['profile = "work"\n[profiles.work]\nmodel_provider = "azure"', {}],
       [
         'model_provider = "azure"\nprofile = "work"\n[profiles.work]\nmodel_provider = "openai"',
-        codex,
+        {},
       ],
       ['[model_providers.unused]\nbase_url = "https://gateway.example"', codex],
       ['[profiles.unused]\nmodel_provider = "azure"', codex],

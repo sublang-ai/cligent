@@ -3375,24 +3375,58 @@ describe('ClaudeCodeAdapter subagent model', () => {
     }),
   );
 
-  it.each([
-    { allowedTools: [] },
-    { allowedTools: ['Read'] },
-    { disallowedTools: ['Agent'] },
-  ])(
-    'leaves delegation out of an explicitly tool-restricted call (%j)',
-    (restriction) => {
-      const { queryOptions } = mapAgentOptionsToClaudeQueryOptions({
-        ...restriction,
-        subagentModel: 'claude-opus-5-5',
-        subagentEffort: 'high',
-      });
-      expect(queryOptions).not.toHaveProperty('systemPrompt');
-      expect(queryOptions).not.toHaveProperty('agents');
-      for (const key of VARIABLES)
-        expect(queryOptions.env?.[key]).toBe(process.env[key]);
+  for (const callerEnv of [
+    {},
+    {
+      CLAUDE_CODE_SUBAGENT_MODEL: 'caller-model',
+      CLAUDE_CODE_SUBAGENT_MODEL_FORCE: '0',
     },
-  );
+  ]) {
+    it.each([
+      { allowedTools: [] },
+      { allowedTools: ['Read'] },
+      { disallowedTools: ['Agent'] },
+      { disallowedTools: ['Task'] },
+    ])(
+      `leaves delegation out of a restricted call with caller env ${JSON.stringify(callerEnv)} (%j)`,
+      (restriction) =>
+        withCallerEnvironment(callerEnv, async () => {
+          const before = { ...process.env };
+          let queryOptions: MockSdkInnerOptions | undefined;
+          const adapter = new ClaudeCodeAdapter({
+            loadSdk: makeLoader(
+              [{ type: 'result', status: 'success', result: 'ok' }],
+              (options) => {
+                queryOptions = options;
+              },
+            ),
+          });
+          await collect(
+            adapter.run('restricted', {
+              ...restriction,
+              subagentModel: 'claude-opus-5-5',
+              subagentEffort: 'high',
+            }),
+          );
+          expect(queryOptions).toBeDefined();
+          expect(queryOptions).not.toHaveProperty('systemPrompt');
+          expect(queryOptions).not.toHaveProperty('agents');
+          expect(queryOptions!.env).toEqual(callerCloneWithout('CLAUDECODE'));
+          expect(queryOptions!.allowedTools).toEqual(
+            'allowedTools' in restriction
+              ? restriction.allowedTools
+              : undefined,
+          );
+          expect(queryOptions!.disallowedTools).toEqual([
+            ...('disallowedTools' in restriction
+              ? restriction.disallowedTools
+              : []),
+            'AskUserQuestion',
+          ]);
+          expect(process.env).toEqual(before);
+        })(),
+    );
+  }
 
   it(
     'leaves the serialized query unchanged when both options are omitted',

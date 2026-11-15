@@ -280,7 +280,6 @@ describe('tmux-play config loading', () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     vi.stubEnv('CLAUDE_CONFIG_DIR', workDir);
     vi.stubEnv('CODEX_HOME', workDir);
-    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
     writeFileSync(
       join(workDir, 'config.toml'),
       'model_provider = "gateway"\n[model_providers.gateway]\nname = "Local gateway"\nbase_url = "https://gateway.example/v1"',
@@ -306,7 +305,6 @@ describe('tmux-play config loading', () => {
     vi.stubEnv('CLAUDE_CONFIG_DIR', workDir);
     vi.stubEnv('CODEX_HOME', workDir);
     vi.stubEnv('ANTHROPIC_BASE_URL', 'https://api.anthropic.com');
-    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
     for (const name of Object.keys(process.env))
       if (name.startsWith('CLAUDE_CODE_USE_')) vi.stubEnv(name, undefined);
     const cwd = join(workDir, 'project');
@@ -398,7 +396,6 @@ describe('tmux-play config loading', () => {
   // tmux-play-192: the generated roster follows the installed runtimes, so the
   // config a first run creates is one the first Boss turn can actually run.
   it('generates the first-run roster from one installed adapter', async () => {
-    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     vi.stubEnv('CODEX_HOME', workDir);
     const cwd = join(workDir, 'project');

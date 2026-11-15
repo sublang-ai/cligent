@@ -32,6 +32,6 @@ Callers that enforce tool-free Codex runs in their own prompts omit child tuning
 
 ## Consequences
 
-The direct services get the requested models as soon as the installed Cligent supports them.
-Cloud and custom routes retain their model selection.
+The direct services get the requested models in configurations generated with Cligent 0.39.0.
+When the supplied environment or authorized user or seat settings identify a cloud or custom route, the resolver leaves both models to that provider.
 Fresh and full-history spawns retain the native precedence for explicit and role-defined overrides under [[codex-90](../packages/adapters/codex.md#codex-90)].

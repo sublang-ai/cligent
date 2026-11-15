@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Codex default model selection ignores `OPENAI_BASE_URL`, which the native CLI does not use, and returns no pair for the retired top-level `profile` selector that the CLI rejects. Provider detection is limited to supplied environment and authorized user or seat settings; project and managed routing remains the host’s responsibility.
 - Resumed Claude calls without an explicit model retain the last actual primary model in durable session history, including after an explicit switch and across adapter or process restarts. Fresh calls still use current native defaults. When no primary model was recorded, the same native session resumes without an invented model; SDK history read errors propagate.
 - With `nativeSkills: false`, Claude hides the built-in plugin's `plugin-authoring` skill from subagents while preserving caller-provided skills and the plugin's other components.
 - The Codex Linux sandbox preflight uses the command accepted by the pinned underlying CLI so acceptance checks reach the sandbox.

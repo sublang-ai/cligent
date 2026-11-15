@@ -189,6 +189,43 @@ describe('supported built-in subagent-model requests', () => {
     ]);
   });
 
+  it('omits valid Claude child tuning through the engine when tools exclude delegation (engine-96)', async () => {
+    for (const restriction of [
+      { allowedTools: [] },
+      { allowedTools: ['Read'] },
+      { disallowedTools: ['Agent'] },
+      { disallowedTools: ['Task'] },
+    ]) {
+      const requests: unknown[] = [];
+      const before = { ...process.env };
+      const client = new Cligent(
+        new ClaudeCodeAdapter({
+          loadSdk: async () => ({ query: successQuery(requests) }),
+        }),
+        { subagentModel: 'claude-opus-5-5', subagentEffort: 'high' },
+      );
+      const events = await collect(client.run('restricted', restriction));
+      expect(events.at(-1)?.payload).toMatchObject({ status: 'success' });
+      expect(requests).toHaveLength(1);
+      const options = (requests[0] as { options: Record<string, unknown> })
+        .options;
+      expect(options).not.toHaveProperty('agents');
+      expect(options).not.toHaveProperty('systemPrompt');
+      const env = options.env as Record<string, string | undefined>;
+      expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBe(
+        before.CLAUDE_CODE_SUBAGENT_MODEL,
+      );
+      expect(env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe(
+        before.CLAUDE_CODE_SUBAGENT_MODEL_FORCE,
+      );
+      for (const [key, value] of Object.entries(restriction))
+        expect(options[key]).toEqual(
+          key === 'disallowedTools' ? [...value, 'AskUserQuestion'] : value,
+        );
+      expect(process.env).toEqual(before);
+    }
+  });
+
   it('forwards instance defaults and parallel overrides to the Claude query', async () => {
     const requests: unknown[] = [];
     const query = successQuery(requests);

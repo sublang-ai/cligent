@@ -488,11 +488,12 @@ implicit model default on library calls. To seed a fresh configuration, use
 `defaultAgentModels(adapter, env, scope?)`. Direct Anthropic and OpenAI services
 receive the release’s parent and child pair. Supply a local user’s home to
 read their Claude user settings and the Codex provider from `$CODEX_HOME/config.toml`
-or `~/.codex/config.toml`. A non-OpenAI provider, a custom API base URL,
+or `~/.codex/config.toml`. Native Codex reads `openai_base_url` there and ignores
+`OPENAI_BASE_URL`. A non-OpenAI provider, a custom API base URL,
 or an unresolved provider configuration leaves the models to the service.
 A server may pass `{ codexHome }` for the seat’s trusted native directory.
-Omitting the scope performs no file reads and leaves an explicit `CODEX_HOME`
-unverified. The helper evaluates user-level seed settings. A host that applies
+Omitting the scope performs no file reads and returns no model pair when
+`CODEX_HOME` explicitly selects a directory. The helper evaluates user-level seed settings. A host that applies
 project-local, managed, or invocation-specific routing can pass the corresponding
 provider environment or omit the pins.
 

@@ -10,7 +10,7 @@ import {
   readFileSync,
 } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { parse, type TomlTable, type TomlValue } from 'smol-toml';
+import { parse } from 'smol-toml';
 
 const CLOUD_PROVIDERS = [
   'CLAUDE_CODE_USE_BEDROCK',
@@ -65,18 +65,10 @@ function claudeEnvironment(
 
 type ModelSettingsScope = string | { readonly codexHome: string };
 
-function tomlTable(value: TomlValue | undefined): TomlTable | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as TomlTable)
-    : undefined;
-}
-
 function directCodexProvider(
   env: NodeJS.ProcessEnv,
   scope?: ModelSettingsScope,
 ): boolean {
-  const origin = 'https://api.openai.com';
-  if (!directApi(env.OPENAI_BASE_URL, origin)) return false;
   const selectedHome = env.CODEX_HOME?.trim();
   if (scope === undefined) return !selectedHome;
   const seat = typeof scope !== 'string';
@@ -97,18 +89,17 @@ function directCodexProvider(
     );
     if (!fstatSync(fd).isFile()) return false;
     const config = parse(readFileSync(fd, 'utf8'));
-    let provider = config.model_provider;
-    if (config.profile !== undefined) {
-      if (typeof config.profile !== 'string') return false;
-      const profile = tomlTable(tomlTable(config.profiles)?.[config.profile]);
-      if (!profile) return false;
-      provider = profile.model_provider ?? provider;
-    }
-    if (provider !== undefined && provider !== 'openai') return false;
+    // Native Codex rejects the retired selector before choosing a provider.
+    if (config.profile !== undefined) return false;
+    if (
+      config.model_provider !== undefined &&
+      config.model_provider !== 'openai'
+    )
+      return false;
     if (
       config.openai_base_url !== undefined &&
       (typeof config.openai_base_url !== 'string' ||
-        !directApi(config.openai_base_url, origin))
+        !directApi(config.openai_base_url, 'https://api.openai.com'))
     )
       return false;
     return true;

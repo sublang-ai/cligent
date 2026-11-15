@@ -21,7 +21,7 @@ The adapter shall implement `AgentAdapter` with `agent: 'claude-code'`.
 
 ### claude-code-2
 
-Where the Claude Agent SDK is not installed, the adapter module shall remain importable so consumers can register it unconditionally.
+Where the Claude Agent SDK is not installed or Node is below the SDK’s own minimum of 18.14.0, the adapter module shall remain importable so consumers can register it unconditionally.
 
 ### claude-code-13
 
@@ -29,7 +29,7 @@ When `isAvailable()` is called, the adapter shall return the result of the first
 
 | SDK and native binary | Result |
 | --- | --- |
-| the Claude Agent SDK cannot be loaded, as when it is missing under [[engine-26](../engine.md#engine-26)] runtime readiness | `false` |
+| the Claude Agent SDK cannot be loaded, including Node below its 18.14.0 minimum or a missing SDK under [[engine-26](../engine.md#engine-26)] runtime readiness | `false` |
 | the SDK loads, but [[claude-code-57](#claude-code-57)]'s lookup finds no native binary | `false` |
 | the SDK loads and that lookup finds the native binary | `true` |
 
@@ -761,7 +761,7 @@ Where `subagentModel` and `subagentEffort` take each combination below, with and
 | `subagentModel` and `subagentEffort` | Assertion |
 | --- | --- |
 | both omitted | both variables keep the caller environment's value or absence [[claude-code-60](#claude-code-60)]; no `systemPrompt` key and no `agents` key is passed [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)], [[claude-code-67](#claude-code-67)]; the serialized query options equal those of the same input without either key |
-| valid model and effort but the run excludes the Agent tool | preserve both caller environment variables or their absence, omit delegate definitions and the delegation prompt, and preserve the tool restrictions [[claude-code-60](#claude-code-60)], [[claude-code-61](#claude-code-61)], [[claude-code-67](#claude-code-67)] |
+| valid model and effort but the run excludes delegation through Agent or its Task alias | preserve both caller environment variables or their absence, omit delegate definitions and the delegation prompt, and preserve the tool restrictions [[claude-code-60](#claude-code-60)], [[claude-code-61](#claude-code-61)], [[claude-code-67](#claude-code-67)] |
 | model ID, effort omitted | `CLAUDE_CODE_SUBAGENT_MODEL` equals the ID verbatim and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` equals `'1'`, replacing caller values [[claude-code-60](#claude-code-60)]; `systemPrompt` is the custom, unsnapshotted prompt whose text is exactly the directive naming the ID and leaving the effort to the agent [[claude-code-61](#claude-code-61)], [[claude-code-62](#claude-code-62)]; `agents` holds exactly the five `delegate-<effort>` definitions on the ID with their descriptions, prompt, and efforts, then `general-purpose` without a model at `medium` with the delegate prompt and its description naming the ID and pointing to the `delegate-<effort>` types, and no `Explore` or `Plan` key [[claude-code-67](#claude-code-67)] |
 | `inherit`, effort omitted | `CLAUDE_CODE_SUBAGENT_MODEL` is absent even where the caller sets it and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` equals `'1'` [[claude-code-60](#claude-code-60)]; the directive names the agent's own model [[claude-code-61](#claude-code-61)]; the five `delegate-<effort>` definitions carry `model: 'inherit'`, and they and `general-purpose` at `medium` carry "your model" descriptions [[claude-code-67](#claude-code-67)] |
 | model ID, effort `high` | the variables as for the ID alone [[claude-code-60](#claude-code-60)]; the directive pins the ID at `high` effort [[claude-code-61](#claude-code-61)]; `agents` holds exactly `delegate` on the ID and `general-purpose` without a model, both at `high` with their descriptions and the delegate prompt, and no `Explore` or `Plan` key [[claude-code-67](#claude-code-67)] |
