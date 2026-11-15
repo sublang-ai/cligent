@@ -88,45 +88,6 @@ process.stdin.on('end', () => {
   );
 });
 
-describe('Codex SDK native subagent config', () => {
-  it('serializes native subagent pins through the installed SDK', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'cligent-codex-subagent-sdk-'));
-    tempDirs.push(dir);
-    const executable = join(dir, 'fake-codex.mjs');
-    const capture = join(dir, 'argv.json');
-    writeFileSync(
-      executable,
-      `#!/usr/bin/env node
-import { writeFileSync } from 'node:fs';
-process.stdin.resume();
-process.stdin.on('end', () => {
-  writeFileSync(process.env.CLIGENT_CODEX_ARGV_CAPTURE, JSON.stringify(process.argv.slice(2)));
-  process.stdout.write(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 } }) + '\\n');
-});
-`,
-      'utf8',
-    );
-    chmodSync(executable, 0o700);
-    const mapped = mapAgentOptionsToCodexOptions({
-      subagentModel: 'gpt-6-sol-mini',
-      subagentEffort: 'max',
-      effort: 'high',
-      fastMode: true,
-    });
-    const codex = new Codex({
-      ...mapped.codexOptions,
-      codexPathOverride: executable,
-      env: { ...stringEnvironment(), CLIGENT_CODEX_ARGV_CAPTURE: capture },
-    });
-    await codex.startThread(mapped.threadOptions).run('verify subagents');
-    const argv = JSON.parse(readFileSync(capture, 'utf8')) as string[];
-    expect(argv).toContain('agents.default_subagent_model="gpt-6-sol-mini"');
-    expect(argv).toContain('agents.default_subagent_reasoning_effort="max"');
-    expect(argv).toContain('service_tier="fast"');
-    expect(argv).toContain('model_reasoning_effort="high"');
-  });
-});
-
 // codex-89: execute the adapter through the installed SDK, recording the
 // actual child process arguments and prompt on fresh and resumed turns.
 describe.each([undefined, 'existing-thread'])(
@@ -134,6 +95,11 @@ describe.each([undefined, 'existing-thread'])(
   (resume) => {
     const cases = [
       { name: 'untuned', options: {}, expectedModel: undefined },
+      {
+        name: 'blank parent',
+        options: { model: '  ', subagentModel: 'inherit' },
+        expectedModel: undefined,
+      },
       {
         name: 'known inherit',
         options: { model: 'parent', subagentModel: 'inherit' },
@@ -147,7 +113,12 @@ describe.each([undefined, 'existing-thread'])(
       ...(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const).map(
         (subagentEffort) => ({
           name: subagentEffort,
-          options: { subagentModel: 'child', subagentEffort },
+          options: {
+            subagentModel: 'child',
+            subagentEffort,
+            fastMode: true,
+            effort: 'high' as const,
+          },
           expectedModel: 'child',
         }),
       ),
@@ -215,6 +186,10 @@ process.stdin.on('end', () => {
           argv: string[];
           input: string;
         };
+        if ('fastMode' in options) {
+          expect(recorded.argv).toContain('service_tier="fast"');
+          expect(recorded.argv).toContain('model_reasoning_effort="high"');
+        }
         if (resume) expect(recorded.argv).toContain(resume);
         expect(recorded.argv).toContain(attachment);
         expect(recorded.argv.indexOf(secondAttachment)).toBeGreaterThan(
@@ -242,9 +217,8 @@ process.stdin.on('end', () => {
           ).toBe(false);
         if ('subagentModel' in options) {
           expect(recorded.input).toMatch(/bound(?:ed| tightly)/i);
-          expect(recorded.input).toMatch(/^For this turn,/);
-          expect(recorded.input).toContain('fresh-context option advertised by the spawn tool');
-          expect(recorded.input).toMatch(/full.context/i);
+          expect(recorded.input).toMatch(/^When delegating this turn,/);
+          expect(recorded.input).toContain('Choose the history each task needs');
           expect(recorded.input).toMatch(/role/i);
           expect(recorded.input).toMatch(/verif/i);
           expect(recorded.input).toMatch(/deep/i);

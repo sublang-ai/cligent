@@ -2948,31 +2948,38 @@ describe('ClaudeCodeAdapter', () => {
     expect(queryCalls).toBe(0);
   });
 
-  it('keeps permission controls unchanged for ultracode', () => {
-    const permissions: PermissionPolicy = {
-      mode: 'auto',
-      fileWrite: 'deny',
-      shellExecute: 'allow',
-      networkAccess: 'ask',
-    };
-    const ordinary = mapAgentOptionsToClaudeQueryOptions({ permissions });
-    const ultracode = mapAgentOptionsToClaudeQueryOptions({
-      permissions,
-      effort: 'ultracode',
-    });
+  it.each([
+    { effort: 'ultracode' as const },
+    { ultracode: true },
+    { ultracode: false },
+  ])(
+    'keeps permission controls unchanged for Ultracode selection %j',
+    (selection) => {
+      const permissions: PermissionPolicy = {
+        mode: 'auto',
+        fileWrite: 'deny',
+        shellExecute: 'allow',
+        networkAccess: 'ask',
+      };
+      const ordinary = mapAgentOptionsToClaudeQueryOptions({ permissions });
+      const ultracode = mapAgentOptionsToClaudeQueryOptions({
+        permissions,
+        ...selection,
+      });
 
-    expect({
-      permissionMode: ultracode.queryOptions.permissionMode,
-      allowDangerouslySkipPermissions:
-        ultracode.queryOptions.allowDangerouslySkipPermissions,
-      canUseTool: ultracode.queryOptions.canUseTool,
-    }).toEqual({
-      permissionMode: ordinary.queryOptions.permissionMode,
-      allowDangerouslySkipPermissions:
-        ordinary.queryOptions.allowDangerouslySkipPermissions,
-      canUseTool: ordinary.queryOptions.canUseTool,
-    });
-  });
+      expect({
+        permissionMode: ultracode.queryOptions.permissionMode,
+        allowDangerouslySkipPermissions:
+          ultracode.queryOptions.allowDangerouslySkipPermissions,
+        canUseTool: ultracode.queryOptions.canUseTool,
+      }).toEqual({
+        permissionMode: ordinary.queryOptions.permissionMode,
+        allowDangerouslySkipPermissions:
+          ordinary.queryOptions.allowDangerouslySkipPermissions,
+        canUseTool: ordinary.queryOptions.canUseTool,
+      });
+    },
+  );
 
   it('surfaces an upstream ultracode rejection without substitution', async () => {
     let captured: MockSdkInnerOptions | undefined;
@@ -3259,6 +3266,25 @@ describe('ClaudeCodeAdapter subagent model', () => {
       expect(mapped.queryOptions).not.toHaveProperty('systemPrompt');
       expect(mapped.queryOptions).not.toHaveProperty('agents');
     }),
+  );
+
+  it.each([
+    { allowedTools: [] },
+    { allowedTools: ['Read'] },
+    { disallowedTools: ['Agent'] },
+  ])(
+    'leaves delegation out of an explicitly tool-restricted call (%j)',
+    (restriction) => {
+      const { queryOptions } = mapAgentOptionsToClaudeQueryOptions({
+        ...restriction,
+        subagentModel: 'claude-opus-5-5',
+        subagentEffort: 'high',
+      });
+      expect(queryOptions).not.toHaveProperty('systemPrompt');
+      expect(queryOptions).not.toHaveProperty('agents');
+      for (const key of VARIABLES)
+        expect(queryOptions.env?.[key]).toBe(process.env[key]);
+    },
   );
 
   it(

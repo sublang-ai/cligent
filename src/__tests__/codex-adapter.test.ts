@@ -3732,32 +3732,12 @@ describe('CodexAdapter', () => {
       expect(receivedPrompt).toMatch(/delegat/i);
       expect(receivedPrompt).toMatch(/bound(?:ed| tightly)/i);
       expect(receivedPrompt).toContain('selected-child');
-      expect(receivedPrompt).toContain('fresh-context option advertised by the spawn tool');
+      expect(receivedPrompt).toContain('Choose the history each task needs');
       expect(receivedPrompt).toMatch(/\n\nKeep the user prompt intact\.$/);
       expect(constructed?.config).not.toHaveProperty('developer_instructions');
       expect(constructed?.config).not.toHaveProperty('agents.enabled');
     },
   );
-
-  it('maps inherit to a known parent model without forcing an unknown parent', () => {
-    const known = mapAgentOptionsToCodexOptions({
-      model: 'parent-model',
-      subagentModel: 'inherit',
-    });
-    const unknown = mapAgentOptionsToCodexOptions({ subagentModel: 'inherit' });
-    expect(known.codexOptions?.config).toMatchObject({
-      agents: { default_subagent_model: 'parent-model' },
-    });
-    expect(unknown.codexOptions?.config?.agents ?? {}).not.toHaveProperty(
-      'default_subagent_model',
-    );
-    expect(known.codexOptions?.config?.agents ?? {}).not.toHaveProperty(
-      'default_subagent_reasoning_effort',
-    );
-    expect(unknown.codexOptions?.config ?? {}).not.toHaveProperty(
-      'developer_instructions',
-    );
-  });
 
   it('adds no subagent configuration when omitted and rejects invalid effort before loading', async () => {
     const omitted = mapAgentOptionsToCodexOptions({});

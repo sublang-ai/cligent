@@ -117,6 +117,14 @@ account, provider, and policy, and fast serving may cost more. Use the exported
 `FAST_MODE_SUPPORT` metadata before presenting the option; see the
 [fast-mode guide](docs/guide.md#fast-mode) for request and observation limits.
 
+Claude accepts optional `ultracode: true` or `false` independently of `effort`,
+including on resumed runs. An explicit boolean overrides the legacy
+`effort: 'ultracode'` shorthand (which still selects `xhigh` plus Ultracode).
+Omitting the flag with ordinary effort preserves native workflow settings.
+`isUltracodeSupported(adapter)` identifies Claude native request support;
+other adapters reject `true` and treat `false` as a no-op. Native model,
+account, and workflow policy still determine availability.
+
 Claude and Codex accept optional `subagentModel` and `subagentEffort` tuning.
 Use a named model or `inherit` for the parent model, with an optional effort.
 Claude forces the model and registers effort-specific delegates. Codex sends
@@ -286,11 +294,3 @@ the login and replace both repository secrets.
 ## License
 
 [Apache-2.0](LICENSE)
-
-Claude accepts optional `ultracode: true` or `false` independently of `effort`,
-including on resumed runs. An explicit boolean overrides the legacy
-`effort: 'ultracode'` shorthand (which still selects `xhigh` plus Ultracode).
-Omitting the flag with ordinary effort preserves native workflow settings.
-`isUltracodeSupported(adapter)` identifies Claude native request support;
-other adapters reject `true` and treat `false` as a no-op. Native model,
-account, and workflow policy still determine availability.

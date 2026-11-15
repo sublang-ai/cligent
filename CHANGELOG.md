@@ -18,12 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   true apply on fresh and resumed runs; unsupported activation fails clearly.
   The legacy `effort: 'ultracode'` shorthand remains available.
 
-- Codex accepts `subagentModel` and `subagentEffort` in adapter options and tmux-play role and call settings. Native model and effort defaults accompany explicit delegation instructions on every tuned call, including resume. `inherit` selects the known parent model or omits the model default when unknown. Explicit spawn and role overrides preserve native precedence; full-context forks receive no overrides, and different model or effort selections use fresh spawns. Untuned calls leave native settings and prompts unchanged. Export `CodexSubagentEffort`, excluding `ultra`.
+- Codex accepts `subagentModel` and `subagentEffort` in adapter options and tmux-play role and call settings. Native model and effort defaults accompany explicit delegation instructions on every tuned call, including resume. `inherit` selects the known parent model or omits the model default when unknown. Explicit spawn and role settings retain native precedence across fresh and full-history spawns. Untuned calls leave native settings and prompts unchanged. Export `CodexSubagentEffort`, excluding `ultra`.
 
 ### Changed
 
-- Codex delegation instructions use the spawn tool's advertised fresh-context option, supporting both Astra collaboration tools and legacy multi-agent tools.
-- Generated tmux-play roles use Claude Fable 5.2 with Opus 5.5 subagents and GPT-6 Astra with GPT-6.1 Sol subagents. Existing configurations and omitted SDK options retain their behavior.
+- Codex lets the parent choose the history each delegated task needs and follow its advertised spawn options.
+- The exported `defaultAgentModels(adapter, env, homeDir?)` selects model pairs for direct provider routes. Generated tmux-play roles use Claude Fable 5.2 with Opus 5.5 subagents and GPT-6 Astra with GPT-6.1 Sol subagents. Existing configurations and omitted SDK options retain their behavior.
 - Claude Agent SDK now requires 0.3.321 for its bundled Fable 5.2 catalog; development and repair installs use verified 0.3.325. This runtime floor change requires a minor release.
 - Ordinary Claude effort selections preserve native workflow defaults instead
   of implicitly disabling Ultracode; an explicit boolean overrides the legacy

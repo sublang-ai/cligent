@@ -45,6 +45,9 @@ jobs:
 
       - run: npm run build
 
+      - name: Verify direct-provider model pairs against installed runtime catalogs
+        run: node scripts/verify-default-model-catalogs.mjs
+
       - run: npm run test:package
 
       - run: npm run test:smoke

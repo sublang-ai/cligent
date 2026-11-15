@@ -20,6 +20,7 @@ import {
   isAgentCallSettingsError,
 } from './contract.js';
 import type {
+  AgentCallSettings,
   Captain,
   CaptainContext,
   CaptainRunResult,
@@ -1299,6 +1300,102 @@ describe('TmuxPlayRuntime', () => {
       'codex delegated',
     ]);
   });
+
+  it.each(['claude', 'codex'] as const)(
+    'resolves complete Captain and player delegation and Ultracode settings for %s',
+    async (adapter) => {
+      const agent = adapter === 'claude' ? 'claude-code' : 'codex';
+      const records: TmuxPlayRecord[] = [];
+      const observed: unknown[] = [];
+      const configured = {
+        adapter,
+        subagentModel: 'configured-child',
+        subagentEffort: 'low' as const,
+        ultracode: adapter === 'claude',
+      };
+      const defaults: AgentCallSettings = {
+        model: { kind: 'provider-default' },
+        effort: { kind: 'provider-default' },
+      };
+      const runtime = await createTmuxPlayRuntime({
+        captainConfig: configured,
+        players: [{ ...configured, id: 'dev' }],
+        captain: {
+          async handleBossTurn(_turn, context) {
+            for (const call of [
+              (prompt: string, settings?: AgentCallSettings) =>
+                context.callCaptain(prompt, { settings }),
+              (prompt: string, settings?: AgentCallSettings) =>
+                context.callPlayer('dev', prompt, { settings }),
+            ]) {
+              await call('configured');
+              await call('inherit', {
+                ...defaults,
+                subagentModel: 'inherit',
+                subagentEffort: 'max',
+                ultracode: false,
+              });
+              await call('named', {
+                ...defaults,
+                subagentModel: 'named-child',
+                ultracode: adapter === 'claude',
+              });
+              await call('provider', defaults);
+              await call('restored');
+              await expectAgentCallSettingsRejection(
+                call('invalid flag', {
+                  ...defaults,
+                  ultracode: 'true',
+                } as never),
+                'must be a boolean',
+              );
+              await expectAgentCallSettingsRejection(
+                call('invalid effort', {
+                  ...defaults,
+                  subagentModel: 'inherit',
+                  subagentEffort: adapter === 'claude' ? 'ultracode' : 'ultra',
+                }),
+                'must be one of',
+              );
+              if (adapter === 'codex')
+                await expectAgentCallSettingsRejection(
+                  call('unsupported', { ...defaults, ultracode: true }),
+                  'is not supported',
+                );
+            }
+          },
+        },
+        observers: [{ onRecord: (record) => records.push(record) }],
+        adapterImports: adapterImports({
+          [adapter]: {
+            agent,
+            async *run(prompt: string, options?: AgentOptions) {
+              observed.push([
+                prompt,
+                options?.subagentModel,
+                options?.subagentEffort,
+                options?.ultracode,
+              ]);
+              yield doneEvent(agent, 'done');
+            },
+          },
+        }),
+      });
+      await runtime.runBossTurn('go');
+      const expected = [
+        ['configured', 'configured-child', 'low', adapter === 'claude'],
+        ['inherit', 'inherit', 'max', false],
+        ['named', 'named-child', undefined, adapter === 'claude'],
+        ['provider', undefined, undefined, undefined],
+        ['restored', 'configured-child', 'low', adapter === 'claude'],
+      ];
+      expect(observed).toEqual([...expected, ...expected]);
+      for (const type of ['captain_prompt', 'player_prompt'])
+        expect(records.filter((record) => record.type === type)).toHaveLength(
+          expected.length,
+        );
+    },
+  );
 
   it('rejects fast mode on unsupported adapters before records or provider work', async () => {
     const records: TmuxPlayRecord[] = [];

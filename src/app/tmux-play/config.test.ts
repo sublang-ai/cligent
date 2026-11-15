@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EFFORT_SUPPORT } from '../../effort.js';
 import {
   TMUX_PLAY_CONFIG_FILE,
@@ -210,6 +210,7 @@ describe('tmux-play config loading', () => {
   const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     restoreEnv('HOME', originalHome);
     restoreEnv('XDG_CONFIG_HOME', originalXdgConfigHome);
     if (workDir) {
@@ -275,8 +276,33 @@ describe('tmux-play config loading', () => {
     );
   });
 
+  it('retains the provider model choices in a fresh home configuration for cloud and custom routes', async () => {
+    workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    vi.stubEnv('CLAUDE_CONFIG_DIR', workDir);
+    vi.stubEnv('OPENAI_BASE_URL', 'https://gateway.example/v1');
+    writeFileSync(
+      join(workDir, 'settings.json'),
+      JSON.stringify({ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }),
+    );
+    const { config } = await loadTmuxPlayConfig({
+      cwd: workDir,
+      configHome: join(workDir, 'xdg'),
+      readyAdapters: readyAdapters('claude', 'codex'),
+    });
+    for (const role of [config.captain, ...config.players]) {
+      expect(role.effort).toBe('xhigh');
+      expect(role.model).toBeUndefined();
+      expect(role.subagentModel).toBeUndefined();
+    }
+  });
+
   it('auto-creates a home default on first run', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    vi.stubEnv('CLAUDE_CONFIG_DIR', workDir);
+    vi.stubEnv('ANTHROPIC_BASE_URL', 'https://api.anthropic.com');
+    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
+    for (const name of Object.keys(process.env))
+      if (name.startsWith('CLAUDE_CODE_USE_')) vi.stubEnv(name, undefined);
     const cwd = join(workDir, 'project');
     const configHome = join(workDir, 'xdg');
     const notices: string[] = [];
@@ -366,6 +392,7 @@ describe('tmux-play config loading', () => {
   // tmux-play-192: the generated roster follows the installed runtimes, so the
   // config a first run creates is one the first Boss turn can actually run.
   it('generates the first-run roster from one installed adapter', async () => {
+    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const cwd = join(workDir, 'project');
     const configHome = join(workDir, 'xdg');
@@ -1061,7 +1088,7 @@ describe('tmux-play config loading', () => {
   });
 
   // tmux-play-213
-  it('retains inherit and a Claude subagent effort beside the model', async () => {
+  it.each(['claude', 'codex'] as const)('retains configured %s subagent models and efforts', async adapter => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     const configPath = join(workDir, 'subagent-effort.yaml');
     writeFileSync(
@@ -1069,17 +1096,17 @@ describe('tmux-play config loading', () => {
       [
         'captain:',
         "  from: '@sublang/cligent/captains/fanout'",
-        '  adapter: claude',
+        `  adapter: ${adapter}`,
         '  subagentModel: inherit',
         '  subagentEffort: low',
         '  options: {}',
         'players:',
         '  - id: worker',
-        '    adapter: claude',
+        `    adapter: ${adapter}`,
         '    subagentModel: claude-haiku-4-5',
         '    subagentEffort: minimal',
         '  - id: chooser',
-        '    adapter: claude',
+        `    adapter: ${adapter}`,
         '    subagentModel: claude-haiku-4-5',
         '',
       ].join('\n'),
@@ -1107,6 +1134,8 @@ describe('tmux-play config loading', () => {
       ['player', 'claude', true, "''", 'must be one of'],
       ['captain', 'claude', true, 'null', 'must be one of'],
       ['captain', 'codex', false, 'low', 'requires subagentModel'],
+      ['player', 'codex', true, 'ultra', 'must be one of'],
+      ['captain', 'codex', true, 'ultracode', 'must be one of'],
       ['player', 'gemini', false, 'low', 'is not supported'],
       ['captain', 'opencode', false, 'high', 'is not supported'],
       ['player', 'kimi', false, 'on', 'is not supported'],

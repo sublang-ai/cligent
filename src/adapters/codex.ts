@@ -820,7 +820,7 @@ export function mapAgentOptionsToCodexOptions(
         };
   const delegateModel =
     options?.subagentModel === 'inherit'
-      ? options.model
+      ? (options.model?.trim() ? options.model : undefined)
       : options?.subagentModel;
   const delegateEffort = options?.subagentEffort;
   const agentDefaults: Record<string, CodexConfigValue> = {};
@@ -1814,15 +1814,12 @@ export class CodexAdapter implements AgentAdapter<
         options.subagentModel === 'inherit'
           ? 'your own model'
           : JSON.stringify(options.subagentModel);
-      const effort =
-        options.subagentEffort === undefined
-          ? 'choose the reasoning effort each task warrants'
-          : `use ${options.subagentEffort} reasoning effort`;
+      const effort = options.subagentEffort === undefined
+        ? 'choose the reasoning effort each task warrants'
+        : `use ${options.subagentEffort} reasoning effort`;
       const directive =
-        `For this turn, delegate to subagents using ${model} and ${effort}. ${DELEGATION_GUIDANCE} ` +
-        'For a different model or effort, start a fresh subagent without passing conversation history, using the fresh-context option advertised by the spawn tool, and select the model and effort. ' +
-        'Choose a role whose model and effort are compatible with the selection, since role settings take precedence. ' +
-        'A full-context fork inherits both, so omit spawn overrides on that fork.';
+        `When delegating this turn, use ${model} and ${effort}. ${DELEGATION_GUIDANCE} ` +
+        'Choose the history each task needs and follow the spawn tool’s supported options. Role settings and explicit spawn choices may override defaults.';
       prompt = `${directive}\n\n${prompt}`;
     }
     let sdkPrompt: Parameters<NonNullable<CodexThread['runStreamed']>>[0] =

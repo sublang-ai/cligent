@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer drive any registered coding-agent adapter through one role-scoped session object with a uniform event stream, per [DR-001](../decisions/001-unified-cli-agent-interface-architecture.md), [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md), and [DR-003](../decisions/003-role-scoped-session-management.md).
-It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, adapter-scoped fast-mode selection and observation, adapter-scoped subagent-model and subagent-effort selection, `skills` and `nativeSkills` option merging and forwarding, runtime readiness, provider model discovery, runtime-reported model identity, and the shape of an authentic usage report — not how any one adapter executes a prompt.
+It owns what a caller may rely on across every adapter — event ordering and terminal cardinality, session continuity, option merging, concurrency, the portable permission and effort vocabularies, independent Claude Ultracode selection, provider-aware defaults for generated configurations, adapter-scoped fast-mode selection and observation, adapter-scoped subagent-model and subagent-effort selection, `skills` and `nativeSkills` option merging and forwarding, runtime readiness, provider model discovery, runtime-reported model identity, and the shape of an authentic usage report — not how any one adapter executes a prompt.
 Its requirements are stated in this project's `Cligent`, `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, and `DonePayload` vocabulary, the surface it defines and every adapter implements, and in the installed `@sublang/cligent` tree from which an adapter's peer runtime is resolved.
 
 ## External Behavior
@@ -20,7 +20,7 @@ Per [DR-003](../decisions/003-role-scoped-session-management.md), the `Cligent` 
 | Input | Contract |
 | --- | --- |
 | `AgentAdapter` | required adapter |
-| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `subagentModel`, `subagentEffort`, `mcpServers`, `browser`, `skills`, `nativeSkills`, `allowedTools`, and `disallowedTools` |
+| `CligentOptions` | optional instance defaults for `role`, `cwd`, `model`, `permissions`, `maxTurns`, `maxBudgetUsd`, `effort`, `fastMode`, `ultracode`, `subagentModel`, `subagentEffort`, `mcpServers`, `browser`, `skills`, `nativeSkills`, `allowedTools`, and `disallowedTools` |
 | `abortSignal`, `resume`, `attachments`, and the live `approvalHandler` | excluded from instance defaults and available only per invocation in `RunOptions` [[approvals-1](approvals.md#approvals-1)] |
 
 ### engine-2
@@ -38,7 +38,7 @@ When `Cligent.run()` resolves instance defaults and per-call overrides, it shall
 | `mcpServers` | replace the instance map with a provided per-call map, including an empty one |
 | `skills` | replace the instance array with a provided per-call array, including an empty one |
 | `allowedTools` or `disallowedTools` | replace the instance array with a provided per-call array, including an empty one |
-| `fastMode`, `subagentModel`, `subagentEffort`, `nativeSkills`, or another scalar shared by both option types | use the per-call value when provided, including `false`, otherwise the instance default |
+| `fastMode`, `ultracode`, `subagentModel`, `subagentEffort`, `nativeSkills`, or another scalar shared by both option types | use the per-call value when provided, including `false`, otherwise the instance default |
 | `abortSignal`, `resume`, `attachments`, or `approvalHandler` | accept only the per-call value because these fields do not exist in instance defaults, including the live handler [[approvals-1](approvals.md#approvals-1)] |
 
 ### engine-4
@@ -342,6 +342,16 @@ When an effort helper receives an unknown adapter or unsupported value, it shall
 
 Where a metadata-accepted effort is unavailable to the selected model, account, or installed runtime, when the backend rejects the run, the adapter shall expose that upstream failure through its normal error path without substituting another effort.
 
+### Claude Ultracode
+
+### engine-134
+
+The public run and instance options shall accept optional `ultracode: boolean`, merging explicit per-call values over instance defaults independently of effort and forwarding the result unchanged to Claude's native mapping [[claude-code-94](adapters/claude-code.md#claude-code-94)].
+
+### engine-135
+
+When a built-in adapter receives `ultracode`, it shall reject non-booleans and unsupported explicit `true`, accept unsupported `false` without forwarding any native option, and advertise native-request support only for `claude-code` and its `claude` alias through `isUltracodeSupported()`.
+
 ### Fast Mode
 
 ### engine-74
@@ -453,8 +463,9 @@ When a `subagentModel` option reaches a typed or dynamic adapter path, Cligent s
 | Input and adapter | Outcome |
 | --- | --- |
 | omitted | add no Cligent subagent configuration, leaving the runtime's own subagent-model order in force |
-| the literal `inherit` on a request-supported adapter | request the parent model through the adapter's native control, with adapter-specific precedence |
-| any other string containing a non-whitespace character on a request-supported adapter | forward it verbatim to the adapter's native control, with adapter-specific precedence, without checking it against any model catalog |
+| a valid selection on a Claude call whose tool restrictions exclude delegation | omit Cligent’s delegation controls under [[claude-code-60](adapters/claude-code.md#claude-code-60)] |
+| the literal `inherit` on a request-supported adapter permitting delegation | request the parent model through the adapter's native control, with adapter-specific precedence |
+| any other string containing a non-whitespace character on a request-supported adapter permitting delegation | forward it verbatim to the adapter's native control, with adapter-specific precedence, without checking it against any model catalog |
 | a defined non-string, empty, or whitespace-only value on a request-supported built-in adapter | reject before backend invocation with an error naming the adapter, validation path, and expected non-blank string |
 | any defined value on an unsupported built-in adapter | reject before backend invocation with an error naming the adapter and validation path |
 | any defined value on a dynamically registered custom adapter | let that adapter validate its declared capability and value |
@@ -471,7 +482,8 @@ When a `subagentEffort` option reaches a typed or dynamic adapter path, Cligent 
 | any defined value on an unsupported built-in adapter | reject before backend invocation with an error naming the adapter and validation path |
 | any defined value on a request-supported built-in adapter without a `subagentModel` | reject before backend invocation with an error naming the adapter and validation path and stating that `subagentModel` is required |
 | a defined value outside the adapter's [[engine-40](#engine-40)] vocabulary less its orchestration values, including a non-string, empty, `ultracode`, or `ultra` value, on a request-supported built-in adapter with a `subagentModel` | reject before backend invocation with an error naming the adapter, validation path, and accepted values |
-| a value inside that vocabulary on a request-supported built-in adapter with a `subagentModel` | forward it to the adapter's native control for the effort of the subagents the run starts |
+| a value inside that vocabulary on a Claude call excluding delegation under [[engine-91](#engine-91)] | omit the delegation settings |
+| a value inside that vocabulary on a request-supported built-in adapter permitting delegation with a `subagentModel` | forward it to the adapter's native control for the effort of the subagents the run starts |
 | any defined value on a dynamically registered custom adapter | let that adapter validate its declared capability and value |
 
 ### engine-92
@@ -593,6 +605,20 @@ When a caller passes `claude` or `codex` to `locateAgentExecutable(runtime)`, th
 
 - `platform` and `arch` are the host's `process.platform` and `process.arch`.
 - A Claude SDK manifest that is unreadable, is not the SDK's, or declares no optional dependency is no evidence of an unsupported host, so such a lookup reads `missing`.
+
+### Provider-aware Configuration Defaults
+
+### engine-137
+
+Per [DR-047](../decisions/047-provider-aware-model-defaults-and-fork-history.md), the package root shall expose `defaultAgentModels(adapter, env, homeDir?)` for generated configurations with these rules:
+
+| Input | Selection |
+| --- | --- |
+| effective environment | supplied `env`, with string entries from the user’s Claude `settings.json` environment overlaying it only for Claude with an explicit `homeDir`; settings directory is `CLAUDE_CONFIG_DIR` or the home’s `.claude` |
+| direct service | absent or blank provider URL, or the provider's HTTPS API origin with root or `/v1` path (optional trailing slash) and no userinfo, query or fragment |
+| `claude` or `claude-code` | `{model: 'claude-fable-5-2', subagentModel: 'claude-opus-5-5'}` on a direct `ANTHROPIC_BASE_URL` for `https://api.anthropic.com` without a true (`1`, `yes`, `on`, `true`, ignoring case and surrounding whitespace) `CLAUDE_CODE_USE_` selector for Bedrock, Mantle, Vertex, Foundry, Anthropic AWS or Anthropic Google Cloud |
+| `codex` | `{model: 'gpt-6-astra', subagentModel: 'gpt-6.1-sol'}` on a direct `OPENAI_BASE_URL` for `https://api.openai.com` |
+| any other route or adapter | empty object |
 
 ### Authentic Usage Accounting
 
@@ -747,14 +773,6 @@ When an active raw `runParallel()` pool shuts down through cancellation or consu
 | --- | --- |
 | task cancellation while the consumer remains active | retain whole-pool interruption, collecting approval response audit events [[approvals-4](approvals.md#approvals-4)] within concurrent 500-millisecond drains before interrupted terminals |
 | consumer teardown | close pending callbacks and clean up owned generators without requiring further consumption |
-
-### engine-134
-
-The public run and instance options shall accept optional `ultracode: boolean`, merging explicit per-call values over instance defaults independently of effort and forwarding the result unchanged to Claude's native mapping [[claude-code-94](adapters/claude-code.md#claude-code-94)].
-
-### engine-135
-
-When a built-in adapter receives `ultracode`, it shall reject non-booleans and unsupported explicit `true`, accept unsupported `false` without forwarding any native option, and advertise native-request support only for `claude-code` and its `claude` alias through `isUltracodeSupported()`.
 
 ## Verification
 
@@ -1018,6 +1036,10 @@ Where `skills` is supplied across direct adapter, instance-default, per-run, par
 ### engine-133
 
 Where `nativeSkills` is supplied as `false`, `true`, omitted, and a malformed value across direct adapter, instance-default, per-run, parallel, and legacy-registry paths, when built-in and custom adapters run, the check shall assert [[engine-132](#engine-132)] omitted, `true`, forwarded `false`, rejection, malformed-value, and custom-adapter outcomes, [[engine-124](#engine-124)] unchanged forwarding, and [[engine-1](#engine-1)] constructor-option placement.
+
+### engine-138
+
+When generated configuration is selected through the public resolver with a direct service, an alternate provider and local Claude settings, integration verification shall assert the literal parent and child choices and the omission of both pins for alternate providers under [[engine-137](#engine-137)], together with both default names in each direct service’s installed native runtime.
 
 ### engine-136
 

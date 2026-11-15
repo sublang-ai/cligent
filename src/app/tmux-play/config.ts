@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
+import { defaultAgentModels } from '../../default-agent-models.js';
 import { assertUltracodeOption } from '../../ultracode.js';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -231,33 +232,15 @@ const FANOUT_CAPTAIN_SPECIFIER = '@sublang/cligent/captains/fanout';
  */
 const DEFAULT_ROSTER_LIMIT = 2;
 
-/**
- * Per-adapter model and effort for generated default roles. Only the adapters
- * with a shipped model pin carry one: the rest omit `model` and `effort` so
- * the generated roles run each adapter's own defaults instead of a model name
- * this project would have to keep current for a provider it does not pin.
- */
-const DEFAULT_ROLE_BY_ADAPTER: {
-  [A in PlayerAdapterName]: {
-    readonly model?: string;
-    readonly effort?: EffortForAgent<A>;
-    readonly subagentModel?: SubagentModelForAgent<A>;
+/** The launcher owns the parent effort, the public runtime contract owns model pins. */
+function defaultRoleTuning(adapter: PlayerAdapterName) {
+  return {
+    ...defaultAgentModels(adapter, process.env, homedir()),
+    ...(adapter === 'claude' || adapter === 'codex'
+      ? { effort: 'xhigh' as const }
+      : {}),
   };
-} = {
-  claude: {
-    model: 'claude-fable-5-2',
-    effort: 'xhigh',
-    subagentModel: 'claude-opus-5-5',
-  },
-  codex: {
-    model: 'gpt-6-astra',
-    effort: 'xhigh',
-    subagentModel: 'gpt-6.1-sol',
-  },
-  gemini: {},
-  kimi: {},
-  opencode: {},
-};
+}
 
 /**
  * The first-run default config for a roster of adapters whose runtimes are
@@ -307,15 +290,10 @@ function defaultTmuxPlayConfig(
 function defaultCaptainConfig<A extends PlayerAdapterName>(
   adapter: A,
 ): CaptainConfig<A> {
-  const role = DEFAULT_ROLE_BY_ADAPTER[adapter];
   return {
     from: FANOUT_CAPTAIN_SPECIFIER,
     adapter,
-    ...(role.model !== undefined ? { model: role.model } : {}),
-    ...(role.effort !== undefined ? { effort: role.effort } : {}),
-    ...(role.subagentModel !== undefined
-      ? { subagentModel: role.subagentModel }
-      : {}),
+    ...defaultRoleTuning(adapter),
     instruction: 'Coordinate players and answer the Boss.',
     permissions: { mode: 'auto' },
     options: {},
@@ -325,15 +303,10 @@ function defaultCaptainConfig<A extends PlayerAdapterName>(
 function defaultPlayerConfig<A extends PlayerAdapterName>(
   adapter: A,
 ): PlayerConfig<A> {
-  const role = DEFAULT_ROLE_BY_ADAPTER[adapter];
   return {
     id: adapter,
     adapter,
-    ...(role.model !== undefined ? { model: role.model } : {}),
-    ...(role.effort !== undefined ? { effort: role.effort } : {}),
-    ...(role.subagentModel !== undefined
-      ? { subagentModel: role.subagentModel }
-      : {}),
+    ...defaultRoleTuning(adapter),
     instruction:
       `You are the ${adapter} player in a fanout Captain session. ` +
       'Provide an independent answer.',

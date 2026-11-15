@@ -22,7 +22,7 @@ try {
   /* Optional native runtime. */
 }
 const acceptanceIt = launcher || process.env.CI ? it : it.skip;
-const PARENT_PROMPT = 'PARENT_ONLY: Spawn one fresh child, then finish.';
+const PARENT_PROMPT = 'PARENT_ONLY: Spawn one child, then finish.';
 const CHILD_PROMPT = 'CHILD_ONLY: Return CHILD_DONE.';
 
 interface ProviderRequest {
@@ -48,11 +48,13 @@ const parentProfiles = [
   { model: 'gpt-5.4', namespace: 'multi_agent_v1' },
 ] as const;
 
-for (const [profile, override] of parentProfiles.flatMap((profile) =>
-  [false, true].map((override) => [profile, override] as const),
+for (const { profile, override, history } of parentProfiles.flatMap((profile) =>
+  [false, true].flatMap((history) =>
+    [false, true].map((override) => ({ profile, override, history })),
+  ),
 )) {
   acceptanceIt(
-    `runs a fresh native ${profile.model} child with ${override ? 'explicit spawn overrides' : 'adapter defaults'} (codex-90)`,
+    `runs a native ${profile.model} child with ${history ? 'full' : 'fresh'} history with ${override ? 'explicit spawn overrides' : 'adapter defaults'} (codex-90)`,
     async () => {
       expect(
         launcher,
@@ -108,8 +110,11 @@ for (const [profile, override] of parentProfiles.flatMap((profile) =>
                   arguments: JSON.stringify({
                     message: CHILD_PROMPT,
                     ...(profile.namespace === 'collaboration'
-                      ? { task_name: 'child', fork_turns: 'none' }
-                      : { fork_context: false }),
+                      ? {
+                          task_name: 'child',
+                          fork_turns: history ? 'all' : 'none',
+                        }
+                      : { fork_context: history }),
                     ...(override
                       ? { model: 'gpt-6-sol', reasoning_effort: 'medium' }
                       : {}),
@@ -277,7 +282,7 @@ for (const [profile, override] of parentProfiles.flatMap((profile) =>
               )?.tools
             : requests[0]?.tools;
         const spawn = tools
-          .flatMap((tool) => tool.tools ?? [])
+          ?.flatMap((tool) => tool.tools ?? [])
           .find((tool) => tool.name === 'spawn_agent');
         expect(spawn?.parameters, diagnostics).toMatchObject({
           properties:
@@ -291,14 +296,13 @@ for (const [profile, override] of parentProfiles.flatMap((profile) =>
           ),
         );
         expect(parentInput).toContain(PARENT_PROMPT);
-        expect(parentInput).toContain(
-          'fresh-context option advertised by the spawn tool',
-        );
-        expect(parentInput).not.toContain('fork_turns');
+        expect(parentInput).toContain('Choose the history each task needs');
         expect(parentInput).toContain('gpt-6.1-sol');
         expect(parentInput).toContain('low reasoning effort');
         expect(JSON.stringify(children[0]?.input)).toContain(CHILD_PROMPT);
-        expect(JSON.stringify(children[0]?.input)).not.toContain('PARENT_ONLY');
+        expect(JSON.stringify(children[0]?.input).includes('PARENT_ONLY')).toBe(
+          history,
+        );
         const result = parents[1]?.input.find(
           (item) =>
             item.type === 'function_call_output' &&

@@ -166,7 +166,7 @@ players:
 
 | Adapter    | Accepted values                                                 | Provider transport and qualifications                                                                                                                                                                                                                                                                                            |
 | ---------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `claude`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultracode` | Portable values use the Claude SDK `effort` field and explicitly set `settings.ultracode: false`. `minimal` maps lossily to `low`. `ultracode` maps to SDK `effort: xhigh` plus `settings.ultracode: true`; it is an exact user-facing Claude term, not a literal single-field pass-through.                                     |
+| `claude`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultracode` | Portable values set SDK `effort`. `minimal` maps to `low`. The `ultracode` shorthand selects `xhigh` and enables workflows. An independent boolean `ultracode` overrides that choice. Ordinary effort alone preserves the native workflow setting. |
 | `codex`    | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`     | `minimal` through `xhigh` use SDK thread `modelReasoningEffort`. `max` and `ultra` pass through unchanged as constructor `config.model_reasoning_effort`, leaving the thread field unset.                                                                                                                                        |
 | `gemini`   | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | A concrete `gemini-3*` model gets a per-run settings alias with `thinkingLevel`; a concrete `gemini-2.5*` model gets `thinkingBudget`. An unset model, a CLI alias, an unmatched model, a working directory that is the Gemini home, an environment naming no home, or a sandboxed Gemini run gets no effort override.                                          |
 | `opencode` | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`              | The value maps to the v2 prompt body's `variant`: the one the model advertises in the server's provider catalog, else its nearest advertised effort variant, the higher on a tie. A model listed without effort variants, or an omitted or malformed model, gets no effort override.                                             |
@@ -285,17 +285,17 @@ omission. The built-in `Explore` and `Plan` keep their own definitions,
 read-only tools included, and the role's own effort. The loader checks both
 against the role's adapter before runtime startup and names the offending
 Captain or player path and adapter on error.
-Omission adds no override. The generated home config always omits both. See
+On the direct Anthropic and OpenAI services the generated home config pins
+the parent and child models shown above and leaves subagent effort open.
+Cloud and custom endpoints keep their own model selection. See
 the [subagent guide](guide.md#subagent-model-and-effort) for adapter details.
 Codex sends `agents.default_subagent_model` with the selected model, using the
 known parent model for `inherit`, or omitting it when unknown. A pinned effort
-uses `agents.default_subagent_reasoning_effort`. Every tuned call tells the
-player to explicitly choose the named or parent model and any pinned effort
-at spawn; different settings require `fork_context=false`, and full-context
-forks accept no overrides. Explicit spawn settings and role-defined overrides
-retain native precedence. These defaults never enforce settings across every
-subagent and leave native enablement alone. Omission adds neither overrides
-nor instructions; there is no cross-project forced model.
+uses `agents.default_subagent_reasoning_effort`. Each tuned call asks the player to use the selected settings when delegating,
+choose the history its task needs, and follow the spawn tool’s supported
+options. Explicit spawn choices and custom role overrides retain their
+native precedence. Omitted tuning preserves native enablement and defaults.
+
 
 ### Legacy `reasoningEffort` compatibility
 
@@ -730,11 +730,3 @@ export default function createCaptain(options = {}) {
 
 Built-in `fanout` (`@sublang/cligent/captains/fanout`) uses this same
 contract — third-party Captains aren't second-class.
-
-Claude accepts optional `ultracode: true` or `false` independently of `effort`,
-including on resumed runs. An explicit boolean overrides the legacy
-`effort: 'ultracode'` shorthand (which still selects `xhigh` plus Ultracode).
-Omitting the flag with ordinary effort preserves native workflow settings.
-`isUltracodeSupported(adapter)` identifies Claude native request support;
-other adapters reject `true` and treat `false` as a no-op. Native model,
-account, and workflow policy still determine availability.

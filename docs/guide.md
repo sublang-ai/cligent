@@ -228,9 +228,11 @@ for await (const event of claude.run('Review this change', {
 The mappings have a few important qualifications:
 
 - **Claude Code:** `ultracode` maps to SDK `effort: 'xhigh'` plus
-  `settings.ultracode: true`. Every explicit portable value sets
-  `settings.ultracode: false`, so a run can downgrade inherited ultracode
-  configuration. `minimal` maps to Claude's lowest native tier, `low`.
+  `settings.ultracode: true`. An explicit boolean `ultracode` overrides the
+  shorthand's workflow setting on fresh and resumed runs. Ordinary effort
+  leaves native workflows alone unless you supply this boolean. Use
+  `isUltracodeSupported(adapter)` to discover native support. Other adapters
+  reject `true` and accept `false` as a no-op. `minimal` maps to Claude's lowest native tier, `low`.
   Ultracode requires compatible workflow support and an xhigh-capable model,
   account, and installed runtime. Its delegated workflow can increase token
   use, latency, cost, concurrency, and tool activity.
@@ -458,7 +460,7 @@ Without `subagentModel` the adapter sets neither variable, registers no
 definition, and passes no system prompt, so the query is exactly what it would
 be without the feature. The options change which model and effort subagents
 use, never whether the agent may start them: a run whose `allowedTools` omits
-`Agent` still has no subagents. Cligent checks that a model is present, not
+`Agent` receives no Cligent child model, delegate definitions or delegation directive. Cligent checks that a model is present, not
 that it exists; a model the runtime cannot serve is refused through the
 ordinary error path.
 
@@ -471,20 +473,23 @@ line into the system prompt the adapter sends. The package exports the
 For Codex, the constructor configuration sends
 `agents.default_subagent_model` with the named model. With `inherit`, it sends
 the parent `model` explicitly when known; otherwise it omits that default for
-native parent inheritance. A pinned effort travels as
+native model selection. A pinned effort travels as
 `agents.default_subagent_reasoning_effort`. Each tuned outbound prompt,
-including resumed calls, tells the player to explicitly select the named or
-parent model and any pinned effort when spawning. A different model or effort
-requires a fresh subagent without conversation history, using the fresh-context
-option advertised by the spawn tool; a full-context fork carries no model or
-effort override. These are defaults and instructions: native explicit
-spawn settings override defaults, and custom role model or effort settings
-retain their native precedence. The defaults do not enforce settings across
-every subagent. See the [official Codex subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+including resumed calls, asks the player to use the selected model and effort
+when delegating. The parent chooses how much history the task needs and
+follows the options its spawn tool supports. The tested collaboration and
+legacy tools honor child defaults and explicit model and effort on both fresh
+and full-history spawns. Explicit spawn settings and custom role settings
+retain native precedence. See the [official Codex subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
 Untuned Codex calls add neither defaults nor the directive. Tuning leaves
 native agent enablement and unrelated settings alone, and introduces no
-cross-project model default. `CodexSubagentEffort` is exported beside
+implicit model default on library calls. To seed a fresh configuration, use
+`defaultAgentModels(adapter, env, homeDir?)`. Direct Anthropic and OpenAI
+services receive the release’s parent and child pair. Other providers keep
+their native model selection. Supply the local user’s home to include their
+Claude settings, or omit it for a seat with its own environment.
+`CodexSubagentEffort` is exported beside
 `ClaudeSubagentEffort`.
 
 Use `SUBAGENT_MODEL_SUPPORT` and its helpers to decide where to offer both
@@ -1221,11 +1226,3 @@ for await (const event of agent.run('Fix the login bug', {
 | `codex:usage`                  | `status`, `reason`, `resumed`, `threadId?`, `snapshot?`, `baseline?`, `delta?` | Native terminal token-accounting decision |
 | `error`                        | `code`, `message`, `recoverable`                                                     | Error                                                                    |
 | `done`                         | `status`, `resumeToken?`, `usage`, `durationMs`, `fastMode?`                         | Terminal event — always last; Claude may report state and response speed |
-
-Claude accepts optional `ultracode: true` or `false` independently of `effort`,
-including on resumed runs. An explicit boolean overrides the legacy
-`effort: 'ultracode'` shorthand (which still selects `xhigh` plus Ultracode).
-Omitting the flag with ordinary effort preserves native workflow settings.
-`isUltracodeSupported(adapter)` identifies Claude native request support;
-other adapters reject `true` and treat `false` as a no-op. Native model,
-account, and workflow policy still determine availability.

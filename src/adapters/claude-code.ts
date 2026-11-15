@@ -1344,7 +1344,11 @@ export function mapAgentOptionsToClaudeQueryOptions(
   const systemPromptParts: string[] = [];
   let agents: Record<string, ClaudeAgentDefinition> | undefined;
   const subagentModel = options?.subagentModel;
-  if (subagentModel !== undefined) {
+  const allowsDelegation =
+    (options?.allowedTools === undefined ||
+      options.allowedTools.some((tool) => tool === 'Agent' || tool === 'Task')) &&
+    !options?.disallowedTools?.some((tool) => tool === 'Agent' || tool === 'Task');
+  if (subagentModel !== undefined && allowsDelegation) {
     if (subagentModel === INHERIT_SUBAGENT_MODEL) {
       delete env.CLAUDE_CODE_SUBAGENT_MODEL;
     } else {

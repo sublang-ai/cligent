@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Codex through the `@openai/codex-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns whether the SDK and the native binary its CLI spawns are ready to run and how a portable request becomes a Codex thread, including native fast-tier selection, how a portable permission policy becomes a Codex permission profile, and how that thread's stream becomes unified events, thread continuity, and token accounting, together with the per-run configuration delivery, observation limits, and executable resolution those mappings require, not what a caller does with them and not the SDK's own behavior.
+It owns whether the SDK and the native binary its CLI spawns are ready to run and how a portable request becomes a Codex thread, including native fast-tier selection, subagent defaults and per-turn delegation guidance, how a portable permission policy becomes a Codex permission profile, and how that thread's stream becomes unified events, thread continuity, and token accounting, together with the per-run configuration delivery, observation limits, and executable resolution those mappings require, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 Further project-specific references are essential to that intent and appear nowhere else: the distributable whose installed tree anchors executable resolution, the generated extra-writes profile this adapter names and delivers, and the programmatic working directory that motivates bypassing the interactive git-repository gate.
 
@@ -453,7 +453,7 @@ When the adapter maps accepted `subagentModel` and `subagentEffort` selections [
 | --- | --- |
 | named model | `default_subagent_model` is the exact supplied string |
 | `inherit` and non-blank parent `model` supplied | `default_subagent_model` is that exact parent model |
-| `inherit` and parent model unknown | omit `default_subagent_model`, leaving native parent inheritance |
+| `inherit` and parent model unknown | omit `default_subagent_model`, leaving native model selection in control |
 | effort supplied beside a model selection | `default_subagent_reasoning_effort` is that exact effort |
 | effort omitted | omit the effort default |
 | model selection omitted | add neither default |
@@ -462,13 +462,17 @@ These defaults preserve native explicit-spawn precedence and subsequent role-def
 
 ### codex-88
 
-When the adapter prepares the outbound prompt for any call, including resume, it shall compose a delegation directive exactly when `subagentModel` is present, preserving the caller's prompt and attachment order under [[codex-67](#codex-67)]:
+When the adapter prepares the outbound prompt for any admitted call, including resume, it shall prepend this directive and one blank line to the original text exactly when `subagentModel` is present, preserving the caller's attachment order under [[codex-67](#codex-67)] and respecting native spawn options per [DR-047](../../decisions/047-provider-aware-model-defaults-and-fork-history.md):
 
-- scope the directive to this turn and name the selected model or the parent model for `inherit`, instructing explicit model selection at spawn;
-- name the pinned effort when supplied and instruct its explicit selection at spawn, otherwise leave effort to the player per task;
-- require a fresh subagent without conversation history, using the fresh-context option advertised by the spawn tool, for a different model or effort and no model or effort overrides on a full-context fork;
-- honor native explicit-spawn precedence and role-defined overrides rather than claiming runtime-wide enforcement;
-- delegate only fully specified, tightly bounded, fine-grained work, retaining deep thinking, reasoning, and design, briefing each delegate fully, and verifying its result before use.
+```text
+When delegating this turn, use {model} and {effort}. {guidance} Choose the history each task needs and follow the spawn tool’s supported options. Role settings and explicit spawn choices may override defaults.
+```
+
+| Part | Text |
+| --- | --- |
+| `model` | `your own model` for `inherit`, otherwise the JSON-quoted model ID |
+| `effort` | `use <value> reasoning effort` when supplied, otherwise `choose the reasoning effort each task warrants` |
+| `guidance` | the shared bounded-delegation, retained reasoning and verification sentences following `{first}` in [[claude-code-61](claude-code.md#claude-code-61)] |
 
 ## Internal Behavior
 
@@ -866,11 +870,11 @@ When [the native configuration probe](../../../scripts/verify-codex-native-confi
 
 ### codex-89
 
-When integration checks execute fresh and resumed calls through the installed SDK and a recording executable, verification shall assert the named-model, known-parent `inherit`, unknown-parent `inherit`, every accepted pinned-effort, omitted-effort, and untuned cases of native defaults [[codex-87](#codex-87)], and the corresponding outbound directives, caller prompt preservation, full-context versus fresh-spawn guidance, native precedence disclosure, and attachment ordering [[codex-88](#codex-88)], [[codex-67](#codex-67)].
+When integration checks execute fresh and resumed calls through the installed SDK and a recording executable, verification shall assert the named-model, known-parent `inherit`, unknown-parent `inherit`, every accepted pinned-effort, omitted-effort, and untuned cases of native defaults [[codex-87](#codex-87)], and the corresponding outbound directives, caller prompt preservation, history and supported-options guidance, native precedence disclosure, and attachment ordering [[codex-88](#codex-88)], [[codex-67](#codex-67)].
 
 ### codex-90
 
-When acceptance checks execute the installed SDK and native Codex against a loopback Responses provider in isolated homes without provider credentials, verification shall observe a real fresh GPT-6.1 Sol child using configured low effort under both a GPT-6 Astra parent with the collaboration spawn schema and a legacy parent with the multi-agent spawn schema, an explicitly overridden fresh child retaining native spawn precedence, and unchanged parent model and effort [[codex-87](#codex-87)], together with the parent prompt’s schema-neutral fresh-context directive [[codex-88](#codex-88)].
+When acceptance checks execute the installed SDK and native Codex against a loopback Responses provider in isolated homes without provider credentials, verification shall observe fresh and full-history children under both a GPT-6 Astra parent with the collaboration spawn schema and a legacy parent with the multi-agent spawn schema: child history matches the requested mode, the configured GPT-6.1 Sol model and low effort apply when omitted at spawn, explicit model and effort overrides apply when supplied, and the parent retains its model and effort [[codex-87](#codex-87)], together with the parent prompt’s schema-neutral history guidance [[codex-88](#codex-88)].
 
 ## References
 

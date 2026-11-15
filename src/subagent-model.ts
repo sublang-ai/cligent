@@ -34,7 +34,7 @@ export const SUBAGENT_MODEL_SUPPORT = Object.freeze({
   codex: Object.freeze({
     requestSupported: true,
     notes:
-      'Codex sends native per-run subagent model and reasoning effort defaults and a delegation directive in the prompt. Explicit spawn settings and custom role definitions can override these defaults. A full-history fork inherits the parent model and effort.',
+      'Codex sends native per-run subagent model and reasoning effort defaults and a delegation directive in the prompt. Explicit spawn settings and custom role definitions can override these defaults. History selection follows the native spawn tool and is independent of these defaults.',
   }),
   gemini: Object.freeze({
     requestSupported: false,

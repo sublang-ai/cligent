@@ -70,12 +70,10 @@ meta.md       The spec of specs
 | [DR-041](decisions/041-codex-final-response.md) | 041-codex-final-response.md | Codex terminal result follows the public SDK final-response contract |
 | [DR-042](decisions/042-windows-powershell-module-cache.md) | 042-windows-powershell-module-cache.md | Windows module-analysis cache stays outside the caller working directory |
 | [DR-043](decisions/043-audited-development-matchers.md) | 043-audited-development-matchers.md | Exact development matcher substitutions with consumer compatibility checks and unchanged runtime/audit safeguards |
-
 | [DR-044](decisions/044-codex-subagent-tuning.md) | 044-codex-subagent-tuning.md | Codex subagent defaults and per-call delegation instructions, preserving native precedence |
-
 | [DR-045](decisions/045-independent-claude-ultracode.md) | 045-independent-claude-ultracode.md | Independent Claude Ultracode boolean, legacy effort shorthand, native defaults, and transport support |
-
-| [DR-046](decisions/046-primary-and-subagent-defaults.md) | 046-primary-and-subagent-defaults.md | Shipped parent/subagent pins and schema-neutral Codex fresh-context instructions |
+| [DR-046](decisions/046-primary-and-subagent-defaults.md) | 046-primary-and-subagent-defaults.md | Shipped parent/subagent pins and schema-neutral Codex spawn instructions, amended by DR-047 |
+| [DR-047](decisions/047-provider-aware-model-defaults-and-fork-history.md) | 047-provider-aware-model-defaults-and-fork-history.md | Shared provider-aware model pairs and verified Codex fork history semantics |
 
 ## Packages
 

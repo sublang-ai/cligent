@@ -6,7 +6,7 @@
 ## Intent
 
 This package lets a consumer of the agent-adapter contract run Claude Code through the `@anthropic-ai/claude-agent-sdk`, per [DR-002](../../decisions/002-unified-event-stream-and-adapter-interface.md).
-It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including deterministic native session naming, native fast-mode, subagent-model, and subagent-effort selection, run skills and the native-skill switch, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
+It owns whether the SDK and the native binary it spawns are ready to run and how a portable request becomes an SDK query, including deterministic native session naming, independent Ultracode, native fast-mode, subagent-model, and subagent-effort selection, run skills and the native-skill switch, and how that query's stream becomes unified events, permission decisions, authentic fast-mode observation, resume continuity, and token accounting, not what a caller does with them and not the SDK's own behavior.
 Its requirements are stated in this project's `AgentAdapter`, `AgentEvent`, `AgentOptions`, `PermissionPolicy`, `DonePayload`, and `Cligent` vocabulary, which the engine defines and without which this adapter's behavior cannot be stated.
 
 ## External Behavior
@@ -300,13 +300,13 @@ Per [DR-045](../../decisions/045-independent-claude-ultracode.md), when `AgentOp
 
 ### claude-code-23
 
-Where `AgentOptions.effort` is `ultracode`, when the adapter maps the same permission input with and without that effort, it shall leave every permission control unchanged.
+Where a caller selects Ultracode through effort shorthand or the independent boolean [[claude-code-94](#claude-code-94)], when the adapter maps the same permission input with and without that selection, it shall leave every permission control unchanged.
 
 ### Fast Mode
 
 ### claude-code-52
 
-When the adapter maps `AgentOptions.fastMode` under [[engine-75](../engine.md#engine-75)], it shall produce this Claude SDK settings matrix per [[4]], [[5]], and [[7]] while preserving [[claude-code-8](#claude-code-8)]'s independently selected `settings.ultracode` value in the same settings object:
+When the adapter maps `AgentOptions.fastMode` under [[engine-75](../engine.md#engine-75)], it shall produce this Claude SDK settings matrix per [[4]], [[5]], and [[7]] while preserving [[claude-code-8](#claude-code-8)] and [[claude-code-94](#claude-code-94)]'s selected `settings.ultracode` value in the same settings object:
 
 | `AgentOptions.fastMode` | `settings.fastMode` | `settings.fastModePerSessionOptIn` |
 | --- | --- | --- |
@@ -340,13 +340,13 @@ When the adapter maps `AgentOptions.subagentModel` under [[engine-91](../engine.
 
 | `AgentOptions.subagentModel` | `CLAUDE_CODE_SUBAGENT_MODEL` | `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` |
 | --- | --- | --- |
-| omitted | the caller environment's value or absence | the caller environment's value or absence |
+| omitted, or the run excludes the Agent tool (including its Task alias) through [[claude-code-9](#claude-code-9)] or a disallowed tool | the caller environment's value or absence | the caller environment's value or absence |
 | `inherit` | absent, removing any caller value | `'1'` |
 | any other accepted value | the value, verbatim | `'1'` |
 
 ### claude-code-61
 
-When the adapter maps `AgentOptions.subagentModel` and `AgentOptions.subagentEffort` under [[engine-91](../engine.md#engine-91)] and [[engine-97](../engine.md#engine-97)], it shall contribute to [[claude-code-62](#claude-code-62)]'s system-prompt parts no part when `subagentModel` is omitted, and otherwise the delegation directive below as the final part, its `{first}` selected through this matrix, `{model}` being the `subagentModel` value verbatim and `{effort}` the [[claude-code-8](#claude-code-8)] SDK effort of the accepted `subagentEffort`:
+When the adapter maps `AgentOptions.subagentModel` and `AgentOptions.subagentEffort` under [[engine-91](../engine.md#engine-91)] and [[engine-97](../engine.md#engine-97)], it shall contribute to [[claude-code-62](#claude-code-62)]'s system-prompt parts no part when `subagentModel` is omitted or the run excludes the Agent tool under [[claude-code-60](#claude-code-60)], and otherwise the delegation directive below as the final part, its `{first}` selected through this matrix, `{model}` being the `subagentModel` value verbatim and `{effort}` the [[claude-code-8](#claude-code-8)] SDK effort of the accepted `subagentEffort`:
 
 | `subagentModel` | `subagentEffort` | `{first}` |
 | --- | --- | --- |
@@ -365,7 +365,7 @@ When the adapter maps `AgentOptions.subagentModel` and `AgentOptions.subagentEff
 
 | `subagentModel` | `subagentEffort` | SDK `agents` |
 | --- | --- | --- |
-| omitted | omitted | omitted |
+| omitted or the run excludes the Agent tool under [[claude-code-60](#claude-code-60)] | any accepted input | omitted |
 | accepted value | accepted value | a definition named `delegate` and one named `general-purpose`, replacing that built-in, both at the value's [[claude-code-8](#claude-code-8)] SDK effort, and none named `Explore` or `Plan`, which keep their built-in definitions |
 | accepted value | omitted | one definition named `delegate-<effort>` per distinct [[claude-code-8](#claude-code-8)] SDK effort of the [[engine-40](../engine.md#engine-40)] `ClaudeEffort` values other than `ultracode`, in that vocabulary's order — `delegate-low`, `delegate-medium`, `delegate-high`, `delegate-xhigh`, and `delegate-max` — then one named `general-purpose`, replacing that built-in, at `medium`, and none named `Explore` or `Plan`, which keep their built-in definitions |
 

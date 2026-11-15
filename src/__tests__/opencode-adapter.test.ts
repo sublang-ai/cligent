@@ -1224,6 +1224,24 @@ describe('OpenCodeAdapter', () => {
     expect(processRef.stderr.listenerCount('data')).toBe(0);
   });
 
+  it('accepts explicit Ultracode false without forwarding it to the native request', async () => {
+    const calls: Record<string, unknown>[] = [];
+    const adapter = new OpenCodeAdapter(
+      { mode: 'external', serverUrl: 'http://opencode.local:7777' },
+      {
+        loadSdk: makeLoader({
+          events: [
+            { type: 'session.idle', properties: { sessionID: 'session-1' } },
+          ],
+          onRun: (request) => calls.push(request),
+        }),
+      },
+    );
+    await collect(adapter.run('work', { ultracode: false }));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).not.toHaveProperty('ultracode');
+  });
+
   it.each([
     ['anthropic/claude-sonnet-4-5', 'minimal', 'high'],
     ['anthropic/claude-sonnet-4-5', 'low', 'high'],
