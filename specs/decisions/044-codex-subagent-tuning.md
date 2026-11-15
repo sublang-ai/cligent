@@ -5,7 +5,8 @@
 
 ## Status
 
-Accepted (2026-11-14). Amended by [DR-046](046-primary-and-subagent-defaults.md) and [DR-047](047-provider-aware-model-defaults-and-fork-history.md).
+Accepted (2026-11-14).
+Amended by [DR-046](046-primary-and-subagent-defaults.md) for schema-neutral spawn guidance and by [DR-047](047-provider-aware-model-defaults-and-fork-history.md) for history selection independent of child tuning.
 Amends [DR-028](028-subagent-model.md) and [DR-029](029-subagent-effort.md): Codex supports their shared options with native defaults and outbound delegation instructions rather than Claude's forced model and registered definitions.
 
 ## Context
@@ -23,7 +24,8 @@ A supplied effort becomes `agents.default_subagent_reasoning_effort`; omission a
 These settings are native defaults, never runtime-wide enforcement: explicit spawn choices and role-defined overrides retain native precedence [[1]].
 
 Every tuned outbound prompt, fresh or resumed, instructs the player to explicitly select the named model or parent model at spawn, and the pinned effort when supplied, while honoring native role overrides.
-[DR-046](046-primary-and-subagent-defaults.md) makes the wording schema-neutral. [DR-047](047-provider-aware-model-defaults-and-fork-history.md) corrects the original fresh-spawn restriction after observing native full-history children.
+[DR-046](046-primary-and-subagent-defaults.md) makes the wording schema-neutral.
+[DR-047](047-provider-aware-model-defaults-and-fork-history.md) corrects the original fresh-spawn restriction after observing native full-history children.
 The player delegates only fully specified, bounded, fine-grained work, retains deep reasoning and design, briefs the delegate fully, and verifies its result.
 Untuned calls add neither defaults nor the directive.
 Native agent enablement, unrelated agent settings, and configuration files remain untouched.

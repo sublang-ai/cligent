@@ -610,11 +610,14 @@ When a caller passes `claude` or `codex` to `locateAgentExecutable(runtime)`, th
 
 ### engine-137
 
-Per [DR-047](../decisions/047-provider-aware-model-defaults-and-fork-history.md), the package root shall expose `defaultAgentModels(adapter, env, homeDir?)` for generated configurations with these rules:
+Per [DR-047](../decisions/047-provider-aware-model-defaults-and-fork-history.md), the package root shall expose `defaultAgentModels(adapter, env, scope?)` for generated configurations with these rules:
 
 | Input | Selection |
 | --- | --- |
-| effective environment | supplied `env`, with string entries from the user’s Claude `settings.json` environment overlaying it only for Claude with an explicit `homeDir`; settings directory is `CLAUDE_CONFIG_DIR` or the home’s `.claude` |
+| effective environment | supplied `env`, with string entries from the user’s Claude `settings.json` environment overlaying it only for Claude with an explicit local home directory string; settings directory is `CLAUDE_CONFIG_DIR` or the home’s `.claude` |
+| Codex user config | a local home string selects `CODEX_HOME/config.toml` or `<home>/.codex/config.toml`; a caller-vetted `{codexHome}` selects only that seat directory’s regular `config.toml`, refusing a conflicting environment path, symbolic link or unreadable file; an omitted scope reads no file and an explicit uninspected `CODEX_HOME` yields no pins |
+| Codex provider | only the built-in `openai` provider with a direct `openai_base_url` or no override; the selected `profiles.<profile>.model_provider` takes precedence over top-level `model_provider`, whose default is `openai`; a missing config file uses the native default, while an unreadable or malformed file or unresolved profile yields no pins |
+| seed boundary | the caller's environment and authorized user-level files, excluding later per-run, project-local and managed settings |
 | direct service | absent or blank provider URL, or the provider's HTTPS API origin with root or `/v1` path (optional trailing slash) and no userinfo, query or fragment |
 | `claude` or `claude-code` | `{model: 'claude-fable-5-2', subagentModel: 'claude-opus-5-5'}` on a direct `ANTHROPIC_BASE_URL` for `https://api.anthropic.com` without a true (`1`, `yes`, `on`, `true`, ignoring case and surrounding whitespace) `CLAUDE_CODE_USE_` selector for Bedrock, Mantle, Vertex, Foundry, Anthropic AWS or Anthropic Google Cloud |
 | `codex` | `{model: 'gpt-6-astra', subagentModel: 'gpt-6.1-sol'}` on a direct `OPENAI_BASE_URL` for `https://api.openai.com` |
@@ -895,7 +898,7 @@ Where a consumer imports subagent-model metadata and helpers from the public ent
 
 ### engine-96
 
-Where supported built-in adapters, unsupported built-in adapters, and custom adapters are exercised at the engine integration boundary through direct, instance-default, per-run, parallel, and legacy-registry paths, the check shall assert [[engine-91](#engine-91)] omitted, `inherit`, forwarded, malformed-value, unsupported-adapter, custom-validation, and upstream-refusal outcomes, [[engine-97](#engine-97)] omitted, forwarded, missing-`subagentModel`, out-of-vocabulary, `ultracode`, `ultra`, unsupported-adapter, and custom-validation outcomes, [[engine-3](#engine-3)] per-call precedence over an instance default for each option, and pre-backend rejection of either option for Gemini, OpenCode, and Kimi.
+Where supported built-in adapters, unsupported built-in adapters, and custom adapters are exercised at the engine integration boundary through direct, instance-default, per-run, parallel, and legacy-registry paths, the check shall assert [[engine-91](#engine-91)] omitted, `inherit`, forwarded, malformed-value, unsupported-adapter, custom-validation, and upstream-refusal outcomes, [[engine-97](#engine-97)] omitted, forwarded, missing-`subagentModel`, out-of-vocabulary, `ultracode`, `ultra`, unsupported-adapter, and custom-validation outcomes, [[engine-3](#engine-3)] per-call precedence over an instance default for each option, preservation of the caller’s environment and omission of child tuning where Claude’s tool selection excludes delegation [[claude-code-64](adapters/claude-code.md#claude-code-64)], and pre-backend rejection of either option for Gemini, OpenCode, and Kimi.
 
 ### engine-68
 
@@ -1039,7 +1042,7 @@ Where `nativeSkills` is supplied as `false`, `true`, omitted, and a malformed va
 
 ### engine-138
 
-When generated configuration is selected through the public resolver with a direct service, an alternate provider and local Claude settings, integration verification shall assert the literal parent and child choices and the omission of both pins for alternate providers under [[engine-137](#engine-137)], together with both default names in each direct service’s installed native runtime.
+When generated configuration is selected through the public resolver with a direct service, an alternate provider and local Claude settings or native Codex TOML, including trusted seat scope, explicit uninspected homes, selected profiles and unreadable routing, integration verification shall assert the literal parent and child choices and the omission of both pins for alternate providers under [[engine-137](#engine-137)], together with both default names in each direct service’s installed native runtime.
 
 ### engine-136
 

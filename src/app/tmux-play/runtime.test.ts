@@ -1137,170 +1137,6 @@ describe('TmuxPlayRuntime', () => {
     );
   });
 
-  // tmux-play-215: configured subagent models and efforts are complete
-  // runtime-held defaults; complete settings replace them, and omission
-  // selects the provider default without restoring the configured role value.
-  it('carries configured subagent models and efforts and replaces them only with complete settings', async () => {
-    const records: TmuxPlayRecord[] = [];
-    const observed: Array<{
-      prompt: string;
-      subagentModel: unknown;
-      subagentEffort: unknown;
-    }> = [];
-    let codexRuns = 0;
-    let codexOptions: unknown;
-    const providerDefaults = {
-      model: { kind: 'provider-default' as const },
-      effort: { kind: 'provider-default' as const },
-    };
-    const runtime = await createTmuxPlayRuntime({
-      captain: {
-        async handleBossTurn(_turn, context) {
-          await context.callPlayer('dev.claude', 'configured');
-          await context.callPlayer('dev.claude', 'replaced', {
-            settings: {
-              ...providerDefaults,
-              subagentModel: 'claude-haiku-4-5',
-            },
-          });
-          await context.callPlayer('dev.claude', 'replaced with effort', {
-            settings: {
-              ...providerDefaults,
-              subagentModel: 'inherit',
-              subagentEffort: 'max',
-            },
-          });
-          await context.callPlayer('dev.claude', 'provider default', {
-            settings: providerDefaults,
-          });
-          await context.callPlayer('dev.claude', 'configured again');
-          await context.callCaptain('captain configured');
-          await context.callCaptain('captain provider default', {
-            settings: providerDefaults,
-          });
-
-          await context.callPlayer('dev.codex', 'codex delegated', {
-            settings: {
-              ...providerDefaults,
-              subagentModel: 'codex-child',
-              subagentEffort: 'max',
-            },
-          });
-
-          for (const subagentModel of ['', '   ', 42, null]) {
-            await expectAgentCallSettingsRejection(
-              context.callPlayer('dev.claude', 'malformed', {
-                settings: { ...providerDefaults, subagentModel } as never,
-              }),
-              'subagentModel must be a non-blank string',
-            );
-          }
-          await expectAgentCallSettingsRejection(
-            context.callPlayer('dev.codex', 'malformed', {
-              settings: { ...providerDefaults, subagentModel: '' },
-            }),
-            'subagentModel must be a non-blank string',
-          );
-          const effortRejections: Array<[Record<string, unknown>, string]> = [
-            [{ subagentEffort: 'low' }, 'requires subagentModel'],
-            [
-              { subagentModel: 'inherit', subagentEffort: 'ultracode' },
-              'must be one of: minimal, low, medium, high, xhigh, max',
-            ],
-            [
-              { subagentModel: 'inherit', subagentEffort: 42 },
-              'subagentEffort must be a string',
-            ],
-          ];
-          for (const [fields, message] of effortRejections) {
-            await expectAgentCallSettingsRejection(
-              context.callPlayer('dev.claude', 'malformed effort', {
-                settings: { ...providerDefaults, ...fields } as never,
-              }),
-              message,
-            );
-          }
-          await expectAgentCallSettingsRejection(
-            context.callPlayer('dev.codex', 'unsupported effort', {
-              settings: { ...providerDefaults, subagentEffort: 'low' },
-            }),
-            'subagentEffort for adapter "codex" requires subagentModel',
-          );
-        },
-      },
-      captainConfig: {
-        adapter: 'claude',
-        subagentModel: 'captain-subagent',
-        subagentEffort: 'high',
-      },
-      players: [
-        {
-          id: 'dev.claude',
-          adapter: 'claude',
-          subagentModel: 'player-subagent',
-          subagentEffort: 'low',
-        },
-        { id: 'dev.codex', adapter: 'codex' },
-      ],
-      observers: [{ onRecord: (record) => records.push(record) }],
-      adapterImports: adapterImports({
-        claude: {
-          agent: 'claude-code',
-          async *run(prompt, options) {
-            observed.push({
-              prompt,
-              subagentModel: options?.subagentModel,
-              subagentEffort: options?.subagentEffort,
-            });
-            yield doneEvent('claude-code', 'done');
-          },
-        },
-        codex: {
-          agent: 'codex',
-          async *run(_prompt, options) {
-            codexOptions = options;
-            codexRuns += 1;
-            yield doneEvent('codex', 'done');
-          },
-        },
-      }),
-    });
-
-    await runtime.runBossTurn('go');
-
-    const call = (
-      prompt: string,
-      subagentModel?: string,
-      subagentEffort?: string,
-    ) => ({ prompt, subagentModel, subagentEffort });
-    expect(observed).toEqual([
-      call('configured', 'player-subagent', 'low'),
-      call('replaced', 'claude-haiku-4-5'),
-      call('replaced with effort', 'inherit', 'max'),
-      call('provider default'),
-      call('configured again', 'player-subagent', 'low'),
-      call('captain configured', 'captain-subagent', 'high'),
-      call('captain provider default'),
-    ]);
-    expect(codexRuns).toBe(1);
-    expect(codexOptions).toMatchObject({
-      subagentModel: 'codex-child',
-      subagentEffort: 'max',
-    });
-    expect(
-      records
-        .filter((record) => record.type === 'player_prompt')
-        .map((record) => record.prompt),
-    ).toEqual([
-      'configured',
-      'replaced',
-      'replaced with effort',
-      'provider default',
-      'configured again',
-      'codex delegated',
-    ]);
-  });
-
   it.each(['claude', 'codex'] as const)(
     'resolves complete Captain and player delegation and Ultracode settings for %s',
     async (adapter) => {
@@ -1309,7 +1145,6 @@ describe('TmuxPlayRuntime', () => {
       const observed: unknown[] = [];
       const configured = {
         adapter,
-        subagentModel: 'configured-child',
         subagentEffort: 'low' as const,
         ultracode: adapter === 'claude',
       };
@@ -1318,8 +1153,8 @@ describe('TmuxPlayRuntime', () => {
         effort: { kind: 'provider-default' },
       };
       const runtime = await createTmuxPlayRuntime({
-        captainConfig: configured,
-        players: [{ ...configured, id: 'dev' }],
+        captainConfig: { ...configured, subagentModel: 'captain-child' },
+        players: [{ ...configured, id: 'dev', subagentModel: 'player-child' }],
         captain: {
           async handleBossTurn(_turn, context) {
             for (const call of [
@@ -1342,6 +1177,20 @@ describe('TmuxPlayRuntime', () => {
               });
               await call('provider', defaults);
               await call('restored');
+              for (const subagentModel of ['', '   ', 42, null]) {
+                await expectAgentCallSettingsRejection(
+                  call('invalid model', { ...defaults, subagentModel } as never),
+                  'subagentModel must be a non-blank string',
+                );
+              }
+              await expectAgentCallSettingsRejection(
+                call('missing model', { ...defaults, subagentEffort: 'low' }),
+                'requires subagentModel',
+              );
+              await expectAgentCallSettingsRejection(
+                call('non-string effort', { ...defaults, subagentModel: 'inherit', subagentEffort: 42 } as never),
+                'subagentEffort must be a string',
+              );
               await expectAgentCallSettingsRejection(
                 call('invalid flag', {
                   ...defaults,
@@ -1382,17 +1231,17 @@ describe('TmuxPlayRuntime', () => {
         }),
       });
       await runtime.runBossTurn('go');
-      const expected = [
-        ['configured', 'configured-child', 'low', adapter === 'claude'],
+      const expected = (model: string) => [
+        ['configured', model, 'low', adapter === 'claude'],
         ['inherit', 'inherit', 'max', false],
         ['named', 'named-child', undefined, adapter === 'claude'],
         ['provider', undefined, undefined, undefined],
-        ['restored', 'configured-child', 'low', adapter === 'claude'],
+        ['restored', model, 'low', adapter === 'claude'],
       ];
-      expect(observed).toEqual([...expected, ...expected]);
+      expect(observed).toEqual([...expected('captain-child'), ...expected('player-child')]);
       for (const type of ['captain_prompt', 'player_prompt'])
         expect(records.filter((record) => record.type === type)).toHaveLength(
-          expected.length,
+          5,
         );
     },
   );

@@ -5,7 +5,8 @@
 
 ## Status
 
-Accepted (2026-11-14). Amended by [DR-047](047-provider-aware-model-defaults-and-fork-history.md).
+Accepted (2026-11-14).
+Amended by [DR-047](047-provider-aware-model-defaults-and-fork-history.md) for provider-aware model pairs and independent Codex history selection.
 Amends [DR-044](044-codex-subagent-tuning.md) for schema-neutral fresh-context instructions.
 
 ## Context
@@ -20,7 +21,8 @@ Generated tmux-play Claude roles pin `claude-fable-5-2` with `claude-opus-5-5` s
 Both retain their existing `xhigh` parent effort and leave subagent effort unconfigured.
 Existing configuration values and omitted library options remain unchanged.
 The Claude runtime floor follows the oldest published SDK carrying Fable 5.2 under [DR-027](027-latest-models-oldest-serving-runtime.md), independently of the tested SDK pin.
-The original guidance prescribed fresh history for different model or effort settings. [DR-047](047-provider-aware-model-defaults-and-fork-history.md) corrects that restriction and scopes the shipped pairs to direct providers.
+The original guidance prescribed fresh history for different model or effort settings.
+[DR-047](047-provider-aware-model-defaults-and-fork-history.md) corrects that restriction and scopes the shipped pairs to direct providers.
 The directive names no schema-specific field and retains the native precedence, bounded delegation, briefing, and verification requirements of [DR-044](044-codex-subagent-tuning.md).
 Canonical behavior lives in [[tmux-play-11](../packages/tmux-play.md#tmux-play-11)] and [[codex-88](../packages/adapters/codex.md#codex-88)].
 

@@ -280,7 +280,7 @@ When fallback discovery loads an existing home YAML, the launcher shall apply th
 | Existing state or source | Outcome |
 | --- | --- |
 | safe default missing | add only `theme: auto`, a `layout` block carrying the default `window` and shipped `multiPlayerColumnWeights` per [[tmux-play-11](#tmux-play-11)], `captain.options: {}`, and [[tmux-play-11](#tmux-play-11)]'s notification defaults |
-| existing user values | preserve them; add no `model`, `instruction`, `permissions`, `effort`, `fastMode`, `subagentModel`, `subagentEffort`, or `skills` defaults |
+| existing user values | preserve them; add no `model`, `instruction`, `permissions`, `effort`, `ultracode`, `fastMode`, `subagentModel`, `subagentEffort`, or `skills` defaults |
 | two-element legacy `layout.columnWeights` | rewrite it as `layout.singlePlayerColumnWeights` and write one final YAML form without the alias |
 | three-element legacy `layout.columnWeights` | rewrite it as `layout.multiPlayerColumnWeights` and write one final YAML form without the alias |
 | alias and matching canonical field both present | do not resolve the conflict; reject per [[tmux-play-64](#tmux-play-64)] |
@@ -1265,7 +1265,7 @@ When tmux-play admits a player or Captain call, it shall resolve complete call s
 | session selection | resolve the explicit token, forced-fresh selection, or stored automatic token exactly once at admission per [[tmux-play-41](#tmux-play-41)] and [[tmux-play-88](#tmux-play-88)], then give the same detached selection to reset preflight and `Cligent.run()` |
 | runtime-owned `Cligent` | carry none of the configured model, effort, `fastMode`, `ultracode`, `subagentModel`, `subagentEffort`, instruction, permissions, browser, MCP server, or `skills` defaults, and no `nativeSkills` default |
 | admitted `nativeSkills` | pass it to `Cligent.run()` unchanged per [DR-038](../decisions/038-native-skills-in-tmux-play-call-settings.md), and pass none where supplied settings omit it or no settings are supplied |
-| provider-default selection | omit the selected model or effort, and omit `fastMode` under [[engine-75](engine.md#engine-75)], `subagentModel` under [[engine-91](engine.md#engine-91)], or `subagentEffort` under [[engine-97](engine.md#engine-97)] when absent from supplied settings, from `Cligent.run()`; never restore the configured role value |
+| provider-default selection | omit the selected model or effort, and omit `ultracode` under [[tmux-play-229](#tmux-play-229)], `fastMode` under [[engine-75](engine.md#engine-75)], `subagentModel` under [[engine-91](engine.md#engine-91)], or `subagentEffort` under [[engine-97](engine.md#engine-97)] when absent from supplied settings, from `Cligent.run()`; never restore the configured role value |
 | concrete Gemini effort without a [[gemini-11](adapters/gemini.md#gemini-11)] model alias, or concrete OpenCode effort without an [[opencode-12](adapters/opencode.md#opencode-12)] variant | reject instead of silently ignoring the effort |
 | resumed Claude, provider-default model | admit; omit the model so [[claude-code-6](adapters/claude-code.md#claude-code-6)] lets Claude Code select its current default, as on a fresh call |
 | resumed Claude, concrete model and provider-default effort | omit effort per [[claude-code-8](adapters/claude-code.md#claude-code-8)] so Claude uses that model's default |
@@ -1425,7 +1425,7 @@ Where the home and cwd are empty and the `claude` and `codex` adapter runtimes a
 
 | Observation | Assertion |
 | --- | --- |
-| created home YAML | built-in `fanout` Captain; `claude` and `codex` players with identity instructions; Captain and `claude` use `model: claude-fable-5-2`, `subagentModel: claude-opus-5-5`, `effort: xhigh`; `codex` uses `model: gpt-6-astra`, `subagentModel: gpt-6.1-sol`, `effort: xhigh`; every role has `permissions: { mode: 'auto' }`; no role has `fastMode` or `subagentEffort` [[tmux-play-11](#tmux-play-11)] |
+| created home YAML | built-in `fanout` Captain; `claude` and `codex` players with identity instructions; direct Anthropic roles use `claude-fable-5-2` with `claude-opus-5-5`, direct OpenAI roles use `gpt-6-astra` with `gpt-6.1-sol`, and cloud/custom routes omit both models; every Claude and Codex role has `effort: xhigh`; every role has `permissions: { mode: 'auto' }`; no role has `fastMode`, `ultracode` or `subagentEffort` [[tmux-play-11](#tmux-play-11)] |
 | authored layout and notifications | `layout.window: { columns: 174, rows: 49 }`, `layout.multiPlayerColumnWeights: [1, 1, 1]`, no authored `columnWeights`, and `notifications: { player_finished: bell, turn_finished: desktop }` [[tmux-play-11](#tmux-play-11)], [[tmux-play-76](#tmux-play-76)] |
 | stdout | one line naming the created path and the installed adapters used for the roster [[tmux-play-10](#tmux-play-10)] |
 | second invocation | the freshly created home YAML remains byte-for-byte unchanged [[tmux-play-90](#tmux-play-90)] |

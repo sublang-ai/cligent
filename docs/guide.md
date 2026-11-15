@@ -485,10 +485,17 @@ retain native precedence. See the [official Codex subagent documentation](https:
 Untuned Codex calls add neither defaults nor the directive. Tuning leaves
 native agent enablement and unrelated settings alone, and introduces no
 implicit model default on library calls. To seed a fresh configuration, use
-`defaultAgentModels(adapter, env, homeDir?)`. Direct Anthropic and OpenAI
-services receive the release’s parent and child pair. Other providers keep
-their native model selection. Supply the local user’s home to include their
-Claude settings, or omit it for a seat with its own environment.
+`defaultAgentModels(adapter, env, scope?)`. Direct Anthropic and OpenAI services
+receive the release’s parent and child pair. Supply a local user’s home to
+read their Claude user settings and the Codex provider from `$CODEX_HOME/config.toml`
+or `~/.codex/config.toml`. A non-OpenAI provider, a custom API base URL,
+or an unresolved provider configuration leaves the models to the service.
+A server may pass `{ codexHome }` for the seat’s trusted native directory.
+Omitting the scope performs no file reads and leaves an explicit `CODEX_HOME`
+unverified. The helper evaluates user-level seed settings. A host that applies
+project-local, managed, or invocation-specific routing can pass the corresponding
+provider environment or omit the pins.
+
 `CodexSubagentEffort` is exported beside
 `ClaudeSubagentEffort`.
 

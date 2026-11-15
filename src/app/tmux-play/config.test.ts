@@ -279,7 +279,12 @@ describe('tmux-play config loading', () => {
   it('retains the provider model choices in a fresh home configuration for cloud and custom routes', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     vi.stubEnv('CLAUDE_CONFIG_DIR', workDir);
-    vi.stubEnv('OPENAI_BASE_URL', 'https://gateway.example/v1');
+    vi.stubEnv('CODEX_HOME', workDir);
+    vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
+    writeFileSync(
+      join(workDir, 'config.toml'),
+      'model_provider = "gateway"\n[model_providers.gateway]\nname = "Local gateway"\nbase_url = "https://gateway.example/v1"',
+    );
     writeFileSync(
       join(workDir, 'settings.json'),
       JSON.stringify({ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }),
@@ -299,6 +304,7 @@ describe('tmux-play config loading', () => {
   it('auto-creates a home default on first run', async () => {
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
     vi.stubEnv('CLAUDE_CONFIG_DIR', workDir);
+    vi.stubEnv('CODEX_HOME', workDir);
     vi.stubEnv('ANTHROPIC_BASE_URL', 'https://api.anthropic.com');
     vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
     for (const name of Object.keys(process.env))
@@ -394,6 +400,7 @@ describe('tmux-play config loading', () => {
   it('generates the first-run roster from one installed adapter', async () => {
     vi.stubEnv('OPENAI_BASE_URL', 'https://api.openai.com/v1');
     workDir = mkdtempSync(join(tmpdir(), 'tmux-play-config-'));
+    vi.stubEnv('CODEX_HOME', workDir);
     const cwd = join(workDir, 'project');
     const configHome = join(workDir, 'xdg');
     const notices: Array<readonly PlayerAdapterName[]> = [];

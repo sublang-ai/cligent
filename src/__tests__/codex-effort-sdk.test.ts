@@ -216,13 +216,16 @@ process.stdin.on('end', () => {
             ),
           ).toBe(false);
         if ('subagentModel' in options) {
-          expect(recorded.input).toMatch(/bound(?:ed| tightly)/i);
-          expect(recorded.input).toMatch(/^When delegating this turn,/);
-          expect(recorded.input).toContain('Choose the history each task needs');
-          expect(recorded.input).toMatch(/role/i);
-          expect(recorded.input).toMatch(/verif/i);
-          expect(recorded.input).toMatch(/deep/i);
-          expect(recorded.input).toMatch(/\n\nCaller prompt\./);
+          const model = options.subagentModel === 'inherit' ? 'your own model' : JSON.stringify(options.subagentModel);
+          const effort = 'subagentEffort' in options
+            ? `use ${options.subagentEffort} reasoning effort`
+            : 'choose the reasoning effort each task warrants';
+          expect(recorded.input).toBe(
+            `When delegating this turn, run your subagents on ${model} and ${effort}. ` +
+            'Offload to them the work you can specify completely and bound tightly — well-defined, fine-grained tasks a subagent can implement well — and keep the deep thinking, reasoning, and design work yourself. ' +
+            'Offloading must never lower the quality of what you deliver: brief each subagent fully, and verify its result before you build on it. ' +
+            'Choose the history each task needs and follow the spawn tool’s supported options. Role settings and explicit spawn choices may override defaults.\n\nCaller prompt.',
+          );
         } else expect(recorded.input.trim()).toBe('Caller prompt.');
         expect(
           recorded.argv.some((arg) =>

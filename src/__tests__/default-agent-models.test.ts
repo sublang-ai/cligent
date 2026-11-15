@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
@@ -100,6 +106,80 @@ it("applies user settings over inherited provider variables only for a supplied 
       defaultAgentModels('claude', { CLAUDE_CONFIG_DIR: other }, home),
     ).toEqual({});
     expect(defaultAgentModels('codex', env, home)).toEqual(codex);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+it('uses the active native Codex user provider and preserves native defaults when routing is indeterminate', () => {
+  const home = mkdtempSync(join(tmpdir(), 'cligent-codex-models-'));
+  const directory = join(home, '.codex');
+  mkdirSync(directory);
+  const file = join(directory, 'config.toml');
+  try {
+    expect(defaultAgentModels('codex', {}, home)).toEqual(codex);
+    for (const [source, expected] of [
+      [
+        'model_provider = "azure"\n[model_providers.azure]\nbase_url = "https://gateway.example"',
+        {},
+      ],
+      ['model_provider = "ollama"', {}],
+      [
+        'model_provider = "openai"\nopenai_base_url = "https://gateway.example"',
+        {},
+      ],
+      ['openai_base_url = "https://api.openai.com/v1"', codex],
+      ['profile = "work"\n[profiles.work]\nmodel_provider = "azure"', {}],
+      [
+        'model_provider = "azure"\nprofile = "work"\n[profiles.work]\nmodel_provider = "openai"',
+        codex,
+      ],
+      ['[model_providers.unused]\nbase_url = "https://gateway.example"', codex],
+      ['[profiles.unused]\nmodel_provider = "azure"', codex],
+      ['profile = "missing"', {}],
+      ['model_provider = ["openai"]', {}],
+      ['broken TOML', {}],
+    ] as const) {
+      writeFileSync(file, source);
+      expect(defaultAgentModels('codex', {}, home), source).toEqual(expected);
+      expect(
+        defaultAgentModels(
+          'codex',
+          { CODEX_HOME: directory },
+          join(home, 'other-user'),
+        ),
+        source,
+      ).toEqual(expected);
+      expect(
+        defaultAgentModels(
+          'codex',
+          { CODEX_HOME: directory },
+          { codexHome: directory },
+        ),
+        source,
+      ).toEqual(expected);
+    }
+    writeFileSync(file, 'model_provider = "openai"');
+    expect(defaultAgentModels('codex', { CODEX_HOME: directory })).toEqual({});
+    expect(defaultAgentModels('codex', { HOME: home })).toEqual(codex);
+    expect(
+      defaultAgentModels(
+        'codex',
+        { CODEX_HOME: directory },
+        { codexHome: home },
+      ),
+    ).toEqual({});
+    const other = join(home, 'another-seat');
+    mkdirSync(other);
+    symlinkSync(file, join(other, 'config.toml'));
+    expect(defaultAgentModels('codex', {}, { codexHome: other })).toEqual({});
+    expect(
+      defaultAgentModels(
+        'claude',
+        { CLAUDE_CONFIG_DIR: directory },
+        { codexHome: directory },
+      ),
+    ).toEqual(claude);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

@@ -34,7 +34,7 @@ meta.md       The spec of specs
 | [DR-006](decisions/006-workspace-writable-paths.md) | 006-workspace-writable-paths.md | Workspace-relative writable paths |
 | [DR-007](decisions/007-tmux-play-dynamic-player-visibility.md) | 007-tmux-play-dynamic-player-visibility.md | tmux-play dynamic player visibility |
 | [DR-008](decisions/008-captain-pre-close-lifecycle.md) | 008-captain-pre-close-lifecycle.md | Captain pre-close lifecycle |
-| [DR-009](decisions/009-adapter-scoped-effort-vocabularies.md) | 009-adapter-scoped-effort-vocabularies.md | Adapter-scoped effort vocabularies |
+| [DR-009](decisions/009-adapter-scoped-effort-vocabularies.md) | 009-adapter-scoped-effort-vocabularies.md | Adapter-scoped effort vocabularies; amended by DR-045 for independent Claude workflow control |
 | [DR-010](decisions/010-isolated-captain-control-calls.md) | 010-isolated-captain-control-calls.md | Isolated Captain control calls; Claude MCP confinement amended by DR-030 |
 | [DR-011](decisions/011-kimi-code-acp-integration.md) | 011-kimi-code-acp-integration.md | Kimi Code ACP integration |
 | [DR-012](decisions/012-runtime-derived-tmux-play-defaults.md) | 012-runtime-derived-tmux-play-defaults.md | Runtime-derived tmux-play defaults |
@@ -53,8 +53,8 @@ meta.md       The spec of specs
 | [DR-025](decisions/025-native-executable-availability.md) | 025-native-executable-availability.md | Native-executable presence in availability and readiness, unsupported hosts, host-facing lookup; amends DR-013 |
 | [DR-026](decisions/026-runtime-reported-model-identity.md) | 026-runtime-reported-model-identity.md | Runtime-reported model descriptions, names, unconfigured default and init-time model |
 | [DR-027](decisions/027-latest-models-oldest-serving-runtime.md) | 027-latest-models-oldest-serving-runtime.md | Latest models in every default and example; floors at the oldest release serving the latest models |
-| [DR-028](decisions/028-subagent-model.md) | 028-subagent-model.md | Adapter-scoped subagent model: Claude forces every subagent onto it and composes a delegation directive into its system prompt; `inherit` and its environment, subagent effort, definitions and the directive's wording amended by DR-029 |
-| [DR-029](decisions/029-subagent-effort.md) | 029-subagent-effort.md | Subagent effort beside the subagent model: `inherit`, a pinned or agent-chosen effort enforced through registered subagent definitions, one directive grammar; amends DR-028 |
+| [DR-028](decisions/028-subagent-model.md) | 028-subagent-model.md | Adapter-scoped subagent model: Claude forces every subagent onto it and composes a delegation directive into its system prompt; `inherit` and its environment, subagent effort, definitions and the directive's wording amended by DR-029; amended by DR-044 for Codex delivery and DR-047 for tool-restricted Claude calls |
+| [DR-029](decisions/029-subagent-effort.md) | 029-subagent-effort.md | Subagent effort beside the subagent model: `inherit`, a pinned or agent-chosen effort enforced through registered subagent definitions, one directive grammar; amends DR-028; amended by DR-044 for Codex delivery and DR-047 for tool-restricted Claude calls |
 | [DR-030](decisions/030-players-see-only-their-own-mcp-servers.md) | 030-players-see-only-their-own-mcp-servers.md | Every Claude run confines its MCP servers to those the query passes: `strictMcpConfig: true` and the claude.ai connector gate on every run, `settingSources` unchanged; amends DR-010 |
 | [DR-031](decisions/031-media-input-and-computer-use.md) | 031-media-input-and-computer-use.md | Per-call local media attachments and native prompt-driven computer use |
 | [DR-032](decisions/032-browser-tools-and-media-output.md) | 032-browser-tools-and-media-output.md | Caller-selected MCP tools, managed browser setup, and normalized media output |
@@ -66,14 +66,13 @@ meta.md       The spec of specs
 | [DR-038](decisions/038-native-skills-in-tmux-play-call-settings.md) | 038-native-skills-in-tmux-play-call-settings.md | `nativeSkills` in tmux-play call settings: admitted, snapshotted and forwarded unchanged, Kimi's `false` rejected before the prompt record, no configured default |
 | [DR-039](decisions/039-merge-on-green.md) | 039-merge-on-green.md | Merge on green: protected `main` with the pull request's jobs as required checks, auto-merge, one run per pull-request head, Linux, Windows and one macOS job on a pull request, the full set on `main` and nightly, kept base branches, a pre-push check, deterministic suites |
 | [DR-040](decisions/040-native-windows-codex-isolation.md) | 040-native-windows-codex-isolation.md | Native Windows Codex permission isolation using public SDK launch options and an owned runtime supervisor |
-
 | [DR-041](decisions/041-codex-final-response.md) | 041-codex-final-response.md | Codex terminal result follows the public SDK final-response contract |
 | [DR-042](decisions/042-windows-powershell-module-cache.md) | 042-windows-powershell-module-cache.md | Windows module-analysis cache stays outside the caller working directory |
 | [DR-043](decisions/043-audited-development-matchers.md) | 043-audited-development-matchers.md | Exact development matcher substitutions with consumer compatibility checks and unchanged runtime/audit safeguards |
-| [DR-044](decisions/044-codex-subagent-tuning.md) | 044-codex-subagent-tuning.md | Codex subagent defaults and per-call delegation instructions, preserving native precedence |
-| [DR-045](decisions/045-independent-claude-ultracode.md) | 045-independent-claude-ultracode.md | Independent Claude Ultracode boolean, legacy effort shorthand, native defaults, and transport support |
+| [DR-044](decisions/044-codex-subagent-tuning.md) | 044-codex-subagent-tuning.md | Codex subagent defaults and per-call delegation instructions, preserving native precedence; amends DR-028/029 for Codex and is amended by DR-046 for schema-neutral spawning and DR-047 for fork history |
+| [DR-045](decisions/045-independent-claude-ultracode.md) | 045-independent-claude-ultracode.md | Independent Claude Ultracode boolean, legacy effort shorthand, native defaults, and transport support; amends DR-009 for independent Claude workflow control |
 | [DR-046](decisions/046-primary-and-subagent-defaults.md) | 046-primary-and-subagent-defaults.md | Shipped parent/subagent pins and schema-neutral Codex spawn instructions, amended by DR-047 |
-| [DR-047](decisions/047-provider-aware-model-defaults-and-fork-history.md) | 047-provider-aware-model-defaults-and-fork-history.md | Shared provider-aware model pairs and verified Codex fork history semantics |
+| [DR-047](decisions/047-provider-aware-model-defaults-and-fork-history.md) | 047-provider-aware-model-defaults-and-fork-history.md | Shared provider-aware model pairs and verified Codex fork history semantics; amends DR-028/029 for tool exclusions, DR-044 for fork history and DR-046 for provider scope |
 
 ## Packages
 

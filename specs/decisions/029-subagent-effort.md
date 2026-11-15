@@ -5,6 +5,7 @@
 
 ## Status
 
+Amended by [DR-047](047-provider-aware-model-defaults-and-fork-history.md) for Claude runs whose tool controls exclude delegation.
 Amended by [DR-044](044-codex-subagent-tuning.md): Codex supports the shared tuning options through native defaults and per-call delegation instructions, preserving native spawn and role precedence.
 Accepted (2026-10-01).
 Amends [DR-028](028-subagent-model.md): `subagentModel` gains the literal `inherit`, whose environment carries `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` alone with the caller's `CLAUDE_CODE_SUBAGENT_MODEL` removed; a companion `subagentEffort` joins it; the adapter registers subagent definitions; and the directive's first sentence follows both settings while its remaining sentences no longer name the model.

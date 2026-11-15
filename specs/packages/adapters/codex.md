@@ -465,14 +465,13 @@ These defaults preserve native explicit-spawn precedence and subsequent role-def
 When the adapter prepares the outbound prompt for any admitted call, including resume, it shall prepend this directive and one blank line to the original text exactly when `subagentModel` is present, preserving the caller's attachment order under [[codex-67](#codex-67)] and respecting native spawn options per [DR-047](../../decisions/047-provider-aware-model-defaults-and-fork-history.md):
 
 ```text
-When delegating this turn, use {model} and {effort}. {guidance} Choose the history each task needs and follow the spawn tool’s supported options. Role settings and explicit spawn choices may override defaults.
+When delegating this turn, run your subagents on {model} and {effort}. Offload to them the work you can specify completely and bound tightly — well-defined, fine-grained tasks a subagent can implement well — and keep the deep thinking, reasoning, and design work yourself. Offloading must never lower the quality of what you deliver: brief each subagent fully, and verify its result before you build on it. Choose the history each task needs and follow the spawn tool’s supported options. Role settings and explicit spawn choices may override defaults.
 ```
 
 | Part | Text |
 | --- | --- |
 | `model` | `your own model` for `inherit`, otherwise the JSON-quoted model ID |
 | `effort` | `use <value> reasoning effort` when supplied, otherwise `choose the reasoning effort each task warrants` |
-| `guidance` | the shared bounded-delegation, retained reasoning and verification sentences following `{first}` in [[claude-code-61](claude-code.md#claude-code-61)] |
 
 ## Internal Behavior
 
@@ -870,7 +869,7 @@ When [the native configuration probe](../../../scripts/verify-codex-native-confi
 
 ### codex-89
 
-When integration checks execute fresh and resumed calls through the installed SDK and a recording executable, verification shall assert the named-model, known-parent `inherit`, unknown-parent `inherit`, every accepted pinned-effort, omitted-effort, and untuned cases of native defaults [[codex-87](#codex-87)], and the corresponding outbound directives, caller prompt preservation, history and supported-options guidance, native precedence disclosure, and attachment ordering [[codex-88](#codex-88)], [[codex-67](#codex-67)].
+When integration checks execute fresh and resumed calls through the installed SDK and a recording executable, verification shall assert the named-model, known-parent `inherit`, unknown-parent `inherit`, every accepted pinned-effort, omitted-effort, and untuned cases of native defaults [[codex-87](#codex-87)], and the exact corresponding outbound text, including the selected model and effort, blank-line separator and unchanged caller prompt, and the attachment ordering [[codex-88](#codex-88)], [[codex-67](#codex-67)].
 
 ### codex-90
 

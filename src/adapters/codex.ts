@@ -1818,7 +1818,7 @@ export class CodexAdapter implements AgentAdapter<
         ? 'choose the reasoning effort each task warrants'
         : `use ${options.subagentEffort} reasoning effort`;
       const directive =
-        `When delegating this turn, use ${model} and ${effort}. ${DELEGATION_GUIDANCE} ` +
+        `When delegating this turn, run your subagents on ${model} and ${effort}. ${DELEGATION_GUIDANCE} ` +
         'Choose the history each task needs and follow the spawn tool’s supported options. Role settings and explicit spawn choices may override defaults.';
       prompt = `${directive}\n\n${prompt}`;
     }

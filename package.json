@@ -136,6 +136,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "1.4.0",
     "@playwright/mcp": "0.0.77",
+    "smol-toml": "1.9.1",
     "yaml": "^2.8.4",
     "zod": "4.6.6"
   },
