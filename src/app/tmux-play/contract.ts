@@ -61,9 +61,9 @@ export interface CaptainSession {
 export type RecordVisibility = 'visible' | 'hidden';
 
 /**
- * Select a concrete per-call value or deliberately defer to the provider's
- * current default. The explicit default arm is distinct from omitting the
- * enclosing settings object, which preserves tmux-play's configured values.
+ * Provider-default sends no value. A fresh call uses the provider's current
+ * default. A resumed call uses the value the runtime selects on resume.
+ * Omitting the enclosing settings object preserves tmux-play's configured values.
  */
 export type TuningSelection<T extends string = string> =
   | { readonly kind: 'value'; readonly value: T }
