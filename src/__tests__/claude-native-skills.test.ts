@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
 // claude-code-91: `nativeSkills: false` crosses the installed SDK's
-// serialization boundary as the parent managed-settings tier, the bundled-skill
-// flag setting, and the main-thread skill list. A recording CLI fixture stands
-// in for the native agent: it records each command line and each stdin
+// serialization boundary as the parent managed-settings tier, the bundled and
+// plugin skill settings, and the main-thread skill list. A recording CLI
+// fixture stands in for the native agent: it records each command line and stdin
 // `initialize` control request, then answers with a plain initialization that
 // leaves claude-code-86's readiness check nothing to decide.
 
@@ -286,7 +286,7 @@ function expectedControls(cell: Cell) {
 
 describe('Claude nativeSkills through the installed SDK (claude-code-91)', () => {
   it.each(CELLS)(
-    'carries the managed policy, bundled-skill flag, and skill list only when false: $label',
+    'carries the managed policy, bundled and plugin skill settings, and skill list only when false: $label',
     async (cell) => {
       const space = await workspace();
       const { adapter } = fixtureAdapter(space);
@@ -345,18 +345,19 @@ describe('Claude nativeSkills through the installed SDK (claude-code-91)', () =>
           MANAGED_SETTINGS,
         );
 
-        // The bundled-skill flag sits beside the connector gate and the
-        // attribution object, adding only its own key.
+        // Only the bundled and plugin skill settings change.
         const offSettings = settingsOf(off.args);
         const onSettings = settingsOf(on.args);
         expect(offSettings, turn).toEqual({
           disableClaudeAiConnectors: true,
           attribution: { commit: '', pr: '', sessionUrl: false },
           disableBundledSkills: true,
+          skillOverrides: { 'plugin-authoring': 'off' },
         });
         expect(offSettings, turn).toEqual({
           ...onSettings,
           disableBundledSkills: true,
+          skillOverrides: { 'plugin-authoring': 'off' },
         });
 
         // The main-thread skill list: the run's skills in list order, or

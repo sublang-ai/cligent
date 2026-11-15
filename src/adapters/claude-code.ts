@@ -94,6 +94,7 @@ interface ClaudeSettings {
   disableClaudeAiConnectors?: boolean;
   attribution?: ClaudeAttributionSettings;
   disableBundledSkills?: boolean;
+  skillOverrides?: Record<string, 'off'>;
   strictPluginOnlyCustomization?: boolean | Array<'skills'>;
   [key: string]: unknown;
 }
@@ -1314,7 +1315,14 @@ export function mapAgentOptionsToClaudeQueryOptions(
       ? { ultracode: options.ultracode }
       : {}),
     ...(options?.fastMode !== undefined ? { fastMode: options.fastMode } : {}),
-    ...(nativeSkillsOff ? { disableBundledSkills: true } : {}),
+    ...(nativeSkillsOff
+      ? {
+          disableBundledSkills: true,
+          // The native CLI ships this skill in a default plugin, outside
+          // disableBundledSkills. Child agents inherit the per-skill setting.
+          skillOverrides: { 'plugin-authoring': 'off' },
+        }
+      : {}),
   };
 
   let cleanupAbort = () => {};

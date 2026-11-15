@@ -1398,7 +1398,6 @@ function preflightCodexSandbox(): CodexSandboxPreflight {
       [
         codexCliPath,
         'sandbox',
-        'linux',
         '--permissions-profile',
         ':workspace',
         '-C',

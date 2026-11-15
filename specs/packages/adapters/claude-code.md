@@ -536,6 +536,7 @@ When a run selects `nativeSkills: false` [[skills-10](../skills.md#skills-10)], 
 | --- | --- | --- |
 | `managedSettings` | `{ strictPluginOnlyCustomization: ['skills'] }`, the parent policy tier | project and user skill directories, synced skills, and every plugin the runtime would adopt from a project or user skill directory [[16]], with all its components, in the main thread and every subagent, unless an administrator's policy tier that does not merge parent settings drops the parent tier |
 | `settings.disableBundledSkills` | `true`, in the same settings object as the effort, fast-mode, connector, and attribution keys | the skills and workflows bundled with Claude Code, with built-in prompt commands hidden from the model |
+| `settings.skillOverrides` | `{ 'plugin-authoring': 'off' }` [[15]] | the skill of Claude Code's default built-in plugin, which remains visible to subagents under `disableBundledSkills` alone |
 | `skills` | each run skill's `cligent:<name>` [[claude-code-85](#claude-code-85)] in list order, or an empty list for a run without skills | every other skill from the main thread's listing and `Skill` invocations |
 
 - `tools`, `allowedTools`, `disallowedTools`, `settingSources`, `plugins`, permission mode, `canUseTool`, and MCP controls stay as [[claude-code-9](#claude-code-9)], [[claude-code-70](#claude-code-70)], and [[claude-code-85](#claude-code-85)] select them.
@@ -828,7 +829,7 @@ Where [[claude-code-219](#claude-code-219)]'s credential, retry, and skip precon
 
 ### claude-code-91
 
-Where `Cligent` runs through the adapter and the installed Claude SDK against a recording CLI fixture [[claude-code-87](#claude-code-87)] with `nativeSkills` `false` and omitted, crossed with run skills present and absent and with `allowedTools` omitted and empty, on fresh and resumed turns, the integration check shall verify that every `false` command line carries `--managed-settings` JSON exactly `{"strictPluginOnlyCustomization":["skills"]}` and `--settings` JSON holding `disableBundledSkills: true` beside the connector gate and attribution, and that its initialize request lists exactly the run's `cligent:<name>` skills or an empty list, while every omitted run carries no `--managed-settings` flag, no `disableBundledSkills` key, and no `skills` member in its initialize request, and that both keep the tool, setting-source, and plugin arguments their other options select [[claude-code-90](#claude-code-90)].
+Where `Cligent` runs through the adapter and the installed Claude SDK against a recording CLI fixture [[claude-code-87](#claude-code-87)] with `nativeSkills` `false` and omitted, crossed with run skills present and absent and with `allowedTools` omitted and empty, on fresh and resumed turns, the integration check shall verify that every `false` command line carries `--managed-settings` JSON exactly `{"strictPluginOnlyCustomization":["skills"]}` and `--settings` JSON holding `disableBundledSkills: true` and `skillOverrides: { 'plugin-authoring': 'off' }` beside the connector gate and attribution, and that its initialize request lists exactly the run's `cligent:<name>` skills or an empty list, while every omitted run carries no `--managed-settings` flag, neither skill setting, and no `skills` member in its initialize request, and that both keep the tool, setting-source, and plugin arguments their other options select [[claude-code-90](#claude-code-90)].
 
 ### claude-code-92
 
@@ -865,5 +866,5 @@ When fresh and resumed adapter runs combine omitted, ordinary, and legacy Ultrac
 [12]: https://code.claude.com/docs/en/agent-sdk/plugins "Claude Agent SDK local plugins and initialization evidence"
 [13]: https://code.claude.com/docs/en/skills "Claude Code skills, plugin namespacing, and Skill permissions"
 [14]: https://code.claude.com/docs/en/agent-sdk/claude-code-features "Claude Agent SDK: the Skill tool in an explicit tool list"
-[15]: https://code.claude.com/docs/en/settings-reference "Claude Code settings disableSideloadFlags, allowManagedPermissionRulesOnly, strictPluginOnlyCustomization, and disableBundledSkills"
+[15]: https://code.claude.com/docs/en/settings-reference "Claude Code settings disableSideloadFlags, allowManagedPermissionRulesOnly, strictPluginOnlyCustomization, disableBundledSkills, and skillOverrides"
 [16]: https://code.claude.com/docs/en/plugins/loading#find-where-a-plugin-came-from "Claude Code plugins adopted from a project or user skill directory"

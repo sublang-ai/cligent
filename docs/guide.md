@@ -711,6 +711,9 @@ for await (const event of judge.run('Pick the better patch')) {
 | `kimi`        | rejected: `kimi acp` offers no per-run lever                                                                                                                                                                                                                     | —                                                                                                                                                                                                                                  |
 | `opencode`    | managed server only: `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`, and inline skill paths and URLs that replace those of your configuration files                                                                                                                        | skill folders in every configuration directory (the global one such as `~/.config/opencode`, `OPENCODE_CONFIG_DIR`, and each `.opencode`), skill paths and URLs from organization or managed configuration, and the built-in skill |
 
+With native skills off, Claude also hides its built-in plugin's
+`plugin-authoring` skill from subagents. The plugin's other components stay enabled.
+
 A value other than a boolean is rejected before any provider work. Codex
 rejects the switch where a native skill folder cannot be read or the disabled
 paths would exceed the process-argument limit. Gemini rejects it where the
