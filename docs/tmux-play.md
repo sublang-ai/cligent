@@ -17,10 +17,10 @@ Requirements:
 
 - [`tmux`](https://github.com/tmux/tmux/wiki/Installing) 3.3 or newer.
 - [`glow`](https://github.com/charmbracelet/glow#installation) — Markdown renderer used by the in-pane output pipeline; the launcher fails fast if it is missing.
-- An installed runtime for every adapter your config uses — the optional peer
-  SDK the adapter imports, plus any CLI it spawns — installed wherever the
-  running cligent resolves packages. For a global cligent installation, that
-  means globally. See [guide.md](guide.md#install) for the per-adapter packages.
+- A usable runtime for every configured adapter. Cligent includes Claude Code
+  and Codex SDK/native runtimes automatically, including global installations.
+  Other adapters retain their optional peer SDK or external CLI setup; see
+  [guide.md](guide.md#install).
 - Credentials for each of those adapters:
   [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
   [Codex CLI](https://github.com/openai/codex),

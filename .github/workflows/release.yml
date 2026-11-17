@@ -8,6 +8,7 @@ permissions:
   contents: write
   id-token: write
   actions: read
+  pull-requests: read
 
 jobs:
   release:
@@ -27,7 +28,7 @@ jobs:
       - name: Verify tag matches package.json version
         run: |
           TAG="${GITHUB_REF_NAME}"
-          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
             echo "::error::Release tag $TAG must match vMAJOR.MINOR.PATCH"
             exit 1
           fi
@@ -38,38 +39,9 @@ jobs:
           fi
 
       - name: Require passing CI for this commit
-        # Do not publish a commit whose CI did not pass. The tagged commit is
-        # also pushed to `main`, which triggers the CI workflow; wait for that
-        # run to conclude and refuse to release unless it succeeded (or if it
-        # never ran — e.g. the tag points at a commit that was never on `main`).
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          SHA="${GITHUB_SHA}"
-          echo "Requiring a successful CI run for ${SHA} before publishing..."
-          for i in $(seq 1 60); do
-            run=$(gh api \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SHA}&event=push&branch=main&per_page=1" \
-              --jq '.workflow_runs[0] // {} | [.status // "none", .conclusion // "none"] | @tsv' \
-              2>/dev/null || echo "")
-            status=$(printf '%s' "$run" | cut -f1)
-            conclusion=$(printf '%s' "$run" | cut -f2)
-            if [ -z "$status" ] || [ "$status" = "none" ]; then
-              echo "No CI run found yet for ${SHA} (attempt ${i}); waiting..."
-            elif [ "$status" = "completed" ]; then
-              if [ "$conclusion" = "success" ]; then
-                echo "CI passed for ${SHA}."
-                exit 0
-              fi
-              echo "::error::CI for ${SHA} concluded '${conclusion}'; refusing to publish."
-              exit 1
-            else
-              echo "CI status=${status} for ${SHA} (attempt ${i}); waiting..."
-            fi
-            sleep 10
-          done
-          echo "::error::Timed out waiting for CI to complete for ${SHA}."
-          exit 1
+        run: node scripts/release-source-guard.mjs
 
       - name: Upgrade npm for trusted-publisher OIDC support
         run: npm install -g npm@11.8.0
@@ -101,9 +73,13 @@ jobs:
             exit 1
           fi
 
-      - run: npm publish --provenance --access public
+      - name: Publish package
+        run: |
+          CHANNEL=latest
+          case "$GITHUB_REF_NAME" in *-rc.*) CHANNEL=rc-global-cli ;; esac
+          npm publish --provenance --access public --tag "$CHANNEL"
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
+        run: gh release create "$GITHUB_REF_NAME" $([[ "$GITHUB_REF_NAME" == *-rc.* ]] && echo --prerelease) --title "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md

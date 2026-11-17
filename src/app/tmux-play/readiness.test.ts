@@ -381,7 +381,7 @@ describe('formatNoRuntimeInstalled', () => {
     expect(message).toContain(
       `place ${runtimeTarget('claude').package} in /odd/node_modules`,
     );
-    expect(message).toContain('No npm install command targets that tree');
+    expect(message).toContain('No npm install command targets the optional-peer tree');
     // PATH executables are reached through the shell, not cligent's tree, so
     // their commands survive unreachability.
     expect(message).toContain(
