@@ -86,13 +86,7 @@ export function adapterRepairCommands(
     }
     if (included)
       return [
-        `npm install --global=false --location=project --prefix ${shellQuote(packageRoot)} --omit=dev --save-prod --no-save ${[
-          ...AGENT_RUNTIME_TARGETS.claude,
-          ...AGENT_RUNTIME_TARGETS.codex,
-        ]
-          .filter((runtime) => runtime.kind === 'peer')
-          .map((runtime) => runtime.repairSpec)
-          .join(' ')}`,
+        `node ${shellQuote(join(packageRoot, 'bin', 'repair-included-runtimes.mjs'))}`,
         ...targets.flatMap((runtime) => runtime.steps ?? []),
       ];
   }

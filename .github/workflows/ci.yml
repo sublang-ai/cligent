@@ -80,7 +80,17 @@ jobs:
         run: npm install -g @google/gemini-cli@0.61.0 @moonshot-ai/kimi-code@2.1.1 opencode-ai@1.18.33
 
       - name: Verify distributable
+        env:
+          CLIGENT_VERIFY_EVIDENCE_DIR: ${{ runner.temp }}/cligent-distributable-evidence
         run: npm run test:distributable
+      - name: Retain distributable receipts and npm diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: distributable-evidence
+          path: ${{ runner.temp }}/cligent-distributable-evidence
+          if-no-files-found: ignore
+          retention-days: 14
 
   browser:
     needs: ci

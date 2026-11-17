@@ -9,6 +9,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -138,6 +139,25 @@ function run(command, args, options = {}) {
       receipt + '\n',
       { mode: 0o600 },
     );
+  }
+
+  if (evidenceDirectory && (result.error || result.status !== 0)) {
+    const logs = join(npmCache, '_logs');
+    if (existsSync(logs))
+      for (const file of readdirSync(logs)) {
+        if (!file.endsWith('.log')) continue;
+        let content = readFileSync(join(logs, file), 'utf8');
+        for (const [key, value] of Object.entries(process.env))
+          if (
+            /(?:TOKEN|KEY|PASSWORD|SECRET)/i.test(key) &&
+            value &&
+            value.length >= 8
+          )
+            content = content.split(value).join('[REDACTED]');
+        writeFileSync(join(evidenceDirectory, 'npm-' + file), content, {
+          mode: 0o600,
+        });
+      }
   }
 
   const output = `${stdout}${stderr ? `${stdout ? '\n' : ''}${stderr}` : ''}`;
@@ -1235,15 +1255,17 @@ function extractRepairCommand(output, repairSpec) {
     .map((candidate) => candidate.trim())
     .find(
       (candidate) =>
-        candidate.startsWith('npm install ') &&
-        candidate.split(/\s+/).includes(repairSpec),
+        (candidate.startsWith('npm install ') &&
+          candidate.split(/\s+/).includes(repairSpec)) ||
+        (candidate.startsWith('node ') &&
+          candidate.includes('/bin/repair-included-runtimes.mjs')),
     );
   if (!line) {
     fail(
       `tmux-play printed no npm install command for ${repairSpec}:\n${output.trim()}`,
     );
   }
-  return line.split(/\s+/);
+  return ['/bin/sh', '-c', line];
 }
 
 function assertOutputContains(result, expected, label) {

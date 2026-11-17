@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.40.0-rc.1] - 2026-11-18
+## [0.40.0-rc.2] - 2026-11-18
 
 ### Added
 
@@ -949,8 +949,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.40.0-rc.1...HEAD
-[0.40.0-rc.1]: https://github.com/sublang-ai/cligent/compare/v0.39.0...v0.40.0-rc.1
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.40.0-rc.2...HEAD
+[0.40.0-rc.2]: https://github.com/sublang-ai/cligent/compare/v0.39.0...v0.40.0-rc.2
 [0.39.0]: https://github.com/sublang-ai/cligent/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/sublang-ai/cligent/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/sublang-ai/cligent/compare/v0.36.2...v0.37.0
