@@ -754,6 +754,8 @@ When launcher mode per [[tmux-play-2](#tmux-play-2)] evaluates a loaded configur
 | `npm install` package specifier or follow-up step in repair output | render [[package-16](package.md#package-16)]'s installation-repair package specifier or follow-up step exactly; maintain no independent adapter-to-package, version, or step mapping |
 | one or more runtimes are absent or below the supported version | fail after configuration resolution but before creating a work directory, log directory, snapshot, tmux session, attachment, or model request; report every unmet adapter in one error, its roles, its repair commands, and the configuration path to edit |
 | runtime is installed below the supported version | name the installed and required versions rather than report it absent |
+| adapter imports an included Claude or Codex SDK | require the dependency supplied by the installed Cligent tree; a normal package-alone installation needs no additional SDK install [[package-4](package.md#package-4)] |
+| included SDK or selected executable is absent in a damaged installation | identify the damaged component and repair the tree actually selected by the adapter, without assuming that an unrelated global SDK overrides the installed dependency |
 | adapter imports an optional peer SDK | require it in the tree the running `@sublang/cligent` resolves from |
 | adapter spawns an external CLI | require it globally regardless of the tree containing cligent |
 | peer-SDK repair command | target that tree with `--prefix`, quote any path a shell would split, and pin install scope on the command line so running the printed command lands there |
@@ -2589,15 +2591,15 @@ Under [[tmux-play-130](#tmux-play-130)]'s real-tmux acceptance harness, with a B
 
 ### tmux-play-201
 
-Where the packed tarball alone is installed into an out-of-band global-style prefix holding no agent SDK peer and the search path reaches no agent CLI, when the installed executable's printed repair path is exercised against an isolated configuration home, the check shall assert this ordered flow:
+Under [[tmux-play-150](#tmux-play-150)]'s real-`glow` acceptance harness on a host supported by both included SDKs, where the packed tarball alone is installed into an out-of-band global-style prefix with no separately installed Agent SDK or external Agent CLI, when the installed launcher's readiness and repair paths run against isolated configuration homes, the check shall assert this installation matrix:
 
-| Stage | Assertion |
+| Installation state | Assertion |
 | --- | --- |
-| documented launcher command before repair | fail; name the install command for every supported adapter; create no config file; issue no tmux command [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-89](#tmux-play-89)] |
-| prefix supplied out of band | fail any repair command npm would not resolve back to that prefix rather than passing through harness knowledge [[tmux-play-89](#tmux-play-89)] |
-| Codex repair | execute the command printed by the failure verbatim as argv, adding no scope or target argument the user was not shown [[tmux-play-89](#tmux-play-89)] |
-| repaired installation | Codex SDK lands in the same reported `node_modules` root; launcher command succeeds; created config names `codex` as its only adapter; stdout notice names the adapter used for the roster; tmux session is created [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-89](#tmux-play-89)] |
-| test composes an install command instead of running the printed one | verification fails because that substitution could let a command scoped to the wrong tree pass [[tmux-play-89](#tmux-play-89)] |
+| Normal production installation | Both included SDKs are reachable from the installed Cligent tree, readiness admits their native runtimes without printing a missing-SDK remedy, and configuration seeding uses the ready-adapter policy rather than treating the package-alone install as broken [[tmux-play-10](#tmux-play-10)], [[tmux-play-11](#tmux-play-11)], [[tmux-play-89](#tmux-play-89)]. |
+| Fault fixture removes an included SDK or its required native executable from every reachable selected dependency path | A configuration explicitly selecting that adapter fails before session construction, names the actual missing component and selected installation tree, and reports an actionable repair [[tmux-play-89](#tmux-play-89)]. |
+| Prefix supplied out of band | A printed repair that would install into a sibling or unrelated tree fails verification; the actual selected installed runtime must become reachable through the same Cligent scope [[tmux-play-89](#tmux-play-89)]. |
+| Printed repair | Execute the reported command verbatim as argv, with no harness-added scope or target; repeat the same adapter readiness and launcher checks to prove the damaged component was repaired [[tmux-play-89](#tmux-play-89)]. |
+| Test composes its own repair or mistakes missing credentials for a missing SDK | Verification fails; authentication remains outside the installation gate [[tmux-play-89](#tmux-play-89)]. |
 
 ### tmux-play-210
 

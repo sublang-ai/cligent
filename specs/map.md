@@ -74,6 +74,7 @@ meta.md       The spec of specs
 | [DR-046](decisions/046-primary-and-subagent-defaults.md) | 046-primary-and-subagent-defaults.md | Shipped parent/subagent pins and schema-neutral Codex spawn instructions, amended by DR-047 |
 | [DR-047](decisions/047-provider-aware-model-defaults-and-fork-history.md) | 047-provider-aware-model-defaults-and-fork-history.md | Shared provider-aware model pairs and verified Codex fork history semantics; amends DR-028/029 for tool exclusions, DR-044 for fork history and DR-046 for provider scope |
 | [DR-048](decisions/048-claude-durable-primary-model-continuity.md) | 048-claude-durable-primary-model-continuity.md | Claude Code selects an omitted resumed model; environment overrides remain effective |
+| [DR-049](decisions/049-included-agent-sdks.md) | 049-included-agent-sdks.md | Included Claude and Codex SDKs; Cligent-owned compatibility and production-install acceptance |
 
 ## Packages
 

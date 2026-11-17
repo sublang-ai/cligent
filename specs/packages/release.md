@@ -13,7 +13,7 @@ It is project-local: the scoped distributable it publishes is `@sublang/cligent`
 
 ### release-1
 
-The project shall follow Semantic Versioning 2.0.0 [[1]] — `MAJOR.MINOR.PATCH`, where MAJOR indicates breaking changes, MINOR indicates new features, and PATCH indicates bug fixes.
+The project shall follow Semantic Versioning 2.0.0 [[1]] — stable `MAJOR.MINOR.PATCH` and candidate `MAJOR.MINOR.PATCH-rc.N`, where MAJOR indicates breaking changes, MINOR indicates new features, and PATCH indicates bug fixes.
 
 ### release-2
 
@@ -25,7 +25,7 @@ All notable changes shall be documented in `CHANGELOG.md` in the Keep a Changelo
 
 ### release-4
 
-When preparing a release tag, the developer or agent shall:
+When preparing a stable release tag, the developer or agent shall:
 
 1. review every commit since the last release that precedes the final release-preparation commit (`git log <last-tag>..<audited-head>`), initially recording the current `HEAD` as `<audited-head>`;
 2. ensure all notable changes are documented in `[Unreleased]`;
@@ -41,11 +41,11 @@ Changelog entries shall be grouped under these headings, in this order: `Added`,
 
 ### release-6
 
-Releases shall be triggered by pushing a git tag matching the pattern `vMAJOR.MINOR.PATCH` (e.g., `v1.0.0`).
+Stable releases shall be triggered by pushing a git tag matching the pattern `vMAJOR.MINOR.PATCH` (e.g., `v1.0.0`).
 
 ### release-7
 
-When the release workflow runs on GitHub, it shall:
+When the stable release lane runs on GitHub, it shall:
 
 1. verify the tag version matches the `package.json` version [[release-2](#release-2)];
 2. require the CI run for the tagged commit — its `push` to `main` — to have concluded successfully, waiting while it is in progress and refusing to publish where it concluded unsuccessfully or never ran, as for a tag off `main`;
@@ -69,7 +69,7 @@ Scoped packages such as `@sublang/cligent` shall be published with `--access pub
 
 ### release-10
 
-Before tagging a release, the developer or agent shall verify:
+Before tagging a stable release, the developer or agent shall verify:
 
 - [ ] all tests pass;
 - [ ] `npm run smoke:release` passes locally — the single local release-smoke entry point, chaining the existing gates in order: `build` [[package-10](package.md#package-10)], `test:package`, `test:distributable`, `test:smoke`;
@@ -79,7 +79,7 @@ Before tagging a release, the developer or agent shall verify:
 
 ### release-14
 
-Before creating the final release-preparation commit, the developer or agent shall add `docs/releases/<version>-preparation.md` as a durable evidence record with the following contents [DR-020](../decisions/020-audited-release-preparation.md):
+Before creating the final stable release-preparation commit, the developer or agent shall add `docs/releases/<version>-preparation.md` as a durable evidence record with the following contents [DR-020](../decisions/020-audited-release-preparation.md):
 
 | Evidence                                                | Required contents                                                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -126,6 +126,17 @@ A test suite shall be deterministic by construction ([DR-039](../decisions/039-m
 - a tool's calls are asserted by where they went, never by their exact count;
 - a scripted fault outlasts every call that may consume it before the call under test.
 
+### release-23
+
+When a same-repository branch candidate is published for pre-merge delivery acceptance, the publisher shall use a distinct candidate lane under [DR-049](../decisions/049-included-agent-sdks.md):
+
+- a unique SemVer `MAJOR.MINOR.PATCH-rc.N` package version, a matching immutable candidate source/tag identity, passing checks for that exact branch/PR head, and no requirement that the candidate already be merged into `main`;
+- an explicit non-`latest` npm dist-tag, provenance, public scoped-package access and the existing trusted OIDC publication authority, with no stable-tag publication or stable GitHub release as a side effect;
+- ordinary build, package, dependency-audit and credential-free gates retained, with the stable-only `main` and final stable preparation-record requirements confined to stable publication;
+- coordinated candidate dependencies naming the exact intended Cligent/Playbook candidate versions where needed, recorded separately from stable caret-range policy, with no checkout path, workspace link or manual SDK installation in the registry consumer;
+- a durable record of source head, PR, version, dependency candidate set, tarball integrity and actual registry installation results; source or packaged-code changes require a new candidate and affected verification;
+- formal stable publication remains a later, separately gated operation, and acceptance does not require moving `latest` before merge.
+
 ## Verification
 
 ### release-11
@@ -169,6 +180,10 @@ When the repository audit reads the CI workflow and the pre-push script, it shal
 - a nightly schedule starts the workflow, and the jobs it runs narrow for a pull request to its one macOS job beside Linux and Windows and are whole for a push to `main` and for the schedule [[release-19](#release-19)];
 - the required checks the merge rule names are exactly the jobs a pull request's run holds [[release-16](#release-16)], [[release-19](#release-19)];
 - `npm run prepush` refuses a tree holding a conflict marker, naming the file that holds it [[release-20](#release-20)].
+
+### release-24
+
+When candidate publication and exact-version clean-prefix installation are exercised through the actual configured publisher, the system suite shall verify source/PR identity, candidate version and tag, trusted publication, intended transitive candidate acquisition, retained stable-lane restrictions and no mutation of `latest`, retaining failed and skipped publication evidence rather than claiming an unperformed install [[release-23](#release-23)].
 
 ## References
 
