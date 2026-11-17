@@ -5,7 +5,7 @@
 
 ## Status
 
-Proposed specification; direction approved by the user, detailed contract awaiting review; no implementation authorized in this change.
+Approved direction; implementation and delivery acceptance authorized by the user on 2026-11-17.
 Amends [DR-013](013-cligent-owned-runtime-compatibility.md) only in installation ownership and dependency placement.
 
 ## Context

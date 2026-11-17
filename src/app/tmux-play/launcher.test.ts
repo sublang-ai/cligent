@@ -3009,8 +3009,7 @@ describe('launchTmuxPlay', () => {
     // every peer-SDK command pins that tree with --prefix (tmux-play-89): where a
     // bare install would land belongs to the paste-time shell, not to this
     // process.
-    const expectedPrefix = shellQuote(cligentPackageRoot());
-    const expectedRepair = `npm install --global=false --location=project --prefix ${expectedPrefix} --omit=dev --save-prod --no-save ${AGENT_RUNTIME_TARGETS.claude[0]!.repairSpec} ${AGENT_RUNTIME_TARGETS.codex[0]!.repairSpec}`;
+    const expectedRepair = `node ${shellQuote(join(cligentPackageRoot(), 'bin', 'repair-included-runtimes.mjs'))}`;
     expect(error!.message).toContain(expectedRepair);
     expect(error!.message).toContain(
       'codex (player "coder", player "reviewer")',
