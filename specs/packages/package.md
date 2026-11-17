@@ -29,18 +29,19 @@ The package shall require Node >= 18.3.0 via
 
 The package manifest shall place dependencies according to their role:
 
-- runtime `dependencies` contain only single-purpose, zero-transitive-dependency packages required by the bundled CLI or a built-in transport implementation;
+- runtime `dependencies` contain single-purpose, zero-transitive-dependency packages required by the bundled CLI or a built-in transport implementation, with only the following explicit exceptions;
 - an official generic protocol SDK and its zero-transitive-dependency schema peer may be runtime dependencies where a built-in adapter imports them directly; and
 - the exact Playwright MCP runtime may be a runtime dependency for the opt-in managed browser per [DR-032](../decisions/032-browser-tools-and-media-output.md); and
+- the two included Agent SDKs are runtime dependencies under [[package-4](#package-4)]; and
 - build-time and test-time packages are `devDependencies`.
 
 ### package-4
 
-Agent SDKs (`@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`) shall be listed as optional peer dependencies.
+The package shall declare `@anthropic-ai/claude-agent-sdk` and `@openai/codex-sdk` as ordinary, non-optional runtime dependencies and retain `@opencode-ai/sdk` as an optional peer, so a normal production install acquires both included Agent stacks without a separate SDK install ([DR-049](../decisions/049-included-agent-sdks.md)).
 
 ### package-9
 
-Each agent SDK optional-peer-dependency range shall have this shape:
+Each agent SDK dependency range, ordinary or optional peer under [[package-4](#package-4)], shall have this shape:
 
 - its floor is the lowest SDK version the adapter supports at runtime;
 - every higher version is admitted without an upper bound; and
@@ -85,7 +86,7 @@ User-facing package documentation shall state the TypeScript 5.4 declaration-con
 
 The repository shall pin every conformance target at an exact version in the dependency location matching its role:
 
-- an agent SDK used for local and CI conformance is an exact `devDependencies` entry without a range operator;
+- an agent SDK used for local and CI conformance is an exact `devDependencies` entry without a range operator, independently of its runtime placement under [[package-4](#package-4)];
 - an imported production protocol SDK whose wire schema must match an external CLI target is an exact runtime dependency; and
 - a Gemini, OpenCode, or Kimi CLI installed by CI uses an exact install version.
 
@@ -120,7 +121,7 @@ Repository verification shall obtain each agent runtime's expected exact tested 
 
 Where the runtime descriptor and repository manifest declare the same agent runtime, when repository verification compares them, it shall enforce descriptor-to-manifest alignment:
 
-- the descriptor's supported floor equals the optional `peerDependencies` lower bound;
+- the descriptor's SDK supported floor equals the corresponding ordinary or optional-peer dependency lower bound under [[package-4](#package-4)], without substituting a selected vendor executable's version for its SDK's version;
 - the descriptor's tested version equals the exact `devDependencies` pin; and
 - any divergence fails verification.
 
@@ -192,19 +193,22 @@ Where the packed tarball is installed in an isolated consumer, its installed sur
 
 ### package-15
 
-The distributable shall not acquire the optional agent SDKs in [[package-4](#package-4)] through any package-delivery path:
+The distributable shall not acquire the remaining optional Agent SDK in [[package-4](#package-4)] through any package-delivery path:
 
-- they are not installed as runtime or optional dependencies;
-- they are not bundled; and
-- no lifecycle script acquires them.
+- it is not installed as a runtime or optional dependency;
+- it is not bundled; and
+- no lifecycle script acquires it.
 
 ### package-32
 
-The distributable shall resolve an optional agent SDK from the dependency tree in which `@sublang/cligent` itself is installed, which for a global installation is the prefix `node_modules` root written by `npm install -g`.
+The distributable shall resolve each Agent SDK from Cligent's installed module context, including nested and global layouts, according to this ownership rule:
+
+- included Claude and Codex SDKs resolve from the installed dependency tree without requiring a sibling application's SDK, the user's working directory, or a separately installed global SDK;
+- the remaining optional OpenCode SDK may be supplied in a reachable ancestor install root, preserving its optional-peer installation contract [[package-4](#package-4)].
 
 ### package-33
 
-User-facing package documentation shall state the optional-agent-runtime dependency contract, naming what each documented first run requires beyond the package itself.
+User-facing package documentation shall state the included and optional Agent runtime dependency contract [[package-4](#package-4)], distinguishing SDK installation from native-host support, authentication, provider access, and any remaining external CLI prerequisites.
 
 ## Internal Behavior
 
@@ -243,12 +247,12 @@ Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeS
 
 ### package-103
 
-Where the release dependency graph and optional agent peers are resolved, when production and full dependency audits run and the tarball manifest is inspected, the verification shall assert the dependency contract:
+Where the release dependency graph and Agent SDKs are resolved, when production and full dependency audits run and the tarball manifest is inspected, the verification shall assert the dependency contract:
 
 - both audits report no known vulnerabilities [[package-13](#package-13)];
 - dependency placement follows the runtime, protocol, and development-role matrix [[package-3](#package-3)];
-- agent SDKs are optional peers [[package-4](#package-4)] whose ranges declare a floor without an upper bound [[package-9](#package-9)];
-- the tarball neither installs nor bundles an optional agent SDK and declares no lifecycle acquisition path [[package-15](#package-15)]; and
+- Claude and Codex SDKs are ordinary dependencies and OpenCode remains an optional peer [[package-4](#package-4)], with all ranges declaring a floor without an upper bound [[package-9](#package-9)];
+- the tarball neither installs nor bundles the remaining optional Agent SDK and declares no lifecycle acquisition path [[package-15](#package-15)]; and
 - the Node floor and audit configuration satisfy the remediation safeguards [[package-28](#package-28)].
 
 ### package-104
@@ -264,13 +268,13 @@ Where repository conformance runs with installed SDK, protocol, and CLI dependen
 - the `kimi acp` command initializes successfully [[package-24](#package-24)];
 - every declared floor carries the concrete adjacent-version evidence in [[package-17](#package-17)], every floor selection or change follows its selection, rise, and release policy, and tested versions remain independent of supported floors [[package-25](#package-25)];
 - the descriptor carries every required runtime identity, version, range, and repair, with every installation-repair package specifier naming its runtime package at its exact tested version [[package-16](#package-16)], and supplies repository verification's expected tested versions and floors [[package-26](#package-26)]; and
-- every descriptor version agrees with the corresponding peer range and exact development pin, with a forced divergence failing verification [[package-27](#package-27)].
+- every descriptor version agrees with the corresponding SDK dependency range and exact development pin, with a forced divergence failing verification [[package-27](#package-27)].
 
 ### package-105
 
-Where the packed tarball and each exact optional agent SDK target are installed in turn both into a global-style prefix whose package trees are independent and into a nested-strategy consumer, with unrelated selected-executable packages visible outside the Claude and Codex SDK trees and neither Codex layout leaving its selected `@openai/codex` package at the install root, when each installed adapter loads, resolves its optional peer, and reads runtime identity and version, the verification shall assert this own-tree-resolution matrix [[package-16](#package-16)], [[package-32](#package-32)]:
+Where the packed tarball alone supplies Claude and Codex SDKs and an additional explicit SDK supplies optional OpenCode, both in a global-style prefix whose package trees are independent and in a nested-strategy consumer, with unrelated selected-executable packages outside the Claude and Codex SDK trees and neither Codex layout leaving its selected `@openai/codex` package at the install root, when each installed adapter loads and reads runtime identity and version, the verification shall assert this own-tree-resolution matrix [[package-4](#package-4)], [[package-16](#package-16)], [[package-32](#package-32)]:
 
-| Adapter     | Optional peer resolved in both layouts | Runtime authority and isolation                                                                             |
+| Adapter     | SDK resolved in both layouts | Runtime authority and isolation                                                                             |
 | ----------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Claude Code | `@anthropic-ai/claude-agent-sdk`       | the SDK's identity and version, unaffected by an unrelated executable package outside its tree              |
 | Codex       | `@openai/codex-sdk`                    | the SDK-owned `@openai/codex` identity and version, unaffected by an unrelated package outside the SDK tree |
