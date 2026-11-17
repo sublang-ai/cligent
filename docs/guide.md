@@ -12,21 +12,17 @@ see [Media and computer use](media-and-computer-use.md).
 npm install @sublang/cligent
 ```
 
-Each adapter that uses an SDK has an optional peer dependency. Install only the ones you need:
+Claude Code and Codex SDKs are ordinary production dependencies, including their
+SDK-owned executables and platform packages. A local or global Cligent install
+already supplies both; configure the provider credentials you intend to use.
+OpenCode remains an optional peer:
 
 ```bash
-npm install "@anthropic-ai/claude-agent-sdk@>=0.3.321"   # Claude Code
-npm install "@openai/codex-sdk@>=0.159.1"                 # Codex CLI
-npm install "@opencode-ai/sdk@>=1.18.29"                  # OpenCode
-# Gemini CLI uses a child process — no SDK required
-# Kimi Code uses an external CLI — no Kimi-specific SDK required
+npm install "@opencode-ai/sdk@>=1.18.29"
 ```
 
-A peer SDK has to land in the tree the running cligent resolves packages
-from, so add `-g` to these commands when cligent itself was installed with
-`npm install -g` — as the [`tmux-play`](tmux-play.md) app is. The CLIs an
-adapter spawns (`gemini`, `kimi`, `opencode`) are always global, since they
-are found on `PATH` rather than in `node_modules`:
+Install that optional peer in the tree used by the running Cligent. External
+Gemini, Kimi and OpenCode CLIs remain separate commands found on `PATH`:
 
 ```bash
 npm install -g @google/gemini-cli            # Gemini CLI

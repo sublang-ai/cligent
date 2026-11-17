@@ -17,17 +17,12 @@ Register an adapter, send a prompt, and consume a single async event stream — 
 npm install @sublang/cligent
 ```
 
-The agent SDKs are optional peer dependencies — add the one(s) for the
-adapters you use:
+Claude Code and Codex SDKs are included as ordinary dependencies, including
+SDK-owned executables and native platform packages. Their authentication and
+model configuration remain provider-specific. OpenCode is an optional peer:
 
 ```bash
-# `>=` keeps the declaration open so a cligent upgrade can carry the runtime
-# forward. A bare `npm install <pkg>` writes a caret instead, and for a
-# `0.MINOR.PATCH` package a caret pins the minor: `^0.139.0` never reaches
-# `0.159.0`, however often you run `npm update`.
-npm install "@anthropic-ai/claude-agent-sdk@>=0.3.321"   # Claude Code
-npm install "@openai/codex-sdk@>=0.159.1"                # Codex
-npm install "@opencode-ai/sdk@>=1.18.29"                 # OpenCode
+npm install "@opencode-ai/sdk@>=1.18.29"
 ```
 
 Gemini and default managed-mode OpenCode also need their CLI on `PATH`.
@@ -201,20 +196,18 @@ on the right.
 
 ```bash
 npm install -g @sublang/cligent
-npm install -g @openai/codex-sdk         # plus at least one agent runtime
 tmux-play                                # discover or create config
 tmux-play --config ./tmux-play.config.yaml
 ```
 
-`tmux-play` needs at least one agent runtime installed alongside it. The
-agent SDKs are optional peers, so a global cligent install needs them
-globally too — that is the same tree its adapters resolve from. Install
-whichever providers you have credentials for:
+`tmux-play` includes Claude Code and Codex SDK runtimes through Cligent.
+Configure credentials for either provider; no separate global SDK installation
+is needed. Other adapters retain the following optional runtime setup:
 
 | Adapter | Install |
 | --- | --- |
-| `claude` | `npm install -g @anthropic-ai/claude-agent-sdk` |
-| `codex` | `npm install -g @openai/codex-sdk` |
+| `claude` | Included; configure Claude authentication |
+| `codex` | Included; configure Codex authentication |
 | `gemini` | `npm install -g @google/gemini-cli` |
 | `kimi` | `npm install -g @moonshot-ai/kimi-code@2.1.1` then `kimi login` (or configure a default model) |
 | `opencode` | `npm install -g @opencode-ai/sdk opencode-ai` |
