@@ -82,7 +82,6 @@ import {
   TMUX_PLAY_WORK_DIR_OWNER_MARKER,
   tmuxPlayThemeDiagnostics,
 } from './launcher.js';
-import { AGENT_RUNTIME_TARGETS } from '../../runtime-targets.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import {
