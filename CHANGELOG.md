@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0-rc.3] - 2026-11-18
+
+### Changed
+
+- Separate candidate installation validation from stable and merge readiness;
+  retain a bounded, explicitly recorded development-only picomatch advisory
+  exception while production audits and all functional checks remain strict.
+
 ## [0.40.0-rc.2] - 2026-11-18
 
 ### Added
@@ -949,7 +957,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.40.0-rc.2...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.40.0-rc.3...HEAD
+[0.40.0-rc.3]: https://github.com/sublang-ai/cligent/compare/v0.40.0-rc.2...v0.40.0-rc.3
 [0.40.0-rc.2]: https://github.com/sublang-ai/cligent/compare/v0.39.0...v0.40.0-rc.2
 [0.39.0]: https://github.com/sublang-ai/cligent/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/sublang-ai/cligent/compare/v0.37.0...v0.38.0

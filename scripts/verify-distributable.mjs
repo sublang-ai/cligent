@@ -20,6 +20,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
+import { auditDecision } from './candidate-audit-policy.mjs';
 
 import {
   EXPECTED_PROTOCOL_VERSIONS,
@@ -56,6 +58,16 @@ const EXPECTED_OPTIONAL_PEERS = Object.freeze(
 );
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const candidateAudit = process.argv.slice(2).includes('--candidate-audit');
+if (process.argv.slice(2).some((arg) => arg !== '--candidate-audit'))
+  throw new Error('unknown distributable verification option');
+if (
+  candidateAudit &&
+  !/^\d+\.\d+\.\d+-rc\.\d+$/.test(
+    JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')).version,
+  )
+)
+  throw new Error('candidate audit requires an rc package version');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 // Canonical, because tmux-play reports the tree it actually resolves from and
 // macOS exposes the same temporary directory through both /var and /private/var.
@@ -165,7 +177,7 @@ function run(command, args, options = {}) {
   if (result.error) {
     fail(`${command} could not start: ${result.error.message}`);
   }
-  if (result.status !== 0) {
+  if (!(options.allowedStatuses ?? [0]).includes(result.status)) {
     fail(
       `${command} ${args.join(' ')} exited ${String(result.status)}${
         output.trim() ? `:\n${output.trim()}` : ''
@@ -173,7 +185,7 @@ function run(command, args, options = {}) {
     );
   }
 
-  return { stdout, stderr, output };
+  return { stdout, stderr, output, status: result.status };
 }
 
 function readJson(path) {
@@ -372,7 +384,10 @@ function assertTarballManifest(packed, manifest) {
 }
 
 function assertAuditClean(label, args, options = {}) {
-  const { stdout } = run(npm, args, options);
+  const { stdout, status } = run(npm, args, {
+    ...options,
+    allowedStatuses: [0, 1],
+  });
   let audit;
   try {
     audit = JSON.parse(stdout);
@@ -384,15 +399,27 @@ function assertAuditClean(label, args, options = {}) {
     );
   }
 
-  const vulnerabilities = audit.metadata?.vulnerabilities;
-  if (!vulnerabilities || typeof vulnerabilities.total !== 'number') {
-    fail(`${label} audit omitted vulnerability metadata`);
-  }
-  if (vulnerabilities.total !== 0) {
-    fail(
-      `${label} audit reported vulnerabilities: ${JSON.stringify(vulnerabilities)}`,
+  const manifest = readJson(join(repoRoot, 'package.json'));
+  const lockBytes = readFileSync(join(repoRoot, 'package-lock.json'));
+  const decision = auditDecision(audit, {
+    status,
+    candidate: candidateAudit && label === 'full graph',
+    version: manifest.version,
+    lock: JSON.parse(lockBytes),
+  });
+  const receipt = {
+    label,
+    version: manifest.version,
+    rawAuditStatus: status,
+    lockSHA256: createHash('sha256').update(lockBytes).digest('hex'),
+    ...decision,
+  };
+  if (evidenceDirectory)
+    writeFileSync(
+      join(evidenceDirectory, `audit-${label.replaceAll(' ', '-')}.json`),
+      JSON.stringify(receipt, null, 2) + '\n',
     );
-  }
+  console.log('Dependency audit decision: ' + JSON.stringify(receipt));
 }
 
 function writeConsumerFiles() {

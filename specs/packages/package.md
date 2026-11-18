@@ -127,7 +127,7 @@ Where the runtime descriptor and repository manifest declare the same agent runt
 
 ### package-13
 
-Where a release candidate is evaluated for readiness, its dependency audit shall report no known vulnerabilities in both the production dependency graph and the complete development dependency graph.
+Where stable publication or merge readiness is evaluated, its dependency audit shall report no known vulnerabilities in both the production dependency graph and the complete development dependency graph.
 
 ### package-28
 
@@ -210,6 +210,16 @@ The distributable shall resolve each Agent SDK from Cligent's installed module c
 
 User-facing package documentation shall state the included and optional Agent runtime dependency contract [[package-4](#package-4)], distinguishing SDK installation from native-host support, authentication, provider access, and any remaining external CLI prerequisites.
 
+### package-38
+
+When explicit candidate audit validation runs for an rc package, the distributable verifier shall retain raw audit status and findings and apply the bounded policy in [DR-050](../decisions/050-candidate-development-audit.md):
+
+- production and installed-production audits admit no known vulnerability;
+- the full development audit may report only GHSA-fc5q-39xc-vjpf through locked picomatch 4.0.4, with every reported affected node marked development-only in the lockfile and every advisory path resolved to that finding;
+- missing or malformed reports, audit errors, other advisories, runtime-exposed nodes and an explicit candidate option for a stable version fail validation;
+- the evidence distinguishes clean audits from an admitted development-risk exception, recording package identity, lockfile digest, finding and decision;
+- normal distributable verification retains the complete clean-audit requirement under [[package-13](#package-13)].
+
 ## Internal Behavior
 
 ### TypeScript Contract Tests
@@ -219,6 +229,10 @@ User-facing package documentation shall state the included and optional Agent ru
 The project shall include type-level tests verifying discriminated-union narrowing and interface assignability for [DR-002](../decisions/002-unified-event-stream-and-adapter-interface.md) types.
 
 ## Verification
+
+### package-39
+
+When candidate and normal distributable validation are exercised with actual audit reports and installed consumers, the integration suite shall assert the candidate-only known development finding is recorded explicitly, both production audits remain strict, normal and stable paths refuse the finding, and unknown findings, nondevelopment nodes and unusable reports fail closed [[package-38](#package-38)].
 
 ### package-36
 
@@ -247,7 +261,7 @@ Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeS
 
 ### package-103
 
-Where the release dependency graph and Agent SDKs are resolved, when production and full dependency audits run and the tarball manifest is inspected, the verification shall assert the dependency contract:
+Where the release dependency graph and Agent SDKs are resolved without the explicit candidate exception, when production and full dependency audits run and the tarball manifest is inspected, the verification shall assert the dependency contract:
 
 - both audits report no known vulnerabilities [[package-13](#package-13)];
 - dependency placement follows the runtime, protocol, and development-role matrix [[package-3](#package-3)];
