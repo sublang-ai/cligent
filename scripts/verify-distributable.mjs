@@ -21,7 +21,7 @@ import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
-import { auditDecision } from './candidate-audit-policy.mjs';
+import { auditDecision } from './development-audit-policy.mjs';
 
 import {
   EXPECTED_PROTOCOL_VERSIONS,
@@ -58,16 +58,8 @@ const EXPECTED_OPTIONAL_PEERS = Object.freeze(
 );
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const candidateAudit = process.argv.slice(2).includes('--candidate-audit');
-if (process.argv.slice(2).some((arg) => arg !== '--candidate-audit'))
+if (process.argv.length > 2)
   throw new Error('unknown distributable verification option');
-if (
-  candidateAudit &&
-  !/^\d+\.\d+\.\d+-rc\.\d+$/.test(
-    JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')).version,
-  )
-)
-  throw new Error('candidate audit requires an rc package version');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 // Canonical, because tmux-play reports the tree it actually resolves from and
 // macOS exposes the same temporary directory through both /var and /private/var.
@@ -403,7 +395,7 @@ function assertAuditClean(label, args, options = {}) {
   const lockBytes = readFileSync(join(repoRoot, 'package-lock.json'));
   const decision = auditDecision(audit, {
     status,
-    candidate: candidateAudit && label === 'full graph',
+    scope: label === 'full graph' ? 'full-development' : 'production',
     version: manifest.version,
     lock: JSON.parse(lockBytes),
   });

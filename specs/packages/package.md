@@ -127,11 +127,11 @@ Where the runtime descriptor and repository manifest declare the same agent runt
 
 ### package-13
 
-Where stable publication or merge readiness is evaluated, its dependency audit shall report no known vulnerabilities in both the production dependency graph and the complete development dependency graph.
+Where release or merge readiness is evaluated, its dependency audit shall admit no known vulnerability in the production graph or complete development graph except the explicitly deferred development finding under [[package-38](#package-38)].
 
 ### package-28
 
-When a known vulnerability is remediated, the remediation shall retain the Node runtime floor in [[package-2](#package-2)] and use neither an ignored audit finding nor an unsupported dependency override, with repository-supported development matcher substitutions bounded by [[package-35](#package-35)].
+When a known vulnerability is remediated, the remediation shall retain the Node runtime floor in [[package-2](#package-2)] and use neither an unrecorded audit exemption nor an unsupported dependency override, with repository-supported development matcher substitutions bounded by [[package-35](#package-35)].
 
 ### package-35
 
@@ -139,7 +139,7 @@ Where upstream development tools have not adopted the patched matcher, the repos
 
 - `eslint`, `@eslint/config-array` and `@typescript-eslint/typescript-estree` may select exactly `minimatch@11.0.3` through matching npm and pnpm parent-scoped overrides;
 - every affected consumer uses retained public matcher APIs, verified through [[package-36](#package-36)];
-- runtime dependencies and Agent SDK pins remain unchanged, and both dependency audits remain free of known vulnerabilities under [[package-13](#package-13)];
+- runtime dependencies and Agent SDK pins remain unchanged, and both dependency audits retain the bounded readiness policy under [[package-13](#package-13)];
 - removal follows an upstream compatible dependency range, rather than widening this exception to other consumers.
 
 ### package-37
@@ -212,13 +212,14 @@ User-facing package documentation shall state the included and optional Agent ru
 
 ### package-38
 
-When explicit candidate audit validation runs for an rc package, the distributable verifier shall retain raw audit status and findings and apply the bounded policy in [DR-050](../decisions/050-candidate-development-audit.md):
+When distributable dependency validation runs, the verifier shall retain raw audit status and findings and apply the version-bounded deferral in [DR-050](../decisions/050-deferred-development-audit.md):
 
 - production and installed-production audits admit no known vulnerability;
-- the full development audit may report only GHSA-fc5q-39xc-vjpf through locked picomatch 4.0.4, with every reported affected node marked development-only in the lockfile and every advisory path resolved to that finding;
-- missing or malformed reports, audit errors, other advisories, runtime-exposed nodes and an explicit candidate option for a stable version fail validation;
-- the evidence distinguishes clean audits from an admitted development-risk exception, recording package identity, lockfile digest, finding and decision;
-- normal distributable verification retains the complete clean-audit requirement under [[package-13](#package-13)].
+- only Cligent 0.40.0 and its rc prereleases may defer GHSA-fc5q-39xc-vjpf through locked picomatch 4.0.4 in the full development graph, with every affected lock node development-only and every advisory path resolved solely to that finding;
+- testing, candidate publication, stable publication and merge readiness use this same bounded decision, without separate candidate validation or alteration of the whole-CI source gate;
+- other versions, including the next patch or minor prerelease, reject this finding automatically until remediated;
+- missing or malformed reports, audit errors, other advisories, runtime-exposed nodes and different matcher versions fail validation;
+- evidence records package identity, lockfile digest, raw finding and deferred-risk decision without claiming remediation or a clean full audit.
 
 ## Internal Behavior
 
@@ -232,7 +233,7 @@ The project shall include type-level tests verifying discriminated-union narrowi
 
 ### package-39
 
-When candidate and normal distributable validation are exercised with actual audit reports and installed consumers, the integration suite shall assert the candidate-only known development finding is recorded explicitly, both production audits remain strict, normal and stable paths refuse the finding, and unknown findings, nondevelopment nodes and unusable reports fail closed [[package-38](#package-38)].
+When distributable validation is exercised with actual audit reports and installed consumers, the integration suite shall assert only the known development finding is deferred for the current stable and rc release family, production audits and other advisories remain strict, the next version automatically rejects the finding, and unusable reports or nondevelopment nodes fail closed [[package-38](#package-38)].
 
 ### package-36
 
@@ -261,9 +262,9 @@ Where the tarball is installed in isolated consumers using Node 18.3.0 and TypeS
 
 ### package-103
 
-Where the release dependency graph and Agent SDKs are resolved without the explicit candidate exception, when production and full dependency audits run and the tarball manifest is inspected, the verification shall assert the dependency contract:
+Where the release dependency graph and Agent SDKs are resolved, when production and full dependency audits run and the tarball manifest is inspected, the verification shall assert the dependency contract:
 
-- both audits report no known vulnerabilities [[package-13](#package-13)];
+- both audits satisfy the version-bounded readiness policy [[package-13](#package-13)], retaining any explicitly deferred full-development finding [[package-38](#package-38)];
 - dependency placement follows the runtime, protocol, and development-role matrix [[package-3](#package-3)];
 - Claude and Codex SDKs are ordinary dependencies and OpenCode remains an optional peer [[package-4](#package-4)], with all ranges declaring a floor without an upper bound [[package-9](#package-9)];
 - the tarball neither installs nor bundles the remaining optional Agent SDK and declares no lifecycle acquisition path [[package-15](#package-15)]; and

@@ -3,10 +3,8 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { auditDecision } from '../../scripts/candidate-audit-policy.mjs';
+import { auditDecision } from '../../scripts/development-audit-policy.mjs';
 import {
-  candidateChecksPassed,
-  matchingReleaseRuns,
   passingReleaseRun,
   authorizedCandidatePull,
   releaseChannel,
@@ -17,28 +15,37 @@ const read = (path: string) =>
 const report = read('./fixtures/candidate-audit-report.json');
 const lock = read('../../package-lock.json');
 const options = () => ({
-  candidate: true,
+  scope: 'full-development',
   version: '0.40.0-rc.3',
   status: 1,
   lock: structuredClone(lock),
 });
 
-describe('bounded candidate dependency audit', () => {
+describe('version-bounded development audit deferral', () => {
   it('records the retained real npm report against the actual locked dev-only graph', () => {
     expect(auditDecision(report, options())).toMatchObject({
       outcome: 'development-risk-exception',
       findings: 10,
-      stableAndMergeReady: false,
+      securityRemediated: false,
     });
   });
-  it('does not admit the same report for normal production or stable readiness', () => {
-    expect(() =>
-      auditDecision(report, { ...options(), candidate: false }),
-    ).toThrow();
-    expect(() =>
+  it('admits this finding for current formal publication but never production scope', () => {
+    expect(
       auditDecision(report, { ...options(), version: '0.40.0' }),
+    ).toMatchObject({
+      outcome: 'development-risk-exception',
+      securityRemediated: false,
+    });
+    expect(() =>
+      auditDecision(report, { ...options(), scope: 'production' }),
     ).toThrow();
   });
+  it.each(['0.40.1-rc.0', '0.40.1', '0.41.0-rc.1', '0.39.0', '0.40.0-rc.01'])(
+    'expires automatically for %s',
+    (version) => {
+      expect(() => auditDecision(report, { ...options(), version })).toThrow();
+    },
+  );
   it('accepts a genuinely clean audit with a successful status', () => {
     expect(
       auditDecision(
@@ -101,31 +108,6 @@ describe('bounded candidate dependency audit', () => {
   });
 });
 
-const names = [
-  'ci (20)',
-  'ci (22)',
-  'ci (24)',
-  'ci (25)',
-  'browser (ubuntu-latest)',
-  'browser (windows-latest)',
-  'browser (macos-latest)',
-];
-const jobs = () => [
-  ...names.map((name) => ({
-    name,
-    status: 'completed',
-    conclusion: 'success',
-  })),
-  { name: 'distributable', status: 'completed', conclusion: 'failure' },
-  { name: 'acceptance', status: 'completed', conclusion: 'skipped' },
-];
-const candidateJobs = () => [
-  {
-    name: 'candidate-distributable',
-    status: 'completed',
-    conclusion: 'success',
-  },
-];
 const repo = 'sublang-ai/cligent';
 const sha = 'f'.repeat(40);
 const pr = {
@@ -148,88 +130,31 @@ const run = {
 };
 const context = { candidate: true, repo, sha, pr };
 
-describe('candidate publisher scope', () => {
-  it('requires all seven ordinary jobs and complete replacement distributable, while normal CI stays red', () => {
-    expect(candidateChecksPassed(jobs(), candidateJobs())).toBe(true);
+describe('unchanged whole-CI publication rule', () => {
+  it('never falls back from a newer incomplete attempt to old success', () => {
+    expect(
+      passingReleaseRun(
+        [run, { ...run, run_attempt: 2, status: 'queued', conclusion: null }],
+        context,
+      ),
+    ).toBe(false);
     expect(
       passingReleaseRun([{ ...run, conclusion: 'failure' }], context),
     ).toBe(false);
-    expect(releaseChannel('v0.40.0-rc.3', '0.40.0-rc.3')).toBe('rc-global-cli');
-  });
-  it.each([
-    'missing',
-    'duplicate',
-    'failure',
-    'skipped',
-    'running',
-    'unknown',
-    'candidate-fail',
-    'candidate-missing',
-  ])('refuses %s checks', (variant) => {
-    const ordinary = jobs();
-    const candidate = candidateJobs();
-    switch (variant) {
-      case 'missing':
-        ordinary.shift();
-        break;
-      case 'duplicate':
-        ordinary[0].name = ordinary[1].name;
-        break;
-      case 'failure':
-        ordinary[0].conclusion = 'failure';
-        break;
-      case 'skipped':
-        ordinary[0].conclusion = 'skipped';
-        break;
-      case 'running':
-        ordinary[0].status = 'in_progress';
-        break;
-      case 'unknown':
-        ordinary.push({
-          name: 'extra',
-          status: 'completed',
-          conclusion: 'success',
-        });
-        break;
-      case 'candidate-fail':
-        candidate[0].conclusion = 'failure';
-        break;
-      case 'candidate-missing':
-        candidate.pop();
-        break;
-    }
-    expect(candidateChecksPassed(ordinary, candidate)).toBe(false);
-  });
-  it('selects newest attempt before status rather than falling back to completed success', () => {
-    const pending = {
-      ...run,
-      run_attempt: 2,
-      status: 'queued',
-      conclusion: null,
-    };
-    expect(matchingReleaseRuns([run, pending], context)[0]).toEqual(pending);
-    expect(passingReleaseRun([run, pending], context)).toBe(false);
+    expect(passingReleaseRun([{ ...run, head_sha: 'other' }], context)).toBe(
+      false,
+    );
     expect(
-      matchingReleaseRuns([{ ...run, head_sha: 'other' }], context),
-    ).toEqual([]);
-    expect(
-      matchingReleaseRuns(
+      passingReleaseRun(
         [{ ...run, head_repository: { full_name: 'fork' } }],
         context,
       ),
-    ).toEqual([]);
+    ).toBe(false);
   });
-  it('requires a still-current open same-repository PR and preserves stable main-CI selection', () => {
+  it('requires open same-repository candidate identity and main CI for stable', () => {
     expect(authorizedCandidatePull([pr], repo, sha)).toBe(pr);
     expect(
       authorizedCandidatePull([{ ...pr, state: 'closed' }], repo, sha),
-    ).toBeUndefined();
-    expect(
-      authorizedCandidatePull(
-        [{ ...pr, head: { ...pr.head, sha: 'moved' } }],
-        repo,
-        sha,
-      ),
     ).toBeUndefined();
     expect(passingReleaseRun([run], { ...context, candidate: false })).toBe(
       false,
@@ -240,5 +165,6 @@ describe('candidate publisher scope', () => {
         candidate: false,
       }),
     ).toBe(true);
+    expect(releaseChannel('v0.40.0-rc.3', '0.40.0-rc.3')).toBe('rc-global-cli');
   });
 });
