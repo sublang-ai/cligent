@@ -958,7 +958,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - npm publish with OIDC trusted publishing and provenance attestation
 
 [Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.40.0-rc.3...HEAD
-[0.40.0-rc.3]: https://github.com/sublang-ai/cligent/compare/v0.40.0-rc.2...v0.40.0-rc.3
+[0.40.0-rc.3]: https://github.com/sublang-ai/cligent/compare/v0.39.0...v0.40.0-rc.3
 [0.40.0-rc.2]: https://github.com/sublang-ai/cligent/compare/v0.39.0...v0.40.0-rc.2
 [0.39.0]: https://github.com/sublang-ai/cligent/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/sublang-ai/cligent/compare/v0.37.0...v0.38.0

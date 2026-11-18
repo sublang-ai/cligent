@@ -68,7 +68,10 @@ const verificationRoot = realpathSync(
 );
 const npmCache =
   process.env.CLIGENT_VERIFY_NPM_CACHE ?? join(verificationRoot, 'npm-cache');
-const evidenceDirectory = process.env.CLIGENT_VERIFY_EVIDENCE_DIR;
+const evidenceDirectory =
+  process.env.CLIGENT_VERIFY_EVIDENCE_DIR ??
+  realpathSync(mkdtempSync(join(tmpdir(), 'cligent-distributable-evidence-')));
+console.log('Distributable evidence directory: ' + evidenceDirectory);
 let commandSequence = 0;
 if (evidenceDirectory)
   mkdirSync(evidenceDirectory, { recursive: true, mode: 0o700 });
