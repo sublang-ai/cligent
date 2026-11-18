@@ -14,9 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Separate candidate installation validation from stable and merge readiness;
-  retain a bounded, explicitly recorded development-only picomatch advisory
-  exception while production audits and all functional checks remain strict.
+- Defer the known development-only picomatch advisory for testing and formal
+  publication of 0.40.0, retaining raw findings and strict production audits;
+  the exception automatically expires at the next version.
 
 ## [0.40.0-rc.2] - 2026-11-18
 

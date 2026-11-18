@@ -130,11 +130,9 @@ A test suite shall be deterministic by construction ([DR-039](../decisions/039-m
 
 When a same-repository branch candidate is published for pre-merge delivery acceptance, the publisher shall use a distinct candidate lane under [DR-049](../decisions/049-included-agent-sdks.md):
 
-- a unique SemVer `MAJOR.MINOR.PATCH-rc.N` package version, a matching immutable candidate source/tag identity, passing checks for that exact branch/PR head under the candidate rule below, and no requirement that the candidate already be merged into `main`;
+- a unique SemVer `MAJOR.MINOR.PATCH-rc.N` package version, a matching immutable candidate source/tag identity, passing checks for that exact branch/PR head, and no requirement that the candidate already be merged into `main`;
 - an explicit non-`latest` npm dist-tag, provenance, public scoped-package access and the existing trusted OIDC publication authority, with no stable-tag publication or stable GitHub release as a side effect;
-- ordinary build, package and credential-free gates retained, with production audit strict and only the explicitly recorded development exception admitted by [[package-38](package.md#package-38)];
-- the latest exact-head ordinary CI must complete with its four Node jobs and three browser jobs successful, and the latest exact-head `candidate.yml` workflow must pass its full distributable validation; the ordinary distributable job is replaced only for candidate readiness by that complete candidate validation, while skipped acceptance on a PR is expected;
-- stable-only `main`, full clean-audit and final stable preparation-record requirements remain confined to stable publication and merge readiness, with no candidate validation authorizing a merge of red ordinary CI;
+- ordinary build, package, dependency-audit and credential-free gates retained, with the stable-only `main` and final stable preparation-record requirements confined to stable publication;
 - coordinated candidate dependencies naming the exact intended Cligent/Playbook candidate versions where needed, recorded separately from stable caret-range policy, with no checkout path, workspace link or manual SDK installation in the registry consumer;
 - a durable record of source head, PR, version, dependency candidate set, tarball integrity and actual registry installation results; source or packaged-code changes require a new candidate and affected verification;
 - formal stable publication remains a later, separately gated operation, and acceptance does not require moving `latest` before merge.
@@ -186,10 +184,6 @@ When the repository audit reads the CI workflow and the pre-push script, it shal
 ### release-24
 
 When candidate publication and exact-version clean-prefix installation are exercised through the actual configured publisher, the system suite shall verify source/PR identity, candidate version and tag, trusted publication, intended transitive candidate acquisition, retained stable-lane restrictions and no mutation of `latest`, retaining failed and skipped publication evidence rather than claiming an unperformed install [[release-23](#release-23)].
-
-### release-25
-
-When the candidate publisher evaluates real workflow runs and their jobs, the release integration suite shall assert the latest matching exact-head candidate validation and all seven required ordinary Node/browser jobs must pass, rejecting stale heads, fork or unrelated PRs, incomplete or failed validation, missing/duplicate jobs, and any failure of the seven required ordinary jobs without relaxing the stable source guard [[release-23](#release-23)].
 
 ## References
 

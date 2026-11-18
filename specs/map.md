@@ -75,7 +75,7 @@ meta.md       The spec of specs
 | [DR-047](decisions/047-provider-aware-model-defaults-and-fork-history.md) | 047-provider-aware-model-defaults-and-fork-history.md | Shared provider-aware model pairs and verified Codex fork history semantics; amends DR-028/029 for tool exclusions, DR-044 for fork history and DR-046 for provider scope |
 | [DR-048](decisions/048-claude-durable-primary-model-continuity.md) | 048-claude-durable-primary-model-continuity.md | Claude Code selects an omitted resumed model; environment overrides remain effective |
 | [DR-049](decisions/049-included-agent-sdks.md) | 049-included-agent-sdks.md | Included Claude and Codex SDKs; Cligent-owned compatibility and production-install acceptance |
-| [DR-050](decisions/050-candidate-development-audit.md) | 050-candidate-development-audit.md | Bounded development-audit exception for candidate installation tests; stable/merge gates unchanged |
+| [DR-050](decisions/050-deferred-development-audit.md) | 050-deferred-development-audit.md | Current-release development-audit deferral for testing and formal publication; next version strict |
 
 ## Packages
 

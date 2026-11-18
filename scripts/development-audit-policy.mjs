@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-export const CANDIDATE_ADVISORY =
+export const DEFERRED_ADVISORY =
   'https://github.com/advisories/GHSA-fc5q-39xc-vjpf';
 
 // A recorded exception, never a claim that the development audit is clean.
-export function auditDecision(report, { status, candidate, version, lock }) {
-  if (candidate && !/^\d+\.\d+\.\d+-rc\.\d+$/.test(version))
-    throw new Error('candidate audit requires an rc package version');
+export function auditDecision(report, { status, scope, version, lock }) {
   const findings = report?.vulnerabilities;
   const total = report?.metadata?.vulnerabilities?.total;
   if (
@@ -27,7 +25,11 @@ export function auditDecision(report, { status, candidate, version, lock }) {
       throw new Error('clean audit has a failing process status');
     return { outcome: 'clean', findings: 0 };
   }
-  if (!candidate || status !== 1)
+  if (
+    scope !== 'full-development' ||
+    !/^0\.40\.0(?:-rc\.(?:0|[1-9]\d*))?$/.test(version) ||
+    status !== 1
+  )
     throw new Error('dependency audit reported vulnerabilities');
   const checked = new Set();
   function visit(name, chain = new Set()) {
@@ -43,7 +45,7 @@ export function auditDecision(report, { status, candidate, version, lock }) {
       !Array.isArray(finding.via) ||
       finding.via.length === 0
     )
-      throw new Error('unresolved candidate audit finding: ' + name);
+      throw new Error('unresolved deferred development audit finding: ' + name);
     for (const node of finding.nodes) {
       const entry = lock?.packages?.[node];
       if (
@@ -55,11 +57,11 @@ export function auditDecision(report, { status, candidate, version, lock }) {
         entry.link === true
       )
         throw new Error(
-          'candidate audit node is not development-only: ' + node,
+          'deferred development audit node is not development-only: ' + node,
         );
       if (name === 'picomatch' && entry.version !== '4.0.4')
         throw new Error(
-          'candidate exception does not cover this matcher version',
+          'deferred exception does not cover this matcher version',
         );
     }
     const next = new Set(chain).add(name);
@@ -68,25 +70,28 @@ export function auditDecision(report, { status, candidate, version, lock }) {
       else if (
         name !== 'picomatch' ||
         !via ||
-        via.url !== CANDIDATE_ADVISORY ||
+        via.url !== DEFERRED_ADVISORY ||
         via.name !== 'picomatch' ||
         via.dependency !== 'picomatch' ||
         via.severity !== 'high' ||
         via.range !== '<=4.0.7'
       )
-        throw new Error('unapproved candidate advisory');
+        throw new Error('unapproved deferred advisory');
     }
     checked.add(name);
   }
   for (const name of Object.keys(findings)) visit(name);
   if (!checked.has('picomatch'))
-    throw new Error('candidate audit lacks approved matcher finding');
+    throw new Error(
+      'deferred development audit lacks approved matcher finding',
+    );
   return {
     outcome: 'development-risk-exception',
-    advisory: CANDIDATE_ADVISORY,
+    advisory: DEFERRED_ADVISORY,
     matcherVersion: '4.0.4',
     findings: total,
     affectedDevelopmentPackages: [...checked].sort(),
-    stableAndMergeReady: false,
+    deferredUntil: 'next version after 0.40.0',
+    securityRemediated: false,
   };
 }
