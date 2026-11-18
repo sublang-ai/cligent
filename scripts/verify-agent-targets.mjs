@@ -138,9 +138,10 @@ export function verifySdkTargets() {
       );
       if (target.kind !== 'peer') continue;
       assertEqual(
-        manifest.peerDependencies?.[target.package],
+        manifest.dependencies?.[target.package] ??
+          manifest.peerDependencies?.[target.package],
         `>=${target.supportedFrom}`,
-        `${adapter} peer floor matches the runtime descriptor`,
+        `${adapter} SDK floor matches the runtime descriptor`,
       );
       assertEqual(
         manifest.devDependencies?.[target.package],

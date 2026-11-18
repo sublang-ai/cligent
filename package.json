@@ -1,6 +1,6 @@
 {
   "name": "@sublang/cligent",
-  "version": "0.39.0",
+  "version": "0.40.0-rc.3",
   "description": "Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini CLI, Kimi Code, OpenCode, and more)",
   "type": "module",
   "license": "Apache-2.0",
@@ -24,6 +24,7 @@
   ],
   "files": [
     "bin/tmux-play.mjs",
+    "bin/repair-included-runtimes.mjs",
     "dist",
     "docs",
     "LICENSE",
@@ -94,17 +95,9 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": ">=0.3.321",
-    "@openai/codex-sdk": ">=0.159.1",
     "@opencode-ai/sdk": ">=1.18.29"
   },
   "peerDependenciesMeta": {
-    "@anthropic-ai/claude-agent-sdk": {
-      "optional": true
-    },
-    "@openai/codex-sdk": {
-      "optional": true
-    },
     "@opencode-ai/sdk": {
       "optional": true
     }
@@ -138,7 +131,9 @@
     "@playwright/mcp": "0.0.77",
     "smol-toml": "1.9.1",
     "yaml": "^2.8.4",
-    "zod": "4.6.6"
+    "zod": "4.6.6",
+    "@anthropic-ai/claude-agent-sdk": ">=0.3.321",
+    "@openai/codex-sdk": ">=0.159.1"
   },
   "overrides": {
     "eslint": {

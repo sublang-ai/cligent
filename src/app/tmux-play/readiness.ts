@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shellQuote } from '../shared/shell.js';
 import { AGENT_RUNTIME_TARGETS } from '../../runtime-targets.js';
+import { locateAgentExecutable } from '../../native-executable.js';
 import {
   isBelowFloor,
   readRuntimeVersion,
@@ -63,11 +64,32 @@ export type InstallTarget =
 export function adapterRepairCommands(
   adapter: PlayerAdapterName,
   target: InstallTarget,
+  packageRoot?: string,
 ): readonly string[] {
   const targets = AGENT_RUNTIME_TARGETS[adapter];
   const peers = targets.filter((runtime) => runtime.kind === 'peer');
   const clis = targets.filter((runtime) => runtime.kind === 'cli');
   const commands: string[] = [];
+  // Included SDKs can be nearer than the outer global/project tree. Repair
+  // from this installed Cligent manifest, not beside an unreachable bad copy.
+  if (packageRoot && (adapter === 'claude' || adapter === 'codex')) {
+    let included = false;
+    try {
+      const manifest = JSON.parse(
+        readFileSync(join(packageRoot, 'package.json'), 'utf8'),
+      ) as { dependencies?: Record<string, string> };
+      included = peers.every(
+        (peer) => manifest.dependencies?.[peer.package] !== undefined,
+      );
+    } catch {
+      /* Historical/virtual trees retain their existing repair rule. */
+    }
+    if (included)
+      return [
+        `node ${shellQuote(join(packageRoot, 'bin', 'repair-included-runtimes.mjs'))}`,
+        ...targets.flatMap((runtime) => runtime.steps ?? []),
+      ];
+  }
   if ('unreachable' in target) {
     // No npm invocation reaches the resolved tree, so an install command here
     // would land somewhere else and look like it had worked. Name the manual
@@ -281,7 +303,7 @@ export function formatNoRuntimeInstalled(
   ];
   for (const adapter of KNOWN_PLAYER_ADAPTERS) {
     lines.push(`  ${adapter}`);
-    for (const command of adapterRepairCommands(adapter, target)) {
+    for (const command of adapterRepairCommands(adapter, target, packageRoot)) {
       lines.push(`    ${command}`);
     }
   }
@@ -316,7 +338,11 @@ export function formatMissingRuntimes(
       `  ${entry.adapter} (${entry.roles.join(', ')})` +
         (entry.detail ? ` — ${entry.detail}` : ''),
     );
-    for (const command of adapterRepairCommands(entry.adapter, target)) {
+    for (const command of adapterRepairCommands(
+      entry.adapter,
+      target,
+      packageRoot,
+    )) {
       lines.push(`    ${command}`);
     }
   }
@@ -343,8 +369,7 @@ export interface ConfiguredAdapterRoles {
   };
 }
 
-export interface AssertConfiguredAdaptersReadyOptions
-  extends ProbeAdapterRuntimesOptions {
+export interface AssertConfiguredAdaptersReadyOptions extends ProbeAdapterRuntimesOptions {
   readonly packageRoot?: string;
   /** Injectable for tests; defaults to `fs.existsSync`. */
   readonly fileExists?: (path: string) => boolean;
@@ -380,9 +405,7 @@ export function configuredAdapterRoles(
  * than an absence. Returns `undefined` when nothing is installed, so the
  * caller's existing "not installed" wording stands.
  */
-function unusableRuntimeDetail(
-  adapter: PlayerAdapterName,
-): string | undefined {
+function unusableRuntimeDetail(adapter: PlayerAdapterName): string | undefined {
   // Every runtime the adapter needs, peer and CLI alike: skipping CLI
   // targets reported an installed-but-stale gemini, kimi, or opencode as
   // absent, which tmux-play-89 forbids and which sends the user to install
@@ -393,6 +416,15 @@ function unusableRuntimeDetail(
     if (isBelowFloor(installed, target)) {
       return `${runtimeIdentity(target)} ${installed} is installed but this release requires >=${target.supportedFrom}`;
     }
+  }
+  if (adapter === 'claude' || adapter === 'codex') {
+    const native = locateAgentExecutable(adapter);
+    if (native.state === 'missing')
+      return `missing native component ${native.package} for ${native.platform}/${native.arch}`;
+    if (native.state === 'no-sdk')
+      return `missing included SDK ${AGENT_RUNTIME_TARGETS[adapter][0].package}`;
+    if (native.state === 'unsupported')
+      return `unsupported native runtime for ${native.platform}/${native.arch}`;
   }
   return undefined;
 }
@@ -443,15 +475,15 @@ export async function assertConfiguredAdaptersReady(
 function installTreeNote(target: InstallTarget, packageRoot: string): string {
   const note =
     `cligent runs from ${packageRoot} as ` +
-    `${target.scope === 'global' ? 'a global' : 'a project'} install, and ` +
-    `resolves adapter SDKs from ${target.moduleRoot}.`;
+    `${target.scope === 'global' ? 'a global' : 'a project'} install. ` +
+    'SDK lookup is anchored to this package; the commands above name their repair targets.';
   if (!('unreachable' in target)) {
     return note;
   }
   // No canned command reaches this tree, so say so rather than print one that
   // would land somewhere else and look like it had worked.
   return (
-    `${note} No npm install command targets that tree, so place the peer ` +
+    `${note} No npm install command targets the optional-peer tree ${target.moduleRoot}, so place the peer ` +
     `SDK in it yourself, or reinstall cligent where npm installs globally.`
   );
 }

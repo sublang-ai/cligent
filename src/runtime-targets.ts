@@ -15,7 +15,7 @@
  *   runtime's provider offers and supplies every runtime surface the adapter
  *   drives, per [DR-027](../specs/decisions/027-latest-models-oldest-serving-runtime.md).
  *   It blocks: below it the runtime refuses to load.
- *   For a peer target it is also the published `peerDependencies` floor.
+ *   For an SDK target it is also its published dependency floor.
  *   It is established by checking the published runtimes, not by copying
  *   the tested version, because a floor set too high refuses installs that
  *   work.
@@ -31,13 +31,13 @@
  * at load.
  *
  * Repository verification derives its expectations from this descriptor,
- * asserts peer targets match the manifest's range and development pin, and
+ * asserts SDK targets match their manifest range and development pin, and
  * checks CLI targets against their exact CI installs.
  */
 
 /** How a runtime is found, which decides how its version is read and repaired. */
 export type RuntimeKind =
-  /** An npm package resolved from the installed `@sublang/cligent` tree. */
+  /** An SDK package resolved from Cligent's tree; legacy API label, not manifest placement. */
   | 'peer'
   /** An executable found through `PATH`. */
   | 'cli';
@@ -84,11 +84,7 @@ export type RuntimeTarget = {
 );
 
 export type AgentRuntimeName =
-  | 'claude'
-  | 'codex'
-  | 'gemini'
-  | 'kimi'
-  | 'opencode';
+  'claude' | 'codex' | 'gemini' | 'kimi' | 'opencode';
 
 /**
  * Every runtime each adapter needs. An adapter may need more than one: the

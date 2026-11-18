@@ -82,7 +82,6 @@ import {
   TMUX_PLAY_WORK_DIR_OWNER_MARKER,
   tmuxPlayThemeDiagnostics,
 } from './launcher.js';
-import { AGENT_RUNTIME_TARGETS } from '../../runtime-targets.js';
 import { TMUX_PLAY_CONFIG_SNAPSHOT } from './config.js';
 import type { PlayerAdapterImports, PlayerAdapterName } from './players.js';
 import {
@@ -93,7 +92,7 @@ import {
   TMUX_STATUS_TIMER_TEXT_OPTION,
 } from './timer-options.js';
 import { shellQuote } from '../shared/shell.js';
-import { cligentPackageRoot, resolveInstallRoot } from './readiness.js';
+import { cligentPackageRoot } from './readiness.js';
 import { runManagedTmuxPlaySession } from './session.js';
 
 class MemoryOutput {
@@ -498,9 +497,9 @@ describe('launchTmuxPlay', () => {
     });
 
     expect(result.sessionId).toBe('8f45153e-2c91-4561-a99f-77d0f0a45881');
-    expect(
-      JSON.parse(readFileSync(result.snapshotPath, 'utf8')).theme,
-    ).toBe('latte');
+    expect(JSON.parse(readFileSync(result.snapshotPath, 'utf8')).theme).toBe(
+      'latte',
+    );
     expect(existsSync(join(workDir, TMUX_PLAY_WORK_DIR_OWNER_MARKER))).toBe(
       false,
     );
@@ -663,12 +662,10 @@ describe('launchTmuxPlay', () => {
     });
     controller.abort(abortReason);
 
-    const failure = await prepared
-      .attach({ signal: controller.signal })
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+    const failure = await prepared.attach({ signal: controller.signal }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
 
     expect(failure).toBeInstanceOf(AggregateError);
     expect((failure as AggregateError).errors).toEqual([
@@ -703,12 +700,10 @@ describe('launchTmuxPlay', () => {
     });
     controller.abort(abortReason);
 
-    const failure = await prepared
-      .attach({ signal: controller.signal })
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+    const failure = await prepared.attach({ signal: controller.signal }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
 
     expect(failure).toBe(abortReason);
   });
@@ -786,9 +781,9 @@ describe('launchTmuxPlay', () => {
         return 'node /embedding/session-process.mjs';
       },
     });
-    expect(
-      JSON.parse(readFileSync(prepared.snapshotPath, 'utf8')).theme,
-    ).toBe('mocha');
+    expect(JSON.parse(readFileSync(prepared.snapshotPath, 'utf8')).theme).toBe(
+      'mocha',
+    );
     expect(themeProbe).not.toHaveBeenCalled();
     managedCoordinationRmHook.run = (path) => {
       if (path !== coordinationDir || controller.signal.aborted) return;
@@ -1129,7 +1124,9 @@ describe('launchTmuxPlay', () => {
       );
 
       expect(failure).toEqual(
-        new Error('managed tmux-play pane remained active after forced teardown'),
+        new Error(
+          'managed tmux-play pane remained active after forced teardown',
+        ),
       );
       expect(killTmuxSessionMock).toHaveBeenCalledWith(
         'tmux-play-managed-unproved-forced-exit',
@@ -3011,15 +3008,10 @@ describe('launchTmuxPlay', () => {
     // every peer-SDK command pins that tree with --prefix (tmux-play-89): where a
     // bare install would land belongs to the paste-time shell, not to this
     // process.
-    const expectedPrefix = shellQuote(resolveInstallRoot(cligentPackageRoot()));
-    expect(error!.message).toContain(
-      `npm install --global=false --location=project --prefix ${expectedPrefix} ${AGENT_RUNTIME_TARGETS.claude[0]!.repairSpec}`,
-    );
+    const expectedRepair = `node ${shellQuote(join(cligentPackageRoot(), 'bin', 'repair-included-runtimes.mjs'))}`;
+    expect(error!.message).toContain(expectedRepair);
     expect(error!.message).toContain(
       'codex (player "coder", player "reviewer")',
-    );
-    expect(error!.message).toContain(
-      `npm install --global=false --location=project --prefix ${expectedPrefix} ${AGENT_RUNTIME_TARGETS.codex[0]!.repairSpec}`,
     );
     expect(error!.message).toContain(configPath);
     expect(runTmuxMock).not.toHaveBeenCalled();

@@ -560,7 +560,7 @@ When the adapter serializes [[codex-37](#codex-37)]'s trust override, it shall e
 
 ### codex-12
 
-When the adapter requires the Codex CLI entry `@openai/codex/bin/codex.js` — for [[codex-10](#codex-10)] and [[codex-31](#codex-31)] in a run, or to locate its native binary [[codex-64](#codex-64)] in `isAvailable()` and at the start of every run — the adapter shall resolve it through this ordered anchor matrix, because `@openai/codex` belongs to the optional `@openai/codex-sdk` peer's tree rather than Cligent's [[package-4](../package.md#package-4)]:
+When the adapter requires the Codex CLI entry `@openai/codex/bin/codex.js` — for [[codex-10](#codex-10)] and [[codex-31](#codex-31)] in a run, or to locate its native binary [[codex-64](#codex-64)] in `isAvailable()` and at the start of every run — the adapter shall resolve it through this ordered anchor matrix, because `@openai/codex` belongs to the included `@openai/codex-sdk` dependency's own tree [[package-4](../package.md#package-4)]:
 
 | Resolution state | Outcome |
 | --- | --- |
@@ -669,7 +669,7 @@ Given duplicate and distinct canonical identifiers on normal completion, compati
 
 ### codex-47
 
-Where the packed package is installed without the Codex SDK peer, when a consumer imports the Codex adapter subpath, the import shall succeed [[codex-2](#codex-2)].
+Where an installed-package fault fixture removes the included Codex SDK, when a consumer imports the Codex adapter subpath, the import shall succeed [[codex-2](#codex-2)].
 
 ### codex-202
 

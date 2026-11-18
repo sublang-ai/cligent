@@ -384,9 +384,47 @@ function expectedVersion(previous: string, level: string): string {
   }
 }
 
+// Candidates do not invent a completed stable preparation record. Keep the
+// real latest stable record under audit while the current candidate lane is
+// verified separately against its fixed PR head and CI.
+function preparedReleaseFiles(): {
+  manifest: { version: string };
+  changelog: string;
+  lockfile: string;
+} {
+  const manifest = JSON.parse(read('package.json')) as { version: string };
+  if (!manifest.version.includes('-rc.'))
+    return {
+      manifest,
+      changelog: read('CHANGELOG.md'),
+      lockfile: read('package-lock.json'),
+    };
+  const tag = execFileSync(
+    'git',
+    ['describe', '--tags', '--exclude', '*-rc.*', '--abbrev=0'],
+    { cwd: projectRoot, encoding: 'utf8' },
+  ).trim();
+  return {
+    manifest: JSON.parse(
+      execFileSync('git', ['show', `${tag}:package.json`], {
+        cwd: projectRoot,
+        encoding: 'utf8',
+      }),
+    ),
+    changelog: execFileSync('git', ['show', `${tag}:CHANGELOG.md`], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+    }),
+    lockfile: execFileSync('git', ['show', `${tag}:package-lock.json`], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+    }),
+  };
+}
+
 describe('release preparation', () => {
   it('audits the real prepared range, version, changelog, and checklist (release-15)', () => {
-    const manifest = JSON.parse(read('package.json')) as { version: string };
+    const { manifest, changelog } = preparedReleaseFiles();
     const evidencePath = `docs/releases/${manifest.version}-preparation.md`;
     const evidence = read(evidencePath);
     const previousTag = evidenceField(evidence, 'Previous tag');
@@ -434,7 +472,6 @@ describe('release preparation', () => {
     expect(chosenVersion).toBe(expectedVersion(previousVersion, changeLevel));
     expect(chosenVersion).toBe(manifest.version);
 
-    const changelog = read('CHANGELOG.md');
     const unreleasedStart = changelog.indexOf('## [Unreleased]');
     const versionHeader = `## [${chosenVersion}] - ${releaseDate}`;
     const versionStart = changelog.indexOf(versionHeader);
@@ -538,7 +575,7 @@ describe('release preparation', () => {
     expect(changelog).toContain(
       `[${chosenVersion}]: https://github.com/sublang-ai/cligent/compare/${previousTag}...v${chosenVersion}`,
     );
-    const lockfile = JSON.parse(read('package-lock.json')) as {
+    const lockfile = JSON.parse(preparedReleaseFiles().lockfile) as {
       version: string;
       packages: Record<string, { version?: string }>;
     };
@@ -553,7 +590,9 @@ describe('release preparation', () => {
       'All unit tests pass — `npm test`:',
       '`npm run smoke:release` passes locally:',
     ]) {
-      expect(evidence).toMatch(new RegExp(`^- \\[${checkmark}\\] ${label}`, 'm'));
+      expect(evidence).toMatch(
+        new RegExp(`^- \\[${checkmark}\\] ${label}`, 'm'),
+      );
     }
     expect(evidence).toMatch(
       /^- \[x\] All release changes through the audited head are committed;/m,
@@ -596,7 +635,7 @@ describe('release preparation', () => {
   });
 
   it('fails closed when the recorded Git history is unavailable (release-15)', () => {
-    const manifest = JSON.parse(read('package.json')) as { version: string };
+    const { manifest } = preparedReleaseFiles();
     const evidence = read(`docs/releases/${manifest.version}-preparation.md`);
     const previousTag = evidenceField(evidence, 'Previous tag');
     const auditedHead = evidenceField(evidence, 'Audited head');
@@ -1103,22 +1142,25 @@ describe('release preparation', () => {
     const notes = workflow.indexOf(
       '- name: Extract release notes from CHANGELOG.md',
     );
-    const publish = workflow.indexOf(
-      '- run: npm publish --provenance --access public',
-    );
+    const publish = workflow.indexOf('- name: Publish package');
     const githubRelease = workflow.indexOf('- name: Create GitHub Release');
 
     expect(workflow).toContain("tags: ['v[0-9]*']");
     expect(workflow).toContain(
-      'if ! [[ "$TAG" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]',
+      'if ! [[ "$TAG" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+(-rc\\.[0-9]+)?$ ]]',
     );
     expect(workflow).toContain(
       'Tag $TAG does not match package.json version $PKG_VERSION',
     );
     expect(tagVersion).toBeGreaterThanOrEqual(0);
     expect(ciRequirement).toBeGreaterThan(tagVersion);
-    expect(workflow).toContain('event=push&branch=main');
-    expect(workflow).toContain('conclusion" = "success"');
+    expect(workflow).toContain('node scripts/release-source-guard.mjs');
+    const sourceGuard = read('scripts/release-source-guard.mjs');
+    expect(sourceGuard).toContain(
+      "run.event === 'push' && run.head_branch === 'main'",
+    );
+    expect(sourceGuard).toContain('pr.head?.sha === sha');
+    expect(sourceGuard).toContain("matching[0]?.conclusion === 'success'");
     expect(build).toBeGreaterThan(ciRequirement);
     expect(packageCheck).toBeGreaterThan(build);
     expect(unitTest).toBeGreaterThan(packageCheck);
@@ -1129,7 +1171,7 @@ describe('release preparation', () => {
     expect(workflow).toMatch(/^\s+id-token: write$/m);
     expect(workflow).not.toMatch(/\b(?:NODE_AUTH_TOKEN|NPM_TOKEN)\b/);
     expect(workflow).toContain(
-      'gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md',
+      '--title "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md',
     );
   });
 

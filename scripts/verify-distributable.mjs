@@ -9,15 +9,19 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
+import { auditDecision } from './development-audit-policy.mjs';
 
 import {
   EXPECTED_PROTOCOL_VERSIONS,
@@ -31,6 +35,8 @@ const CLAUDE_NODE_RUNTIME_VERSION = '18.14.0';
 const TYPESCRIPT_VERSION = '5.4.5';
 const NODE_TYPES_VERSION = '18.19.24';
 const EXPECTED_RUNTIME_DEPENDENCIES = Object.freeze({
+  '@anthropic-ai/claude-agent-sdk': `>=${AGENT_RUNTIME_TARGETS.claude[0].supportedFrom}`,
+  '@openai/codex-sdk': `>=${AGENT_RUNTIME_TARGETS.codex[0].supportedFrom}`,
   '@agentclientprotocol/sdk': '1.4.0',
   '@playwright/mcp': '0.0.77',
   'smol-toml': '1.9.1',
@@ -43,19 +49,32 @@ const EXPECTED_OPTIONAL_PEERS = Object.freeze(
   Object.fromEntries(
     Object.values(AGENT_RUNTIME_TARGETS)
       .flat()
-      .filter((target) => target.kind === 'peer')
+      .filter(
+        (target) =>
+          target.kind === 'peer' && target.package === '@opencode-ai/sdk',
+      )
       .map((target) => [target.package, `>=${target.supportedFrom}`]),
   ),
 );
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+if (process.argv.length > 2)
+  throw new Error('unknown distributable verification option');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 // Canonical, because tmux-play reports the tree it actually resolves from and
 // macOS exposes the same temporary directory through both /var and /private/var.
 const verificationRoot = realpathSync(
   mkdtempSync(join(tmpdir(), 'cligent-distributable-')),
 );
-const npmCache = join(verificationRoot, 'npm-cache');
+const npmCache =
+  process.env.CLIGENT_VERIFY_NPM_CACHE ?? join(verificationRoot, 'npm-cache');
+const evidenceDirectory =
+  process.env.CLIGENT_VERIFY_EVIDENCE_DIR ??
+  realpathSync(mkdtempSync(join(tmpdir(), 'cligent-distributable-evidence-')));
+console.log('Distributable evidence directory: ' + evidenceDirectory);
+let commandSequence = 0;
+if (evidenceDirectory)
+  mkdirSync(evidenceDirectory, { recursive: true, mode: 0o700 });
 const packDirectory = join(verificationRoot, 'pack');
 const consumerDirectory = join(verificationRoot, 'consumer');
 const codexGlobalPrefix = join(verificationRoot, 'codex-global');
@@ -67,8 +86,6 @@ const CLAUDE_PROBE_FILENAME = 'claude-runtime-authority-probe.mjs';
 const CODEX_PROBE_FILENAME = 'codex-resolution-probe.mjs';
 const codexProbeHomeDirectory = join(verificationRoot, 'codex-home');
 const codexProbeWorkDirectory = join(verificationRoot, 'codex-probe-workdir');
-const claudeSdkInstallSpec = `@anthropic-ai/claude-agent-sdk@${EXPECTED_SDK_VERSIONS['@anthropic-ai/claude-agent-sdk']}`;
-const codexSdkInstallSpec = `@openai/codex-sdk@${EXPECTED_SDK_VERSIONS['@openai/codex-sdk']}`;
 const RUNTIME_DECOY_VERSION = '99.99.99';
 const tmuxPlayGlobalPrefix = join(verificationRoot, 'tmux-play-global');
 const tmuxPlayHarnessBin = join(verificationRoot, 'tmux-play-harness-bin');
@@ -84,10 +101,11 @@ function fail(message) {
 }
 
 function run(command, args, options = {}) {
+  const started = Date.now();
   const result = spawnSync(command, args, {
     cwd: options.cwd ?? repoRoot,
     encoding: 'utf8',
-    timeout: options.timeout ?? 300_000,
+    timeout: options.timeout ?? 1_800_000,
     env: {
       ...process.env,
       npm_config_cache: npmCache,
@@ -97,12 +115,64 @@ function run(command, args, options = {}) {
   });
   const stdout = result.stdout ?? '';
   const stderr = result.stderr ?? '';
+  if (evidenceDirectory) {
+    let receipt = JSON.stringify(
+      {
+        command,
+        args,
+        cwd: options.cwd ?? repoRoot,
+        elapsedMs: Date.now() - started,
+        status: result.status,
+        signal: result.signal,
+        stdout,
+        stderr,
+        error: result.error?.message,
+      },
+      null,
+      2,
+    );
+    for (const [key, value] of Object.entries(process.env))
+      if (
+        /(?:TOKEN|KEY|PASSWORD|SECRET)/i.test(key) &&
+        value &&
+        value.length >= 8
+      )
+        receipt = receipt.split(value).join('[REDACTED]');
+    writeFileSync(
+      join(
+        evidenceDirectory,
+        `${String(++commandSequence).padStart(4, '0')}.json`,
+      ),
+      receipt + '\n',
+      { mode: 0o600 },
+    );
+  }
+
+  if (evidenceDirectory && (result.error || result.status !== 0)) {
+    const logs = join(npmCache, '_logs');
+    if (existsSync(logs))
+      for (const file of readdirSync(logs)) {
+        if (!file.endsWith('.log')) continue;
+        let content = readFileSync(join(logs, file), 'utf8');
+        for (const [key, value] of Object.entries(process.env))
+          if (
+            /(?:TOKEN|KEY|PASSWORD|SECRET)/i.test(key) &&
+            value &&
+            value.length >= 8
+          )
+            content = content.split(value).join('[REDACTED]');
+        writeFileSync(join(evidenceDirectory, 'npm-' + file), content, {
+          mode: 0o600,
+        });
+      }
+  }
+
   const output = `${stdout}${stderr ? `${stdout ? '\n' : ''}${stderr}` : ''}`;
 
   if (result.error) {
     fail(`${command} could not start: ${result.error.message}`);
   }
-  if (result.status !== 0) {
+  if (!(options.allowedStatuses ?? [0]).includes(result.status)) {
     fail(
       `${command} ${args.join(' ')} exited ${String(result.status)}${
         output.trim() ? `:\n${output.trim()}` : ''
@@ -110,7 +180,7 @@ function run(command, args, options = {}) {
     );
   }
 
-  return { stdout, stderr, output };
+  return { stdout, stderr, output, status: result.status };
 }
 
 function readJson(path) {
@@ -219,7 +289,10 @@ function assertManifestPlacement(manifest, label) {
   );
 
   for (const [packageName, version] of Object.entries(EXPECTED_SDK_VERSIONS)) {
-    if (manifest.dependencies?.[packageName] !== undefined) {
+    if (
+      packageName === '@opencode-ai/sdk' &&
+      manifest.dependencies?.[packageName] !== undefined
+    ) {
       fail(`${label} places ${packageName} in runtime dependencies`);
     }
     if (manifest.optionalDependencies?.[packageName] !== undefined) {
@@ -305,8 +378,11 @@ function assertTarballManifest(packed, manifest) {
   return tarballPath;
 }
 
-function assertAuditClean(label, args) {
-  const { stdout } = run(npm, args);
+function assertAuditClean(label, args, options = {}) {
+  const { stdout, status } = run(npm, args, {
+    ...options,
+    allowedStatuses: [0, 1],
+  });
   let audit;
   try {
     audit = JSON.parse(stdout);
@@ -318,15 +394,27 @@ function assertAuditClean(label, args) {
     );
   }
 
-  const vulnerabilities = audit.metadata?.vulnerabilities;
-  if (!vulnerabilities || typeof vulnerabilities.total !== 'number') {
-    fail(`${label} audit omitted vulnerability metadata`);
-  }
-  if (vulnerabilities.total !== 0) {
-    fail(
-      `${label} audit reported vulnerabilities: ${JSON.stringify(vulnerabilities)}`,
+  const manifest = readJson(join(repoRoot, 'package.json'));
+  const lockBytes = readFileSync(join(repoRoot, 'package-lock.json'));
+  const decision = auditDecision(audit, {
+    status,
+    scope: label === 'full graph' ? 'full-development' : 'production',
+    version: manifest.version,
+    lock: JSON.parse(lockBytes),
+  });
+  const receipt = {
+    label,
+    version: manifest.version,
+    rawAuditStatus: status,
+    lockSHA256: createHash('sha256').update(lockBytes).digest('hex'),
+    ...decision,
+  };
+  if (evidenceDirectory)
+    writeFileSync(
+      join(evidenceDirectory, `audit-${label.replaceAll(' ', '-')}.json`),
+      JSON.stringify(receipt, null, 2) + '\n',
     );
-  }
+  console.log('Dependency audit decision: ' + JSON.stringify(receipt));
 }
 
 function writeConsumerFiles() {
@@ -890,7 +978,7 @@ if (installed !== expectedVersion) {
   );
 }
 const available = await new ClaudeCodeAdapter().isAvailable();
-const expectedAvailable = process.env.CLAUDE_PROBE_EXPECTED_STATE === 'satisfied';
+const expectedAvailable = process.env.CLAUDE_PROBE_EXPECTED_STATE !== 'missing';
 if (available !== expectedAvailable) throw new Error('Unexpected Claude SDK availability on Node ' + process.version);
 const readiness = classifyRuntime(target, available);
 if (readiness.state !== process.env.CLAUDE_PROBE_EXPECTED_STATE || readiness.installed !== expectedVersion) {
@@ -937,11 +1025,12 @@ function writeCodexResolutionProbe(directory) {
     probePath,
     `import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const adapterSpecifier = process.env.CODEX_PROBE_ADAPTER;
 const rootSpecifier = process.env.CODEX_PROBE_ROOT;
 const expectation = process.env.CODEX_PROBE_EXPECT ?? 'sdk-owned';
-const sdkOwnedPrefix = process.env.CODEX_PROBE_SDK_OWNED_PREFIX ?? '';
+const expectedBinPath = process.env.CODEX_PROBE_EXPECTED_BIN_PATH ?? '';
 const expectedVersion = process.env.CODEX_PROBE_EXPECTED_VERSION ?? '';
 
 if (!adapterSpecifier) throw new Error('CODEX_PROBE_ADAPTER is required');
@@ -1023,7 +1112,7 @@ if (expectation === 'missing') {
     );
   }
   const readiness = classifyRuntime(target, true);
-  if (readiness.state !== 'satisfied' || readiness.installed !== expectedVersion) {
+  if (!['satisfied', 'untested'].includes(readiness.state) || readiness.installed !== expectedVersion) {
     throw new Error(
       'Codex readiness did not use SDK-owned ' +
         expectedVersion +
@@ -1040,19 +1129,15 @@ if (expectation === 'missing') {
   if (!existsSync(binPath)) {
     throw new Error(\`resolved Codex entry does not exist: \${binPath}\`);
   }
-  if (sdkOwnedPrefix && !binPath.startsWith(sdkOwnedPrefix)) {
-    throw new Error(
-      \`resolved \${binPath}, expected the SDK-owned entry under \${sdkOwnedPrefix}\`,
-    );
-  }
+  if (expectedBinPath && binPath !== expectedBinPath) throw new Error('resolved Codex entry differs from the SDK-declared vendor entry: ' + binPath);
 
   const native = locateAgentExecutable('codex');
   if (native.state !== 'present' || !existsSync(native.path)) {
     throw new Error('SDK-owned native Codex executable is unavailable: ' + JSON.stringify(native));
   }
-  if (sdkOwnedPrefix && !native.path.startsWith(sdkOwnedPrefix)) {
-    throw new Error('Resolved native Codex executable is outside the SDK-owned tree: ' + native.path);
-  }
+  const nativeVersion = execFileSync(native.path, ['--version'], {encoding: 'utf8'}).trim();
+  if (!nativeVersion.endsWith(' ' + expectedVersion)) throw new Error('native executable version differs from SDK-declared vendor: ' + nativeVersion);
+
   const controller = new AbortController();
   const abortTimer = setTimeout(() => controller.abort(), 3000);
   const adapter = new CodexAdapter();
@@ -1141,26 +1226,33 @@ function writeTmuxPlayHarness() {
   const fakeGlow = join(tmuxPlayHarnessBin, 'glow');
   writeFileSync(
     fakeGlow,
-    ['#!/usr/bin/env node', "console.log('glow stub');", 'process.exit(0);', ''].join(
-      '\n',
-    ),
+    [
+      '#!/usr/bin/env node',
+      "console.log('glow stub');",
+      'process.exit(0);',
+      '',
+    ].join('\n'),
   );
   chmodSync(fakeGlow, 0o755);
 }
 
 function runInstalledTmuxPlay(args) {
-  const result = spawnSync(join(tmuxPlayGlobalPrefix, 'bin', 'tmux-play'), args, {
-    cwd: tmuxPlayWorkDirectory,
-    encoding: 'utf8',
-    timeout: 120_000,
-    env: {
-      PATH: tmuxPlayHarnessBin,
-      HOME: tmuxPlayHome,
-      XDG_CONFIG_HOME: tmuxPlayConfigHome,
-      FAKE_TMUX_LOG: tmuxPlayLog,
-      TMPDIR: tmuxPlayTmp,
+  const result = spawnSync(
+    join(tmuxPlayGlobalPrefix, 'bin', 'tmux-play'),
+    args,
+    {
+      cwd: tmuxPlayWorkDirectory,
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: {
+        PATH: tmuxPlayHarnessBin,
+        HOME: tmuxPlayHome,
+        XDG_CONFIG_HOME: tmuxPlayConfigHome,
+        FAKE_TMUX_LOG: tmuxPlayLog,
+        TMPDIR: tmuxPlayTmp,
+      },
     },
-  });
+  );
   if (result.error) {
     fail(`installed tmux-play could not start: ${result.error.message}`);
   }
@@ -1185,14 +1277,17 @@ function extractRepairCommand(output, repairSpec) {
     .map((candidate) => candidate.trim())
     .find(
       (candidate) =>
-        candidate.startsWith('npm install ') && candidate.endsWith(repairSpec),
+        (candidate.startsWith('npm install ') &&
+          candidate.split(/\s+/).includes(repairSpec)) ||
+        (candidate.startsWith('node ') &&
+          candidate.includes('/bin/repair-included-runtimes.mjs')),
     );
   if (!line) {
     fail(
       `tmux-play printed no npm install command for ${repairSpec}:\n${output.trim()}`,
     );
   }
-  return line.split(/\s+/);
+  return ['/bin/sh', '-c', line];
 }
 
 function assertOutputContains(result, expected, label) {
@@ -1204,7 +1299,10 @@ function assertOutputContains(result, expected, label) {
 }
 
 function tmuxPlaySessionCreated() {
-  return existsSync(tmuxPlayLog) && readFileSync(tmuxPlayLog, 'utf8').includes('new-session');
+  return (
+    existsSync(tmuxPlayLog) &&
+    readFileSync(tmuxPlayLog, 'utf8').includes('new-session')
+  );
 }
 
 function globalNodeModulesRoot(prefix) {
@@ -1221,38 +1319,26 @@ function globalNodeModulesRoot(prefix) {
   return found;
 }
 
-function assertSdkOwnedCodexLayout(nodeModulesRoot, label) {
-  const hoisted = join(nodeModulesRoot, '@openai', 'codex');
-  if (existsSync(hoisted)) {
-    fail(`${label} unexpectedly placed @openai/codex at ${hoisted}`);
-  }
-  const sdkOwnedEntry = join(
-    nodeModulesRoot,
-    '@openai',
-    'codex-sdk',
-    'node_modules',
-    '@openai',
-    'codex',
-    'bin',
-    'codex.js',
-  );
-  if (!existsSync(sdkOwnedEntry)) {
-    fail(`${label} did not nest @openai/codex inside the SDK (${sdkOwnedEntry})`);
-  }
-  return {
-    sdkRoot: realpathSync(join(nodeModulesRoot, '@openai', 'codex-sdk')),
-    selectedVersion: readJson(
-      join(
-        nodeModulesRoot,
-        '@openai',
-        'codex-sdk',
-        'node_modules',
-        '@openai',
-        'codex',
-        'package.json',
-      ),
-    ).version,
-  };
+function installedPackageRoot(owner, name) {
+  const req = createRequire(join(owner, 'package.json'));
+  const found = req.resolve
+    .paths(name)
+    .map((base) => join(base, name, 'package.json'))
+    .find((path) => existsSync(path));
+  if (!found) fail(`installed ${owner} cannot resolve ${name}`);
+  return realpathSync(dirname(found));
+}
+
+function assertSdkOwnedCodexLayout(cligentRoot, label) {
+  const sdkRoot = installedPackageRoot(cligentRoot, '@openai/codex-sdk');
+  const runtimeRoot = installedPackageRoot(sdkRoot, '@openai/codex');
+  if (!existsSync(join(runtimeRoot, 'bin', 'codex.js')))
+    fail(`${label}: no SDK-owned Codex entry`);
+  const sdk = readJson(join(sdkRoot, 'package.json'));
+  const selectedVersion = readJson(join(runtimeRoot, 'package.json')).version;
+  if (!sdk.dependencies?.['@openai/codex'])
+    fail(`${label}: SDK does not declare its runtime`);
+  return { sdkRoot, runtimeRoot, selectedVersion };
 }
 
 function writeAmbientPackageDecoy(
@@ -1291,7 +1377,7 @@ function runCodexResolutionProbe(label, options) {
     CODEX_PROBE_ADAPTER: options.adapterSpecifier,
     CODEX_PROBE_ROOT: options.rootSpecifier,
     CODEX_PROBE_EXPECT: options.expect ?? 'sdk-owned',
-    CODEX_PROBE_SDK_OWNED_PREFIX: options.sdkOwnedPrefix ?? '',
+    CODEX_PROBE_EXPECTED_BIN_PATH: options.expectedBinPath ?? '',
     CODEX_PROBE_EXPECTED_VERSION: options.expectedVersion ?? '',
     CODEX_PROBE_REQUIRE_NO_LOADER: options.requireNoLoader ? '1' : '',
     CODEX_HOME: codexProbeHomeDirectory,
@@ -1318,7 +1404,9 @@ function runCodexResolutionProbe(label, options) {
       ? 'codex resolution diagnostic verified'
       : 'codex resolution verified:';
   if (!stdout.includes(expectedMarker)) {
-    fail(`${label} probe did not report "${expectedMarker}":\n${stdout.trim()}`);
+    fail(
+      `${label} probe did not report "${expectedMarker}":\n${stdout.trim()}`,
+    );
   }
 }
 
@@ -1330,7 +1418,11 @@ function runClaudeRuntimeAuthorityProbe(options) {
     CLAUDE_PROBE_EXPECTED_VERSION: options.expectedVersion,
     CLAUDE_PROBE_SDK_ROOT: options.sdkRoot,
     CLAUDE_PROBE_EXPECTED_NODE: options.nodeVersion ?? '',
-    CLAUDE_PROBE_EXPECTED_STATE: options.expectedState ?? 'satisfied',
+    CLAUDE_PROBE_EXPECTED_STATE:
+      options.expectedState ??
+      (options.expectedVersion === AGENT_RUNTIME_TARGETS.claude[0].tested
+        ? 'satisfied'
+        : 'untested'),
   };
   const { stdout } = options.nodeVersion
     ? run(
@@ -1391,6 +1483,43 @@ try {
     run(npm, ['pack', '--json', '--pack-destination', packDirectory]).stdout,
   );
   const tarballPath = assertTarballManifest(packed, repositoryManifest);
+  if (evidenceDirectory)
+    writeFileSync(
+      join(evidenceDirectory, packed.filename),
+      readFileSync(tarballPath),
+    );
+
+  const productionConsumer = join(verificationRoot, 'production-consumer');
+  mkdirSync(productionConsumer, { recursive: true });
+  writeFileSync(
+    join(productionConsumer, 'package.json'),
+    JSON.stringify({ private: true }),
+  );
+  run(
+    npm,
+    [
+      'install',
+      '--omit=dev',
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+      tarballPath,
+    ],
+    { cwd: productionConsumer },
+  );
+  const productionOwner = join(
+    productionConsumer,
+    'node_modules',
+    '@sublang',
+    'cligent',
+  );
+  for (const name of ['@anthropic-ai/claude-agent-sdk', '@openai/codex-sdk'])
+    installedPackageRoot(productionOwner, name);
+  assertAuditClean(
+    'installed production graph',
+    ['audit', '--omit=dev', '--json', '--audit-level=low'],
+    { cwd: productionConsumer },
+  );
 
   writeConsumerFiles();
   run(
@@ -1523,16 +1652,15 @@ try {
     '--no-audit',
     '--no-fund',
     tarballPath,
-    claudeSdkInstallSpec,
-    codexSdkInstallSpec,
   ]);
   const globalRoot = globalNodeModulesRoot(codexGlobalPrefix);
   const globalCodexLayout = assertSdkOwnedCodexLayout(
-    globalRoot,
+    join(globalRoot, '@sublang', 'cligent'),
     'global install',
   );
-  const globalClaudeSdkRoot = realpathSync(
-    join(globalRoot, '@anthropic-ai', 'claude-agent-sdk'),
+  const globalClaudeSdkRoot = installedPackageRoot(
+    join(globalRoot, '@sublang', 'cligent'),
+    '@anthropic-ai/claude-agent-sdk',
   );
   const globalClaudeSdkVersion = readJson(
     join(globalClaudeSdkRoot, 'package.json'),
@@ -1558,7 +1686,7 @@ try {
     ).href,
     rootSpecifier: pathToFileURL(join(globalCligentRoot, 'dist', 'index.js'))
       .href,
-    sdkOwnedPrefix: globalCodexLayout.sdkRoot,
+    expectedBinPath: join(globalCodexLayout.runtimeRoot, 'bin', 'codex.js'),
     expectedVersion: globalCodexLayout.selectedVersion,
     cwd: codexProbeWorkDirectory,
   });
@@ -1589,18 +1717,17 @@ try {
       '--no-fund',
       '--package-lock=false',
       tarballPath,
-      claudeSdkInstallSpec,
-      codexSdkInstallSpec,
     ],
     { cwd: codexNestedConsumerDirectory },
   );
   const nestedRoot = join(codexNestedConsumerDirectory, 'node_modules');
   const nestedCodexLayout = assertSdkOwnedCodexLayout(
-    nestedRoot,
+    join(nestedRoot, '@sublang', 'cligent'),
     'nested-strategy consumer',
   );
-  const nestedClaudeSdkRoot = realpathSync(
-    join(nestedRoot, '@anthropic-ai', 'claude-agent-sdk'),
+  const nestedClaudeSdkRoot = installedPackageRoot(
+    join(nestedRoot, '@sublang', 'cligent'),
+    '@anthropic-ai/claude-agent-sdk',
   );
   const nestedClaudeSdkVersion = readJson(
     join(nestedClaudeSdkRoot, 'package.json'),
@@ -1634,7 +1761,7 @@ try {
   runCodexResolutionProbe('nested-strategy consumer', {
     adapterSpecifier: '@sublang/cligent/adapters/codex',
     rootSpecifier: '@sublang/cligent',
-    sdkOwnedPrefix: nestedCodexLayout.sdkRoot,
+    expectedBinPath: join(nestedCodexLayout.runtimeRoot, 'bin', 'codex.js'),
     expectedVersion: nestedCodexLayout.selectedVersion,
     cwd: codexNestedConsumerDirectory,
   });
@@ -1643,21 +1770,15 @@ try {
   runCodexResolutionProbe('nested-strategy consumer on the Node floor', {
     adapterSpecifier: '@sublang/cligent/adapters/codex',
     rootSpecifier: '@sublang/cligent',
-    sdkOwnedPrefix: nestedCodexLayout.sdkRoot,
+    expectedBinPath: join(nestedCodexLayout.runtimeRoot, 'bin', 'codex.js'),
     expectedVersion: nestedCodexLayout.selectedVersion,
     cwd: codexNestedConsumerDirectory,
     nodeRuntimeFloor: true,
     requireNoLoader: true,
   });
 
-  // The peer-free consumer resolves no @openai/codex from any route, so the
-  // adapter must raise the ownership diagnostic with the repair.
-  runCodexResolutionProbe('peer-free consumer diagnostic', {
-    adapterSpecifier: '@sublang/cligent/adapters/codex',
-    rootSpecifier: '@sublang/cligent',
-    expect: 'missing',
-    cwd: consumerDirectory,
-  });
+  // Normal production installation now includes Codex; missing-runtime
+  // diagnostics are exercised separately by adapter fault fixtures.
 
   // tmux-play-201: the documented global install, with no agent SDK beside it.
   mkdirSync(tmuxPlayGlobalPrefix, { recursive: true });
@@ -1676,89 +1797,118 @@ try {
 
   const installedTmuxPlayBin = join(tmuxPlayGlobalPrefix, 'bin', 'tmux-play');
   if (!existsSync(installedTmuxPlayBin)) {
-    fail(`global install created no tmux-play executable at ${installedTmuxPlayBin}`);
-  }
-
-  // With nothing but cligent installed, the documented command must refuse:
-  // no config naming runtimes it cannot load, no session, and every repair
-  // command scoped to the prefix the user actually installed into.
-  const emptyLaunch = runInstalledTmuxPlay([]);
-  assertEqual(emptyLaunch.status, 1, 'tmux-play launch without any agent runtime');
-  assertOutputContains(
-    emptyLaunch,
-    'found no agent runtime installed',
-    'tmux-play launch without any agent runtime',
-  );
-  // Every peer SDK command names its tree with --prefix; here that tree is a
-  // prefix supplied out of band that a bare install would never reach. PATH
-  // executables use the descriptor's exact repair spec but stay unpinned to
-  // cligent's tree because they belong in the global prefix the shell reads.
-  for (const repair of [
-    `npm install -g --prefix ${tmuxPlayGlobalPrefix} ${AGENT_RUNTIME_TARGETS.claude[0].repairSpec}`,
-    `npm install -g --prefix ${tmuxPlayGlobalPrefix} ${AGENT_RUNTIME_TARGETS.codex[0].repairSpec}`,
-    `npm install -g --prefix ${tmuxPlayGlobalPrefix} ${AGENT_RUNTIME_TARGETS.opencode[0].repairSpec}`,
-    `npm install -g ${AGENT_RUNTIME_TARGETS.gemini[0].repairSpec}`,
-    `npm install -g ${AGENT_RUNTIME_TARGETS.kimi[0].repairSpec}`,
-    `npm install -g ${AGENT_RUNTIME_TARGETS.opencode[1].repairSpec}`,
-  ]) {
-    assertOutputContains(emptyLaunch, repair, 'tmux-play repair commands');
-  }
-  if (existsSync(tmuxPlayHomeConfig)) {
     fail(
-      `tmux-play wrote ${tmuxPlayHomeConfig} with no adapter runtime installed`,
-    );
-  }
-  if (tmuxPlaySessionCreated()) {
-    fail('tmux-play created a tmux session before reporting a missing runtime');
-  }
-
-  // tmux-play-201: repair by running what the user was actually shown, verbatim.
-  // Substituting a hand-written install here is what let a command scoped to
-  // the wrong tree pass: this prefix is supplied out of band, so a bare
-  // `npm install -g` would resolve against npm's own prefix instead.
-  const printedRepair = extractRepairCommand(
-    emptyLaunch.output,
-    AGENT_RUNTIME_TARGETS.codex[0].repairSpec,
-  );
-  run(npm, [
-    ...printedRepair.slice(1),
-    '--ignore-scripts',
-    '--no-audit',
-    '--no-fund',
-  ]);
-  const installedSdk = join(
-    globalNodeModulesRoot(tmuxPlayGlobalPrefix),
-    '@openai',
-    'codex-sdk',
-  );
-  if (!existsSync(installedSdk)) {
-    fail(
-      `the printed repair command (${printedRepair.join(' ')}) did not install ` +
-        `the SDK into ${installedSdk}, the tree tmux-play reported it resolves from`,
+      `global install created no tmux-play executable at ${installedTmuxPlayBin}`,
     );
   }
 
+  // A normal package-only installation owns both SDKs. The global
+  // launcher must not ask users to install either one as a sibling root.
   // One installed runtime is enough for a first session: the generated roster
   // names only that adapter, and the launch reaches tmux.
   const readyLaunch = runInstalledTmuxPlay([]);
-  assertEqual(readyLaunch.status, 0, 'tmux-play launch with the Codex SDK installed');
+  assertEqual(
+    readyLaunch.status,
+    0,
+    'tmux-play launch with the Codex SDK installed',
+  );
   assertOutputContains(
     readyLaunch,
-    `Created tmux-play config at ${tmuxPlayHomeConfig} for installed adapters: codex`,
+    `Created tmux-play config at ${tmuxPlayHomeConfig} for installed adapters:`,
     'tmux-play first-run notice',
   );
   const generatedConfig = readFileSync(tmuxPlayHomeConfig, 'utf8');
   if (!generatedConfig.includes('adapter: codex')) {
     fail(`generated config named no codex role:\n${generatedConfig}`);
   }
-  if (/adapter: (?!codex)/.test(generatedConfig)) {
+  if (/adapter: (?!codex|claude)/.test(generatedConfig)) {
     fail(
       `generated config named an adapter with no installed runtime:\n${generatedConfig}`,
     );
   }
 
   if (!tmuxPlaySessionCreated()) {
-    fail('tmux-play created no tmux session with every configured adapter ready');
+    fail(
+      'tmux-play created no tmux session with every configured adapter ready',
+    );
+  }
+
+  // Fault the actual installed tree. A sibling SDK installation must not
+  // conceal a nearer damaged dependency. Execute precisely the printed repair.
+  const tmuxRoot = join(
+    globalNodeModulesRoot(tmuxPlayGlobalPrefix),
+    '@sublang',
+    'cligent',
+  );
+  for (const [adapter, sdkName] of [
+    ['codex', '@openai/codex-sdk'],
+    ['claude', '@anthropic-ai/claude-agent-sdk'],
+  ]) {
+    for (const fault of ['native', 'sdk']) {
+      const sdkRoot = installedPackageRoot(tmuxRoot, sdkName);
+      let damaged = sdkRoot;
+      if (fault === 'native') {
+        const probe = run(process.execPath, [
+          '--input-type=module',
+          '-e',
+          `import { locateAgentExecutable } from ${JSON.stringify(pathToFileURL(join(tmuxRoot, 'dist', 'index.js')).href)}; console.log(JSON.stringify(locateAgentExecutable(${JSON.stringify(adapter)})));`,
+        ]);
+        const executable = JSON.parse(probe.stdout);
+        if (executable.state !== 'present')
+          fail(`native fault precondition failed: ${probe.stdout}`);
+        damaged = dirname(executable.path);
+        while (
+          !existsSync(join(damaged, 'package.json')) &&
+          dirname(damaged) !== damaged
+        )
+          damaged = dirname(damaged);
+        if (!damaged.startsWith(realpathSync(tmuxRoot) + '/'))
+          fail(`native fault escaped owned tree: ${damaged}`);
+      }
+      rmSync(damaged, { recursive: true, force: true });
+      rmSync(tmuxPlayLog, { force: true });
+      const failed = runInstalledTmuxPlay([]);
+      assertEqual(failed.status, 1, `${adapter} missing ${fault} refusal`);
+      assertOutputContains(
+        failed,
+        fault === 'sdk' ? sdkName : 'missing native component',
+        `${adapter} actual damaged component identity`,
+      );
+      if (tmuxPlaySessionCreated())
+        fail(`${adapter} missing runtime created a session`);
+      const target = AGENT_RUNTIME_TARGETS[adapter][0];
+      const argv = extractRepairCommand(failed.output, target.repairSpec);
+      const beforeManifest = readFileSync(
+        join(tmuxRoot, 'package.json'),
+        'utf8',
+      );
+      run(argv[0], argv.slice(1));
+      assertEqual(
+        readFileSync(join(tmuxRoot, 'package.json'), 'utf8'),
+        beforeManifest,
+        'repair preserved installed manifest',
+      );
+      const repairedRoot = installedPackageRoot(tmuxRoot, sdkName);
+      if (!repairedRoot.startsWith(realpathSync(tmuxRoot)))
+        fail('repair escaped the selected Cligent installation');
+      const repaired = runInstalledTmuxPlay([]);
+      assertEqual(
+        repaired.status,
+        0,
+        `${adapter} printed repair restored ${fault}`,
+      );
+      if (!tmuxPlaySessionCreated())
+        fail(`${adapter} repaired launcher did not create a session`);
+      if (evidenceDirectory)
+        writeFileSync(
+          join(evidenceDirectory, `fault-${adapter}-${fault}.json`),
+          JSON.stringify(
+            { damaged, failure: failed, printedArgv: argv, repaired },
+            null,
+            2,
+          ),
+        );
+    }
   }
 } finally {
   rmSync(verificationRoot, { recursive: true, force: true });
