@@ -10,6 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-11-18
+
+### Added
+
+- Include Claude Code and Codex SDK runtimes in normal installations, with
+  descriptor-owned support floors and readiness reporting.
+- Publish coordinated prereleases from reviewed branch heads with OIDC
+  provenance and an explicit prerelease channel.
+
+### Changed
+
+- Record the approved development-only picomatch advisory deferral for 0.40.0.
+  Production audits remain strict and the exception expires at the next version.
+
+### Fixed
+
+- Repair damaged included SDKs and native binaries within the actual Cligent
+  installation, preserving the manifest and both included runtimes.
+
 ## [0.40.0-rc.3] - 2026-11-18
 
 ### Changed
@@ -957,7 +976,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow (Node 18/20/22) and tag-triggered release workflow
 - npm publish with OIDC trusted publishing and provenance attestation
 
-[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.40.0-rc.3...HEAD
+[Unreleased]: https://github.com/sublang-ai/cligent/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/sublang-ai/cligent/compare/v0.39.0...v0.40.0
 [0.40.0-rc.3]: https://github.com/sublang-ai/cligent/compare/v0.39.0...v0.40.0-rc.3
 [0.40.0-rc.2]: https://github.com/sublang-ai/cligent/compare/v0.39.0...v0.40.0-rc.2
 [0.39.0]: https://github.com/sublang-ai/cligent/compare/v0.38.0...v0.39.0
