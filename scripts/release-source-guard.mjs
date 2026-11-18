@@ -27,7 +27,7 @@ export function authorizedCandidatePull(pulls, repo, sha) {
       pr.head?.sha === sha,
   );
 }
-export function passingReleaseRun(runs, { candidate, repo, sha, pr }) {
+export function matchingReleaseRuns(runs, { candidate, repo, sha, pr }) {
   const matching = runs
     .filter(
       (run) =>
@@ -45,8 +45,53 @@ export function passingReleaseRun(runs, { candidate, repo, sha, pr }) {
         Date.parse(b.created_at) - Date.parse(a.created_at) ||
         b.run_attempt - a.run_attempt,
     );
+  return matching;
+}
+export function passingReleaseRun(runs, context) {
+  const matching = matchingReleaseRuns(runs, context);
   return (
     matching[0]?.status === 'completed' && matching[0]?.conclusion === 'success'
+  );
+}
+export function candidateChecksPassed(jobs, candidateJobs) {
+  const required = [
+    'ci (20)',
+    'ci (22)',
+    'ci (24)',
+    'ci (25)',
+    'browser (ubuntu-latest)',
+    'browser (windows-latest)',
+    'browser (macos-latest)',
+  ];
+  const expected = [...required, 'distributable', 'acceptance'];
+  if (
+    !Array.isArray(jobs) ||
+    jobs.length !== expected.length ||
+    new Set(jobs.map((job) => job.name)).size !== expected.length ||
+    jobs.some(
+      (job) => !expected.includes(job.name) || job.status !== 'completed',
+    )
+  )
+    return false;
+  if (
+    !required.every(
+      (name) => jobs.find((job) => job.name === name)?.conclusion === 'success',
+    )
+  )
+    return false;
+  if (
+    jobs.find((job) => job.name === 'acceptance')?.conclusion !== 'skipped' ||
+    !['success', 'failure'].includes(
+      jobs.find((job) => job.name === 'distributable')?.conclusion,
+    )
+  )
+    return false;
+  return (
+    Array.isArray(candidateJobs) &&
+    candidateJobs.length === 1 &&
+    candidateJobs[0].name === 'candidate-distributable' &&
+    candidateJobs[0].status === 'completed' &&
+    candidateJobs[0].conclusion === 'success'
   );
 }
 async function main() {
@@ -87,14 +132,62 @@ async function main() {
     const data = await api(
       `actions/workflows/ci.yml/runs?head_sha=${sha}&event=${candidate ? 'pull_request' : 'push'}&per_page=100`,
     );
-    if (passingReleaseRun(data.workflow_runs, { candidate, repo, sha, pr })) {
+    const context = { candidate, repo, sha, pr };
+    let ready = !candidate && passingReleaseRun(data.workflow_runs, context);
+    let candidateRun;
+    if (candidate) {
+      const validation = await api(
+        `actions/workflows/candidate.yml/runs?head_sha=${sha}&event=pull_request&per_page=100`,
+      );
+      const ordinary = matchingReleaseRuns(data.workflow_runs, context)[0];
+      candidateRun = matchingReleaseRuns(validation.workflow_runs, context)[0];
+      if (
+        ordinary?.status === 'completed' &&
+        candidateRun?.status === 'completed'
+      ) {
+        if (
+          !['failure', 'success'].includes(ordinary.conclusion) ||
+          candidateRun.conclusion !== 'success'
+        )
+          throw new Error('candidate validation failed for this exact head');
+        const jobsFor = async (run) => {
+          const result = await api(
+            `actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`,
+          );
+          if (result.total_count !== result.jobs?.length)
+            throw new Error('incomplete release job listing');
+          return result.jobs;
+        };
+        ready = candidateChecksPassed(
+          await jobsFor(ordinary),
+          await jobsFor(candidateRun),
+        );
+        if (!ready)
+          throw new Error(
+            'required candidate Node/browser/distributable jobs did not pass',
+          );
+      }
+    }
+    if (ready) {
+      if (
+        candidate &&
+        !authorizedCandidatePull(
+          await api(`commits/${sha}/pulls?per_page=100`),
+          repo,
+          sha,
+        )
+      )
+        throw new Error('candidate PR moved or closed during validation');
       console.log(
         JSON.stringify({
           sha,
           tag,
           channel,
           pullRequest: pr?.number,
-          ci: 'success',
+          ci: candidate
+            ? 'candidate-rule-passed; ordinary merge gate unchanged'
+            : 'success',
+          candidateValidationRun: candidateRun?.id,
         }),
       );
       return;

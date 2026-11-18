@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 SubLang International <https://sublang.ai>
+name: Candidate validation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candidate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  candidate-distributable:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Record immutable candidate source
+        run: git rev-parse HEAD
+      - name: Select rc validation
+        id: channel
+        run: node --input-type=module -e 'import fs from "node:fs"; const version = JSON.parse(fs.readFileSync("package.json")).version; fs.appendFileSync(process.env.GITHUB_OUTPUT, `candidate=${/^\d+\.\d+\.\d+-rc\.\d+$/.test(version)}\n`);'
+      - uses: actions/setup-node@v6
+        if: steps.channel.outputs.candidate == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        if: steps.channel.outputs.candidate == 'true'
+      - run: npm run build
+        if: steps.channel.outputs.candidate == 'true'
+      - name: Install exact agent CLIs
+        if: steps.channel.outputs.candidate == 'true'
+        run: npm install -g @google/gemini-cli@0.61.0 @moonshot-ai/kimi-code@2.1.1 opencode-ai@1.18.33
+      - name: Verify candidate distributable with recorded development risk
+        if: steps.channel.outputs.candidate == 'true'
+        env:
+          CLIGENT_VERIFY_EVIDENCE_DIR: ${{ runner.temp }}/cligent-candidate-evidence
+        run: npm run test:distributable -- --candidate-audit
+      - name: Retain candidate receipts and raw audit
+        if: always() && steps.channel.outputs.candidate == 'true'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: candidate-distributable-evidence
+          path: ${{ runner.temp }}/cligent-candidate-evidence
+          if-no-files-found: error
+          retention-days: 14

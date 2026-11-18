@@ -130,9 +130,11 @@ A test suite shall be deterministic by construction ([DR-039](../decisions/039-m
 
 When a same-repository branch candidate is published for pre-merge delivery acceptance, the publisher shall use a distinct candidate lane under [DR-049](../decisions/049-included-agent-sdks.md):
 
-- a unique SemVer `MAJOR.MINOR.PATCH-rc.N` package version, a matching immutable candidate source/tag identity, passing checks for that exact branch/PR head, and no requirement that the candidate already be merged into `main`;
+- a unique SemVer `MAJOR.MINOR.PATCH-rc.N` package version, a matching immutable candidate source/tag identity, passing checks for that exact branch/PR head under the candidate rule below, and no requirement that the candidate already be merged into `main`;
 - an explicit non-`latest` npm dist-tag, provenance, public scoped-package access and the existing trusted OIDC publication authority, with no stable-tag publication or stable GitHub release as a side effect;
-- ordinary build, package, dependency-audit and credential-free gates retained, with the stable-only `main` and final stable preparation-record requirements confined to stable publication;
+- ordinary build, package and credential-free gates retained, with production audit strict and only the explicitly recorded development exception admitted by [[package-38](package.md#package-38)];
+- the latest exact-head ordinary CI must complete with its four Node jobs and three browser jobs successful, and the latest exact-head `candidate.yml` workflow must pass its full distributable validation; the ordinary distributable job is replaced only for candidate readiness by that complete candidate validation, while skipped acceptance on a PR is expected;
+- stable-only `main`, full clean-audit and final stable preparation-record requirements remain confined to stable publication and merge readiness, with no candidate validation authorizing a merge of red ordinary CI;
 - coordinated candidate dependencies naming the exact intended Cligent/Playbook candidate versions where needed, recorded separately from stable caret-range policy, with no checkout path, workspace link or manual SDK installation in the registry consumer;
 - a durable record of source head, PR, version, dependency candidate set, tarball integrity and actual registry installation results; source or packaged-code changes require a new candidate and affected verification;
 - formal stable publication remains a later, separately gated operation, and acceptance does not require moving `latest` before merge.
@@ -143,10 +145,10 @@ When a same-repository branch candidate is published for pre-merge delivery acce
 
 When the release workflow is audited, the audit shall assert what starts the workflow and the gates it runs before publishing:
 
-- only a pushed git tag starts the workflow, and a run whose tag is not `vMAJOR.MINOR.PATCH` stops before publishing [[release-6](#release-6)];
+- only a pushed git tag starts the workflow, with stable `vMAJOR.MINOR.PATCH` tags following the stable lane [[release-6](#release-6)] and rc tags following the candidate lane [[release-23](#release-23)];
 - the run compares the tag against the `package.json` version and stops before publishing where the two disagree [[release-7](#release-7)], leaving only a matching pair publishable [[release-2](#release-2)];
 - the run's default unit suite executes after package validation and before release-note extraction or publishing [[release-7](#release-7)];
-- the CI run for the tagged commit is awaited while in progress, and publishing is refused unless it concluded successfully [[release-7](#release-7)];
+- the stable lane awaits successful whole ordinary CI for the tagged commit [[release-7](#release-7)], while candidate publication requires the exact-head ordinary jobs and complete candidate validation under [[release-23](#release-23)];
 - the package is built and its publishable surface is validated before publication [[release-7](#release-7)];
 - release notes are extracted from the matching version section in `CHANGELOG.md` before publication [[release-7](#release-7)];
 - the publish step carries `--provenance` [[release-8](#release-8)];
@@ -184,6 +186,10 @@ When the repository audit reads the CI workflow and the pre-push script, it shal
 ### release-24
 
 When candidate publication and exact-version clean-prefix installation are exercised through the actual configured publisher, the system suite shall verify source/PR identity, candidate version and tag, trusted publication, intended transitive candidate acquisition, retained stable-lane restrictions and no mutation of `latest`, retaining failed and skipped publication evidence rather than claiming an unperformed install [[release-23](#release-23)].
+
+### release-25
+
+When the candidate publisher evaluates real workflow runs and their jobs, the release integration suite shall assert the latest matching exact-head candidate validation and all seven required ordinary Node/browser jobs must pass, rejecting stale heads, fork or unrelated PRs, incomplete or failed validation, missing/duplicate jobs, and any failure of the seven required ordinary jobs without relaxing the stable source guard [[release-23](#release-23)].
 
 ## References
 
