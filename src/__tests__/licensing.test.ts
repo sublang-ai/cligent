@@ -188,6 +188,8 @@ describe('repository licensing verification', () => {
     // The listed configuration examples and their broader workflow/lock forms.
     writeFixture(root, '.gitignore', '# fixture configuration\n');
     writeFixture(root, '.editorconfig', 'root = true\n');
+    writeFixture(root, '.gitattributes', 'spex.lock text eol=lf\n');
+    writeFixture(root, 'spex.yaml', 'format: 1\n');
     writeFixture(root, 'nested/settings.json', '{}\n');
     writeFixture(root, 'AGENTS.md', '# Fixture instructions\n');
     writeFixture(root, '.github/workflows/ci.yml', 'name: fixture\n');
