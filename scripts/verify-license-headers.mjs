@@ -178,6 +178,7 @@ function isConfiguration(path) {
   if (segments[0] === '.github' || segments[0] === 'config') return true;
   if (basename === 'AGENTS.md' || basename === 'CLAUDE.md') return true;
   if (basename === '.editorconfig' || basename === '.gitignore') return true;
+  if (basename === '.gitattributes' || basename === 'spex.yaml') return true;
   if (basename === 'settings.json') return true;
   if (basename === 'npm-shrinkwrap.json') return true;
   if (/(?:^|[-.])lock(?:b|\.json|\.ya?ml)?$/i.test(basename)) return true;
