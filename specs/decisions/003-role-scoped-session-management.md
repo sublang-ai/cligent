@@ -5,8 +5,8 @@
 
 ## Status
 
-Accepted
-Amended by [DR-022](022-definite-session-rejection.md): typed pre-execution session rejection, without automatic retry.
+Accepted.
+Amended by [DR-009](009-adapter-scoped-effort-vocabularies.md), [DR-022](022-definite-session-rejection.md).
 
 ## Context
 
@@ -62,7 +62,7 @@ interface CligentOptions {
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
-  reasoningEffort?: ReasoningEffort;  // adapter-mapped per engine-20
+  effort?: string;  // the adapter's effort vocabulary per engine-20 (DR-009)
   allowedTools?: string[];
   disallowedTools?: string[];
 }

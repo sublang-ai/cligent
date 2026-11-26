@@ -6,9 +6,7 @@
 ## Status
 
 Accepted (2026-10-01).
-Amended by [DR-032](032-browser-tools-and-media-output.md): managed browser setup, caller-selected MCP servers, and native media output are now supported.
-
-Amended by [DR-033](033-host-capabilities-and-browser-readiness.md) for verified structured Gemini attachments.
+Amended by [DR-032](032-browser-tools-and-media-output.md), [DR-033](033-host-capabilities-and-browser-readiness.md).
 
 ## Context
 
@@ -19,7 +17,7 @@ These transports have different supported media, so a common-denominator feature
 
 Computer use requires a configured tool and the applicable runtime and operating-system permissions.
 Configured MCP tools can be invoked with ordinary prompts in Claude [[7]], Codex [[8]], and OpenCode [[9]]; Gemini exposes a separately enabled browser agent [[10]], and Kimi supports tool-providing plugins [[11]].
-Cligent confines every Claude run to explicitly supplied MCP servers and currently exposes no server option, so native Claude MCP setup alone cannot enable those tools through Cligent, per [DR-030](030-players-see-only-their-own-mcp-servers.md).
+Cligent confines every Claude run to explicitly supplied MCP servers, so native Claude MCP setup alone cannot enable those tools through Cligent, per [DR-030](030-players-see-only-their-own-mcp-servers.md).
 An API computer-use tool and a desktop application's computer-use integration do not establish availability in that vendor's headless coding SDK.
 
 ## Decision
@@ -28,11 +26,11 @@ An API computer-use tool and a desktop application's computer-use integration do
 - Resolve paths against the call's working directory and infer common MIME types, with an explicit MIME override for unnamed or uncommon extensions.
 - Transport supported media natively; reject an unsupported request on only its selected adapter, never omit files or reduce the other adapters' capabilities.
 - Claude carries image/PDF blocks, Codex local-image parts, Kimi capability-gated ACP image blocks, and OpenCode inline file data URLs, including when its server is remote.
-- Gemini keeps native `@file` prompt syntax rather than introducing a second quoting, path-resolution, or file-reading implementation; its structured attachment option explicitly directs callers to that syntax.
+- Gemini keeps native `@file` prompt syntax; its structured attachments translate into run-owned snapshots under [DR-033](033-host-capabilities-and-browser-readiness.md).
 - Leave model eligibility, size limits, decoding, and provider refusals to each runtime; transport support metadata makes no model guarantee.
 - Attachments are turn-local and never become instance defaults or implicit resumed-turn input.
 - Keep computer-use invocation as a normal prompt where the adapter admits an already configured native or MCP tool, and document setup and configuration-isolation limits instead of inventing a universal enablement flag.
-- Preserve Claude MCP confinement; admitting explicit per-run servers remains a separate engine-level decision under [DR-030](030-players-see-only-their-own-mcp-servers.md).
+- Preserve Claude MCP confinement under [DR-030](030-players-see-only-their-own-mcp-servers.md); caller-selected servers are [DR-032](032-browser-tools-and-media-output.md)'s.
 - Do not download remote URLs, introduce media conversion or a computer-control execution loop, change tool restrictions, or broaden permissions.
 
 ## Consequences

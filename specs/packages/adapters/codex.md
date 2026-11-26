@@ -212,7 +212,7 @@ On Mac and Windows, the adapter shall inherit Codex's native user, project, auth
 
 ### codex-84
 
-The adapter shall leave PowerShell cache policy to native Codex and host configuration, without injecting `PSModuleAnalysisCachePath` ([DR-042](../../decisions/042-windows-powershell-module-cache.md)).
+The adapter shall leave PowerShell cache policy to native Codex and host configuration, without injecting `PSModuleAnalysisCachePath` ([DR-040](../../decisions/040-native-windows-codex-isolation.md)).
 
 ### codex-85
 

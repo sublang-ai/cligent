@@ -5,7 +5,8 @@
 
 ## Status
 
-Accepted
+Accepted.
+Amends [DR-004](004-tmux-play-captain-architecture.md).
 
 ## Context
 

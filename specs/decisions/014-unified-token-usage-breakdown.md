@@ -5,8 +5,9 @@
 
 ## Status
 
-Accepted
-Amended by [DR-024](024-optional-cost-estimation.md): optional caller-requested estimates remain separate from runtime-reported accounting.
+Accepted.
+Amends [DR-002](002-unified-event-stream-and-adapter-interface.md).
+Amended by [DR-024](024-optional-cost-estimation.md).
 
 ## Context
 

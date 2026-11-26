@@ -6,10 +6,10 @@
 ## Status
 
 Accepted (2026-11-14).
-Corrects the resumed-model behavior described for 0.38.0.
 
 ## Context
 
+This record corrects the resumed-model behavior the 0.38.0 changelog described.
 An assistant reply identifies the model that answered.
 Replaying that name as the next selection can replace a user alias, a context-window modifier, or a gateway's request identifier.
 

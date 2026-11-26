@@ -6,8 +6,7 @@
 ## Status
 
 Accepted (2026-11-14).
-Amends [DR-046](046-primary-and-subagent-defaults.md) for the provider scope of generated defaults and [DR-044](044-codex-subagent-tuning.md) for task-selected fork history.
-Amends [DR-028](028-subagent-model.md) and [DR-029](029-subagent-effort.md) for Claude runs whose tool controls exclude delegation.
+Amends [DR-028](028-subagent-model.md), [DR-029](029-subagent-effort.md), [DR-044](044-codex-subagent-tuning.md), [DR-046](046-primary-and-subagent-defaults.md).
 
 ## Context
 
@@ -16,6 +15,8 @@ A cloud deployment or custom gateway can use different model identifiers.
 Native loopback runs across the collaboration and legacy Codex spawn profiles demonstrate that fresh and full-history children can use either the configured defaults or explicit model and effort selections.
 
 ## Decision
+
+This amends [DR-046](046-primary-and-subagent-defaults.md) for the provider scope of generated defaults, [DR-044](044-codex-subagent-tuning.md) for task-selected fork history, and [DR-028](028-subagent-model.md) and [DR-029](029-subagent-effort.md) for Claude runs whose tool controls exclude delegation.
 
 Consumers generating new role configurations use Cligent’s provider-aware default pairs under [[engine-137](../packages/engine.md#engine-137)].
 Existing user choices remain authoritative.

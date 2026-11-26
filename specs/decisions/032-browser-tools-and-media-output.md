@@ -6,9 +6,8 @@
 ## Status
 
 Accepted (2026-10-01).
-Amends [DR-030](030-players-see-only-their-own-mcp-servers.md) and [DR-031](031-media-input-and-computer-use.md) by admitting caller-selected MCP servers, providing an opt-in managed browser, and exposing native media results.
-
-Amended by [DR-033](033-host-capabilities-and-browser-readiness.md) for contextual discovery, browser launch proof, and owned artifacts.
+Amends [DR-002](002-unified-event-stream-and-adapter-interface.md), [DR-030](030-players-see-only-their-own-mcp-servers.md), [DR-031](031-media-input-and-computer-use.md).
+Amended by [DR-033](033-host-capabilities-and-browser-readiness.md), [DR-040](040-native-windows-codex-isolation.md).
 
 ## Context
 
@@ -35,8 +34,7 @@ Native MCP configuration and isolation semantics differ across adapters; a share
 
 Browser setup belongs to the library's capability semantics rather than every application's custom MCP wiring.
 Enabling it can require an initial browser download and host browser prerequisites; normal text calls and imports do not perform that work.
-Preparation verifies installation completion and executable presence; Chromium launch is deferred to native tool use, so preparation does not certify host-library or launch readiness.
-Native Windows Codex MCP/browser configuration remains unsupported because the SDK cannot launch that platform's configuration wrapper.
+Preparation proves an isolated host launch under [DR-033](033-host-capabilities-and-browser-readiness.md).
 The selected agent retains its native model loop, screenshot reasoning, permissions, and provider limitations.
 Hosts can render returned screenshots beside UX explanations without depending on opaque provider-specific payloads.
 Native transports that omit media still cannot expose bytes they never send; their text and explicit native references remain available.

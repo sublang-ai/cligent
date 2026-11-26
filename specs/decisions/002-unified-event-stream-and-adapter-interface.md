@@ -5,8 +5,8 @@
 
 ## Status
 
-Accepted
-Amended by [DR-022](022-definite-session-rejection.md): typed pre-execution session rejection, without automatic retry.
+Accepted.
+Amended by [DR-009](009-adapter-scoped-effort-vocabularies.md), [DR-014](014-unified-token-usage-breakdown.md), [DR-022](022-definite-session-rejection.md), [DR-032](032-browser-tools-and-media-output.md), [DR-041](041-codex-final-response.md).
 
 ## Context
 
@@ -218,16 +218,6 @@ interface PermissionPolicy {
   shellExecute?: PermissionLevel;  // default: 'ask'
   networkAccess?: PermissionLevel; // default: 'ask'
 }
-
-/** Reasoning depth, ordered least → greatest. Adapters whose SDK lacks a tier
-    collapse lossy per their own spec (see engine-42). */
-type ReasoningEffort =
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh'
-  | 'max';
 ```
 
 Adapters translate these primitives to vendor-specific controls where supported.
@@ -258,7 +248,7 @@ interface AgentOptions {
   permissions?: PermissionPolicy;
   maxTurns?: number;
   maxBudgetUsd?: number;
-  reasoningEffort?: ReasoningEffort;  // adapter-mapped per engine-20
+  effort?: string;             // the adapter's effort vocabulary per engine-20 (DR-009)
   resume?: string;             // backend session token for resumption
   abortSignal?: AbortSignal;
   allowedTools?: string[];     // whitelist: only these tools can be used
@@ -306,7 +296,7 @@ for await (const event of Cligent.parallel([
 - **Interactive approvals** rely on adapter-native mechanisms; headless adapters may not support them
 - **Tool filtering** via `allowedTools`/`disallowedTools` is fail-closed; adapters with no exact registry-control surface reject explicit restrictions
 - **Budgeting**: Claude Code supports `maxTurns` and `maxBudgetUsd`; OpenCode rejects explicit `maxTurns` because its pinned runtime exposes no exact per-run control and maps no `maxBudgetUsd` member
-- **MCP integration** deferred to adapter implementation [[7]]
+- **MCP servers** are caller-selected per run and mapped natively by each adapter ([DR-032](032-browser-tools-and-media-output.md)) [[7]]
 - **Extensibility** via namespaced events, `metadata`, and `capabilities` fields
 - **Token accounting** is explicitly reported or unavailable; measured zero is
   distinct from missing totals, and tool-call counts remain independent

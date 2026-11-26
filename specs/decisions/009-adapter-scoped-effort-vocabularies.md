@@ -5,8 +5,9 @@
 
 ## Status
 
-Accepted
-Amended by [DR-045](045-independent-claude-ultracode.md) for independent Claude workflow control, retained effort shorthand, and native-default preservation.
+Accepted.
+Amends [DR-002](002-unified-event-stream-and-adapter-interface.md), [DR-003](003-role-scoped-session-management.md).
+Amended by [DR-045](045-independent-claude-ultracode.md).
 
 ## Context
 
@@ -31,7 +32,7 @@ When the source changed or the update cannot be written, the loader continues wi
 
 The alternatives rejected are a global superset accepted by every adapter, normalized ordinal aliases for provider-native orchestration modes, and unchecked opaque strings for built-in adapters.
 
-This decision supersedes the global `ReasoningEffort` field and vocabulary in [DR-002](002-unified-event-stream-and-adapter-interface.md) and [DR-003](003-role-scoped-session-management.md); all unrelated decisions in those records remain in force.
+This amends [DR-002](002-unified-event-stream-and-adapter-interface.md) and [DR-003](003-role-scoped-session-management.md): `effort` replaces their global `ReasoningEffort` field and vocabulary.
 Canonical behavior is specified by [[engine-20](../packages/engine.md#engine-20)], [[engine-24](../packages/engine.md#engine-24)], [[engine-39](../packages/engine.md#engine-39)] through [[engine-51](../packages/engine.md#engine-51)], [[tmux-play-56](../packages/tmux-play.md#tmux-play-56)], and [[tmux-play-95](../packages/tmux-play.md#tmux-play-95)].
 
 Static TypeScript correlation applies where the adapter identity remains present in the type.

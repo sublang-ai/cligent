@@ -34,11 +34,11 @@ meta.md       The spec of specs
 | [DR-006](decisions/006-workspace-writable-paths.md) | 006-workspace-writable-paths.md | Workspace-relative writable paths |
 | [DR-007](decisions/007-tmux-play-dynamic-player-visibility.md) | 007-tmux-play-dynamic-player-visibility.md | tmux-play dynamic player visibility |
 | [DR-008](decisions/008-captain-pre-close-lifecycle.md) | 008-captain-pre-close-lifecycle.md | Captain pre-close lifecycle |
-| [DR-009](decisions/009-adapter-scoped-effort-vocabularies.md) | 009-adapter-scoped-effort-vocabularies.md | Adapter-scoped effort vocabularies; amended by DR-045 for independent Claude workflow control |
-| [DR-010](decisions/010-isolated-captain-control-calls.md) | 010-isolated-captain-control-calls.md | Isolated Captain control calls; Claude MCP confinement amended by DR-030 |
+| [DR-009](decisions/009-adapter-scoped-effort-vocabularies.md) | 009-adapter-scoped-effort-vocabularies.md | Adapter-scoped effort vocabularies under one `effort` option, provider-native values owned by their adapter |
+| [DR-010](decisions/010-isolated-captain-control-calls.md) | 010-isolated-captain-control-calls.md | Isolated Captain control calls: per-call resume and tool restriction, enforced or rejected before backend invocation |
 | [DR-011](decisions/011-kimi-code-acp-integration.md) | 011-kimi-code-acp-integration.md | Kimi Code ACP integration |
 | [DR-012](decisions/012-runtime-derived-tmux-play-defaults.md) | 012-runtime-derived-tmux-play-defaults.md | Runtime-derived tmux-play defaults |
-| [DR-013](decisions/013-cligent-owned-runtime-compatibility.md) | 013-cligent-owned-runtime-compatibility.md | Agent-runtime compatibility ownership; native executables amended by DR-025; floor definition amended by DR-027 |
+| [DR-013](decisions/013-cligent-owned-runtime-compatibility.md) | 013-cligent-owned-runtime-compatibility.md | Cligent-owned agent-runtime compatibility: shipped descriptors, open published ranges, loader-produced structured readiness verdicts and exact repairs |
 | [DR-014](decisions/014-unified-token-usage-breakdown.md) | 014-unified-token-usage-breakdown.md | Unified usage accounting |
 | [DR-015](decisions/015-managed-tmux-play-lifecycle.md) | 015-managed-tmux-play-lifecycle.md | Managed tmux-play launch lifecycle |
 | [DR-016](decisions/016-tmux-pane-logical-identity.md) | 016-tmux-pane-logical-identity.md | Logical tmux pane identity |
@@ -48,34 +48,33 @@ meta.md       The spec of specs
 | [DR-020](decisions/020-audited-release-preparation.md) | 020-audited-release-preparation.md | Audited release-preparation evidence |
 | [DR-021](decisions/021-agent-runtime-fast-mode.md) | 021-agent-runtime-fast-mode.md | Adapter-scoped fast-mode requests and authentic observations |
 | [DR-022](decisions/022-definite-session-rejection.md) | 022-definite-session-rejection.md | Typed pre-execution resume rejection, preserved to hosts without automatic retry |
-| [DR-023](decisions/023-provider-model-discovery.md) | 023-provider-model-discovery.md | On-demand runtime model catalogs, model effort/fast facts and honest unavailable results; model identity amended by DR-026; floor consequence amended by DR-027 |
+| [DR-023](decisions/023-provider-model-discovery.md) | 023-provider-model-discovery.md | On-demand runtime model catalogs, model effort/fast facts and honest unavailable results |
 | [DR-024](decisions/024-optional-cost-estimation.md) | 024-optional-cost-estimation.md | Optional estimates using caller rates or cached external pricing |
-| [DR-025](decisions/025-native-executable-availability.md) | 025-native-executable-availability.md | Native-executable presence in availability and readiness, unsupported hosts, host-facing lookup; amends DR-013 |
+| [DR-025](decisions/025-native-executable-availability.md) | 025-native-executable-availability.md | Native-executable presence in availability and readiness, unsupported hosts, host-facing lookup |
 | [DR-026](decisions/026-runtime-reported-model-identity.md) | 026-runtime-reported-model-identity.md | Runtime-reported model descriptions, names, unconfigured default and init-time model |
 | [DR-027](decisions/027-latest-models-oldest-serving-runtime.md) | 027-latest-models-oldest-serving-runtime.md | Latest models in every default and example; floors at the oldest release serving the latest models |
-| [DR-028](decisions/028-subagent-model.md) | 028-subagent-model.md | Adapter-scoped subagent model: Claude forces every subagent onto it and composes a delegation directive into its system prompt; `inherit` and its environment, subagent effort, definitions and the directive's wording amended by DR-029; amended by DR-044 for Codex delivery and DR-047 for tool-restricted Claude calls |
-| [DR-029](decisions/029-subagent-effort.md) | 029-subagent-effort.md | Subagent effort beside the subagent model: `inherit`, a pinned or agent-chosen effort enforced through registered subagent definitions, one directive grammar; amends DR-028; amended by DR-044 for Codex delivery and DR-047 for tool-restricted Claude calls |
-| [DR-030](decisions/030-players-see-only-their-own-mcp-servers.md) | 030-players-see-only-their-own-mcp-servers.md | Every Claude run confines its MCP servers to those the query passes: `strictMcpConfig: true` and the claude.ai connector gate on every run, `settingSources` unchanged; amends DR-010 |
+| [DR-028](decisions/028-subagent-model.md) | 028-subagent-model.md | Adapter-scoped subagent model: Claude forces every subagent onto it and composes a delegation directive into its system prompt |
+| [DR-029](decisions/029-subagent-effort.md) | 029-subagent-effort.md | Subagent effort beside the subagent model: `inherit`, a pinned or agent-chosen effort enforced through registered subagent definitions, one directive grammar |
+| [DR-030](decisions/030-players-see-only-their-own-mcp-servers.md) | 030-players-see-only-their-own-mcp-servers.md | Every Claude run confines its MCP servers to those the query passes: `strictMcpConfig: true` and the claude.ai connector gate on every run, `settingSources` unchanged |
 | [DR-031](decisions/031-media-input-and-computer-use.md) | 031-media-input-and-computer-use.md | Per-call local media attachments and native prompt-driven computer use |
 | [DR-032](decisions/032-browser-tools-and-media-output.md) | 032-browser-tools-and-media-output.md | Caller-selected MCP tools, managed browser setup, and normalized media output |
 | [DR-033](decisions/033-host-capabilities-and-browser-readiness.md) | 033-host-capabilities-and-browser-readiness.md | Contextual host capability facts, browser launch proof, and Electron child invocation |
 | [DR-034](decisions/034-live-host-tool-approvals.md) | 034-live-host-tool-approvals.md | Per-invocation native tool approval handlers, bounded lifecycle and honest transport capabilities |
 | [DR-035](decisions/035-deterministic-claude-session-title.md) | 035-deterministic-claude-session-title.md | Deterministic fresh Claude native titles using the existing session UUID, preserving resumed titles |
 | [DR-036](decisions/036-cross-agent-skill-installation.md) | 036-cross-agent-skill-installation.md | Shared `skills` option, portable validation, run-scoped snapshot carriers per runtime, opened invocation |
-| [DR-037](decisions/037-per-run-native-skill-switch.md) | 037-per-run-native-skill-switch.md | Shared `nativeSkills` switch turning a runtime's own skill discovery off per run, per-adapter levers and disclosed residue, frozen install folders; Captain call settings amended by DR-038 |
+| [DR-037](decisions/037-per-run-native-skill-switch.md) | 037-per-run-native-skill-switch.md | Shared `nativeSkills` switch turning a runtime's own skill discovery off per run, per-adapter levers and disclosed residue, frozen install folders |
 | [DR-038](decisions/038-native-skills-in-tmux-play-call-settings.md) | 038-native-skills-in-tmux-play-call-settings.md | `nativeSkills` in tmux-play call settings: admitted, snapshotted and forwarded unchanged, Kimi's `false` rejected before the prompt record, no configured default |
 | [DR-039](decisions/039-merge-on-green.md) | 039-merge-on-green.md | Merge on green: protected `main` with the pull request's jobs as required checks, auto-merge, one run per pull-request head, Linux, Windows and one macOS job on a pull request, the full set on `main` and nightly, kept base branches, a pre-push check, deterministic suites |
-| [DR-040](decisions/040-native-windows-codex-isolation.md) | 040-native-windows-codex-isolation.md | Native Windows Codex permission isolation using public SDK launch options and an owned runtime supervisor |
+| [DR-040](decisions/040-native-windows-codex-isolation.md) | 040-native-windows-codex-isolation.md | Direct native Codex through the official SDK on every platform, inheriting user configuration, with no wrapper, supervisor or injected shell-cache policy |
 | [DR-041](decisions/041-codex-final-response.md) | 041-codex-final-response.md | Codex terminal result follows the public SDK final-response contract |
-| [DR-042](decisions/042-windows-powershell-module-cache.md) | 042-windows-powershell-module-cache.md | Windows module-analysis cache stays outside the caller working directory |
 | [DR-043](decisions/043-audited-development-matchers.md) | 043-audited-development-matchers.md | Exact development matcher substitutions with consumer compatibility checks and unchanged runtime/audit safeguards |
-| [DR-044](decisions/044-codex-subagent-tuning.md) | 044-codex-subagent-tuning.md | Codex subagent defaults and per-call delegation instructions, preserving native precedence; amends DR-028/029 for Codex and is amended by DR-046 for schema-neutral spawning and DR-047 for fork history |
-| [DR-045](decisions/045-independent-claude-ultracode.md) | 045-independent-claude-ultracode.md | Independent Claude Ultracode boolean, legacy effort shorthand, native defaults, and transport support; amends DR-009 for independent Claude workflow control |
-| [DR-046](decisions/046-primary-and-subagent-defaults.md) | 046-primary-and-subagent-defaults.md | Shipped parent/subagent pins and schema-neutral Codex spawn instructions, amended by DR-047 |
-| [DR-047](decisions/047-provider-aware-model-defaults-and-fork-history.md) | 047-provider-aware-model-defaults-and-fork-history.md | Shared provider-aware model pairs and verified Codex fork history semantics; amends DR-028/029 for tool exclusions, DR-044 for fork history and DR-046 for provider scope |
+| [DR-044](decisions/044-codex-subagent-tuning.md) | 044-codex-subagent-tuning.md | Codex subagent defaults and per-call delegation instructions, preserving native precedence |
+| [DR-045](decisions/045-independent-claude-ultracode.md) | 045-independent-claude-ultracode.md | Independent Claude Ultracode boolean, legacy effort shorthand, native defaults, and transport support |
+| [DR-046](decisions/046-primary-and-subagent-defaults.md) | 046-primary-and-subagent-defaults.md | Shipped parent/subagent pins for direct providers and schema-neutral Codex spawn instructions |
+| [DR-047](decisions/047-provider-aware-model-defaults-and-fork-history.md) | 047-provider-aware-model-defaults-and-fork-history.md | Shared provider-aware model pairs, task-selected Codex fork history, and no child tuning where delegation is excluded |
 | [DR-048](decisions/048-claude-durable-primary-model-continuity.md) | 048-claude-durable-primary-model-continuity.md | Claude Code selects an omitted resumed model; environment overrides remain effective |
 | [DR-049](decisions/049-included-agent-sdks.md) | 049-included-agent-sdks.md | Included Claude and Codex SDKs; Cligent-owned compatibility and production-install acceptance |
-| [DR-050](decisions/050-deferred-development-audit.md) | 050-deferred-development-audit.md | Current-release development-audit deferral for testing and formal publication; next version strict |
+| [DR-050](decisions/050-deferred-development-audit.md) | 050-deferred-development-audit.md | Development audit deferral of one advisory for Cligent 0.40.0 only; later versions strict |
 
 ## Packages
 

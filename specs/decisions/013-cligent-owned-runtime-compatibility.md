@@ -5,14 +5,12 @@
 
 ## Status
 
-Accepted
-Amended by [DR-049](049-included-agent-sdks.md) for included Claude and Codex SDK installation; compatibility authority remains here.
-Amended by [DR-025](025-native-executable-availability.md): native-executable presence joins availability and readiness, an installed runtime its adapter cannot load reads missing, an unsupported host is refused without a reinstall, and hosts locate the executable through Cligent.
-Amended by [DR-027](027-latest-models-oldest-serving-runtime.md): each supported floor is the oldest release that serves the latest models its provider offers.
+Accepted.
+Amended by [DR-025](025-native-executable-availability.md), [DR-027](027-latest-models-oldest-serving-runtime.md), [DR-049](049-included-agent-sdks.md).
 
 ## Context
 
-Each adapter runs against a vendor runtime cligent does not ship: an optional peer SDK resolved from cligent's own tree, an external CLI found through `PATH`, or both.
+Each adapter runs against a vendor runtime: an SDK resolved from cligent's own tree, whether a dependency ([DR-049](049-included-agent-sdks.md)) or an optional peer, an external CLI found through `PATH`, or both.
 Which versions of those runtimes work is knowledge cligent holds and verifies — [[package-12](../packages/package.md#package-12)] pins an exact conformance target per runtime and [[package-22](../packages/package.md#package-22)] requires each installed target to be checked before acceptance — but nothing carries that knowledge to the consumers who must act on it.
 
 Consumers therefore rediscover it, badly, and independently:
@@ -35,21 +33,23 @@ It owns the versions, the verdict, and the remedy; consumers own only the act of
 **One descriptor per runtime, shipped.**
 A published module declares, per adapter: the runtime's package or command identity, the exact **tested** version, the **supported range**, and the repair the user must run.
 It is a module rather than data read from `package.json`, which the exports map does not expose.
-Repository verification asserts the descriptor equals the manifest's declared peer range and exact development pin, so the two cannot drift.
+Repository verification asserts the descriptor equals the manifest's declared dependency or peer range and exact development pin, so the two cannot drift.
 
 **Tested and supported stay distinct.**
+Each supported floor is the oldest release serving the latest models its provider offers ([DR-027](027-latest-models-oldest-serving-runtime.md)).
 [[package-25](../packages/package.md#package-25)] separates the lowest supported version from the exact development pin: a runtime older than the tested version but inside the supported range is supported, not merely tolerated.
 A version above the supported range is *untested*, which is a different verdict from *too old* and shall not be reported as the same thing.
 
-**The published peer range stays open at the top.**
-The supported range's upper bound lives in the descriptor and is enforced at load, never in `peerDependencies`.
-npm intersects an optional peer range into version selection: a published upper bound silently selects an older SDK, with no error, which is the failure this decision exists to remove.
+**The published range stays open at the top.**
+The supported range's upper bound lives in the descriptor and is enforced at load, never in the manifest's dependency or peer range.
+npm intersects a published range into version selection: a published upper bound silently selects an older SDK, with no error, which is the failure this decision exists to remove.
 
 **The verdict is produced by the loader.**
 Each adapter reads a peer runtime's version through the same package resolution it will actually use and reads a CLI runtime's version by spawning the configured command through the same native lookup mechanism its execution path uses.
 Peer readiness carries the exact resolved `node_modules` tree, while CLI readiness carries the configured command as its portable identity and does not invent a host-selected absolute path that child-process spawning does not expose.
 The `isAvailable()` and `run()` gates apply the same compatibility rule to the identity each native lookup observes, and a consumer that already calls `isAvailable()` inherits the check without changing a line.
 A version that cannot be read is *unknown* and never blocks, because vendored, bundled, and archived layouts are legitimate.
+Where an SDK spawns a native executable, the executable's presence is checked beside the version ([DR-025](025-native-executable-availability.md)).
 
 **A package-selected executable does not create an independent version domain.**
 The version-tied Claude Agent SDK is the sole Claude compatibility and readiness authority: its package identity, `0.3.x` version, supported range, and repair remain coherent, while the Claude Code executable it selects is consistency evidence derived only from SDK-owned package and manifest metadata.

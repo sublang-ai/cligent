@@ -5,7 +5,8 @@
 
 ## Status
 
-Accepted; amends the headless fallback in [DR-005](005-per-adapter-permission-configuration.md).
+Accepted.
+Amends [DR-005](005-per-adapter-permission-configuration.md).
 
 ## Context
 
@@ -24,6 +25,7 @@ Typed request and response events describe host decisions independently of subse
 Unsupported transports continue ordinary work and report their limitation through capability discovery.
 Structured questions and forms are not boolean permissions and remain unsupported through this interface.
 Callbacks belong to invocation options, never saved configuration or hidden controller calls.
+This amends [DR-005](005-per-adapter-permission-configuration.md)'s headless fallback for transports that forward native requests to a handler.
 
 ## Consequences
 

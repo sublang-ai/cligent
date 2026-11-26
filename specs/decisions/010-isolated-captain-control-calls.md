@@ -5,8 +5,9 @@
 
 ## Status
 
-Accepted
-Amended by [DR-030](030-players-see-only-their-own-mcp-servers.md): Claude Code's `strictMcpConfig: true` applies to every run, not only an explicit allowlist, and the account's claude.ai connectors are gated beside it; the allowlist mapping of `tools`, `allowedTools`, and `settingSources` stands.
+Accepted.
+Amends [DR-004](004-tmux-play-captain-architecture.md).
+Amended by [DR-030](030-players-see-only-their-own-mcp-servers.md).
 
 ## Context
 
@@ -30,7 +31,7 @@ The built-in adapter mappings are:
 
 | Adapter | Explicit allowlist mapping |
 | --- | --- |
-| Claude Code | SDK `tools` selects the available built-ins and SDK `allowedTools` preserves automatic permission approval for the selected names; every explicit list sets `strictMcpConfig: true` to ignore ambient MCP configuration, while `tools: []` disables all built-ins and additionally uses `settingSources: []` to disable filesystem settings and `CLAUDE.md`. |
+| Claude Code | SDK `tools` selects the available built-ins and SDK `allowedTools` preserves automatic permission approval for the selected names, with `strictMcpConfig: true` on every run ([DR-030](030-players-see-only-their-own-mcp-servers.md)), while `tools: []` disables all built-ins and additionally uses `settingSources: []` to disable filesystem settings and `CLAUDE.md`. |
 | Gemini | User-tier Policy Engine allow rules plus a catch-all deny; an empty list emits only the catch-all deny. |
 | OpenCode | Reject before SDK loading. OpenCode 1.18.33 merges prompt `tools` booleans into persistent session permission rules, replacing prior session rules; its last-match-wins evaluation can let an allowed tool override a native or explicit deny, so it is not an independent exact registry-control surface [[1]][[2]][[3]]. |
 | Codex | Reject before SDK loading because the supported Codex SDK surface cannot constrain the available tool registry. |
@@ -44,7 +45,7 @@ Playbook Captains can request fresh, tool-free control calls without constructin
 Existing callers that omit the new fields preserve prior continuity and provider defaults.
 Codex, Kimi, and OpenCode callers that explicitly set either tool-list option receive an actionable failure rather than an unenforced request.
 Claude Code non-empty allowlists become true availability restrictions while retaining their prior automatic-approval behavior.
-Claude Code's explicit-allowlist mapping also removes ambient MCP configuration, and its empty-list mapping removes supported ambient filesystem settings; it does not claim to erase provider context outside those documented controls.
+Claude Code's empty-list mapping removes supported ambient filesystem settings; it does not claim to erase provider context outside those documented controls.
 
 ## References
 

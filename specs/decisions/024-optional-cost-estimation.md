@@ -6,6 +6,7 @@
 ## Status
 
 Accepted.
+Amends [DR-014](014-unified-token-usage-breakdown.md).
 
 ## Context
 

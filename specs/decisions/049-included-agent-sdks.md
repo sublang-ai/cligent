@@ -5,18 +5,19 @@
 
 ## Status
 
-Approved direction; implementation and delivery acceptance authorized by the user on 2026-11-17.
-Amends [DR-013](013-cligent-owned-runtime-compatibility.md) only in installation ownership and dependency placement.
+Accepted (2026-11-17).
+Amends [DR-013](013-cligent-owned-runtime-compatibility.md).
 
 ## Context
 
 Optional peers make an otherwise valid global SLC or Playbook installation fail before its first Agent call unless users separately install the SDK in a reachable tree.
 Installing SDKs in either consumer cannot reliably serve another consumer's nested Cligent in a global installation.
-The approved tradeoff is a larger common installation in exchange for both supported default Agent stacks being present.
+The user approved the direction and authorized implementation and delivery acceptance on 2026-11-17; the approved tradeoff is a larger common installation in exchange for both supported default Agent stacks being present.
 
 ## Decision
 
 - Cligent, the adapter owner, supplies Claude Agent SDK and Codex SDK as ordinary dependencies; OpenCode remains an optional peer.
+- This amends [DR-013](013-cligent-owned-runtime-compatibility.md) only in installation ownership and dependency placement.
 - Compatibility descriptors, native executable selection, supported floors, exact conformance targets, readiness verdicts, and repairs remain Cligent-owned.
 - Ordinary SDK ranges retain the open upper bound and reviewed floor policy; exact development targets remain independent, and installed versions above the tested target remain honestly untested.
 - Consumers adopt a Cligent release carrying this contract instead of declaring duplicate SDK ranges or arranging sibling global SDK installations.

@@ -5,11 +5,12 @@
 
 ## Status
 
-Accepted (2026-11-02) for the authorized dependency-security repair of PR #88.
-Defines the narrow repository-supported override exception in [[package-35](../packages/package.md#package-35)] without waiving the audit or runtime-floor safeguards.
+Accepted (2026-11-02).
+Amended by [DR-050](050-deferred-development-audit.md).
 
 ## Context
 
+This record authorizes the dependency-security repair of PR #88.
 The unchanged main dependency graph fails the full audit for GHSA-g3hv-75wg-m249 and GHSA-rmxm-3fg6-px4f.
 Production audit remains clean; the affected server and matcher entries belong to the development graph.
 Upstream ESLint and typescript-eslint still declare matcher ranges below the patched major.
@@ -23,8 +24,9 @@ Blindly overriding the ESLint 9 graph breaks the ESM default import in `@eslint/
 - Verify the actual configured lint and parser behavior through integration checks, including negative selection and rejection cases; an audit result or version assertion alone does not establish compatibility.
 - Upgrade the development MCP SDK's `@hono/node-server` resolution to patched 2.1.5 within its existing admitted range, and align the pre-existing pnpm override.
 - Reuse the already locked compatible `qs@6.16.1` for pnpm's remaining development-only 6.16.0 resolution rather than retaining GHSA-6pq8-jhm2-2vcw or updating unrelated packages.
-- Keep runtime dependencies, Agent SDK pins, consumer API, Node runtime floor and both zero-finding audit gates unchanged.
+- Keep runtime dependencies, Agent SDK pins, consumer API, Node runtime floor and both zero-finding audit gates unchanged, except for the current-release deferral of [DR-050](050-deferred-development-audit.md).
 - Remove the matcher substitutions once upstream ranges admit the patched version; do not generalize this exception to unreviewed consumers.
+- This defines the narrow repository-supported override exception in [[package-35](../packages/package.md#package-35)] without waiving the audit or runtime-floor safeguards.
 
 ## Consequences
 

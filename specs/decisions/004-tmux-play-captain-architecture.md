@@ -5,7 +5,8 @@
 
 ## Status
 
-Accepted
+Accepted.
+Amended by [DR-008](008-captain-pre-close-lifecycle.md), [DR-010](010-isolated-captain-control-calls.md), [DR-012](012-runtime-derived-tmux-play-defaults.md).
 
 ## Context
 
