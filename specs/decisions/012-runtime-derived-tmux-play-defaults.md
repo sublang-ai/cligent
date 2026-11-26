@@ -7,18 +7,18 @@
 
 Accepted.
 Amends [DR-004](004-tmux-play-captain-architecture.md).
+Amended by [DR-013](013-cligent-owned-runtime-compatibility.md), [DR-049](049-included-agent-sdks.md).
 
 ## Context
 
 The documented onboarding path is `npm install -g @sublang/cligent` followed by `tmux-play`.
-That path installed cleanly and then failed at the first Boss turn, because the generated default config named the `claude` and `codex` adapters while the agent SDKs those adapters import are optional peers ([[package-4](../packages/package.md#package-4)]) that a global install does not bring along.
+That path installed cleanly and then failed at the first Boss turn, because the generated default config named the `claude` and `codex` adapters while the agent SDKs those adapters import were then optional peers that a global install did not bring along.
 
 Two properties of the code made the failure late and opaque.
 Adapter construction never touches an SDK — each adapter imports its own lazily inside `run()` — so building the roster succeeded and only the first prompt failed.
 By then the report was inside a tmux pane, behind an alternate screen the user could not act on.
 
-The package cannot resolve this by acquiring the runtimes.
-Promoting the SDKs to installed dependencies would push two vendor runtimes and their platform binaries onto every library consumer, and it cannot help `gemini` or `kimi` at all, whose runtimes are executables on `PATH` rather than npm peers.
+Acquiring runtimes cannot resolve this alone: including the Claude and Codex SDKs ([DR-049](049-included-agent-sdks.md)) cannot help `gemini` or `kimi`, whose runtimes are executables on `PATH`, nor the remaining optional peer.
 
 ### Deferred Consented-Provisioning Questions
 
@@ -37,7 +37,7 @@ Any future decision that partly supersedes its no-install boundary with explicit
 
 ## Decision
 
-Optional peers stay optional; cligent checks for agent runtimes and never installs them.
+Cligent checks for agent runtimes and never installs them at run time; SDKs it does not include as dependencies ([DR-049](049-included-agent-sdks.md)) stay optional peers.
 
 - An ordinary launcher first run generates its default roster from the adapters whose runtimes are installed, in the canonical adapter order, capped at two ([[tmux-play-11](../packages/tmux-play.md#tmux-play-11)]).
   With none installed it writes no file and fails with the install command for every supported adapter, because a config naming absent runtimes is the defect being removed ([[tmux-play-10](../packages/tmux-play.md#tmux-play-10)]).
@@ -53,7 +53,7 @@ Optional peers stay optional; cligent checks for agent runtimes and never instal
   Scope is pinned along with the tree: npm's global mode is the disjunction of its `global` and `location` configurations, either settable by the paste-time environment, so the project case sets both to their non-global values (`--global=false --location=project`) while `-g` alone settles the global case, a true operand winning the disjunction.
   External CLI commands install [[package-16](../packages/package.md#package-16)]'s exact installation-repair package specifier globally but carry no `--prefix`: the executable is found through `PATH`, so it belongs in whatever global prefix the user's shell already reads.
 
-This decision supersedes only [DR-004](004-tmux-play-captain-architecture.md)'s fixed two-player first-run roster; its remaining architecture stays in force.
+This amends only [DR-004](004-tmux-play-captain-architecture.md)'s fixed two-player first-run roster.
 
 ## Consequences
 

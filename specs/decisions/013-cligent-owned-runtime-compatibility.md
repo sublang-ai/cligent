@@ -6,6 +6,7 @@
 ## Status
 
 Accepted.
+Amends [DR-012](012-runtime-derived-tmux-play-defaults.md).
 Amended by [DR-025](025-native-executable-availability.md), [DR-027](027-latest-models-oldest-serving-runtime.md), [DR-049](049-included-agent-sdks.md).
 
 ## Context
@@ -88,5 +89,4 @@ Any future consented-provisioning decision must execute that displayed specifier
    Falling back to the exact printed remedy after a bounded wait preserves safety without claiming the target tree changed.
 3. **Placement probe.** Any scoped peer can prove the structural installation invariant; using the largest peer additionally exercises the cold-install timeout bound but makes the verification slowest.
 
-This decision supersedes no earlier decision.
-It constrains [DR-012](012-runtime-derived-tmux-play-defaults.md)'s readiness gate, whose verdict becomes structured, and supplies the compatibility target and exact installation repair that any future consented-install decision must honor.
+This amends [DR-012](012-runtime-derived-tmux-play-defaults.md)'s readiness gate, whose verdict becomes structured, and supplies the compatibility target and exact installation repair that any future consented-install decision must honor.

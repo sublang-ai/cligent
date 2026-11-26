@@ -148,7 +148,7 @@ Managed permission runs inherit user configuration ([DR-040](040-native-windows-
 Public SDK configuration overrides select the requested profile using native precedence; authentication and sessions retain their native home.
 Project-local Codex config layers and future managed configuration routes remain subject to Codex's own precedence rules.
 
-**Inheriting the user's Codex config** — letting Codex's own `default_permissions` / CLI/Desktop config be authoritative instead of cligent picking a profile — is deliberately out of scope.
+**Deferring to the user's Codex permission profile** — letting Codex's own `default_permissions` / CLI/Desktop config choose the profile instead of cligent picking one — is deliberately out of scope.
 It is non-deterministic and would make `mode: 'auto'` machine-dependent.
 If added later it shall be an explicit opt-in, never the default for `mode: 'auto'`.
 

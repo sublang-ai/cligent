@@ -6,7 +6,7 @@
 ## Status
 
 Accepted.
-Amended by [DR-008](008-captain-pre-close-lifecycle.md), [DR-010](010-isolated-captain-control-calls.md), [DR-012](012-runtime-derived-tmux-play-defaults.md).
+Amended by [DR-007](007-tmux-play-dynamic-player-visibility.md), [DR-008](008-captain-pre-close-lifecycle.md), [DR-010](010-isolated-captain-control-calls.md), [DR-012](012-runtime-derived-tmux-play-defaults.md).
 
 ## Context
 
@@ -300,8 +300,8 @@ Parsing uses the `yaml` package, a single-purpose runtime dep permitted under [[
 Discovery checks `tmux-play.config.yaml` in the current directory first, then `${XDG_CONFIG_HOME:-~/.config}/tmux-play/config.yaml` as a home fallback.
 `--config <path>` overrides discovery.
 
-If neither location holds a file and `--config` was not given, the launcher writes a default to the home path, prints a one-line notice naming the path, and continues.
-The default wires the built-in `fanout` Captain plus two stub players; the user edits it.
+If neither location holds a file and `--config` was not given, the launcher writes a default to the home path, prints a one-line notice naming the path, and continues; with no agent runtime installed it writes no file and fails ([DR-012](012-runtime-derived-tmux-play-defaults.md)).
+The default wires the built-in `fanout` Captain plus a roster derived from the installed agent runtimes ([DR-012](012-runtime-derived-tmux-play-defaults.md)); the user edits it.
 
 YAML must serialize cleanly to JSON: the launcher writes a JSON snapshot of the resolved config to the work directory, and the session reads the snapshot rather than re-parsing YAML.
 Captains are referenced by specifier, never as a constructed instance — instances are accepted only by the programmatic runtime API.

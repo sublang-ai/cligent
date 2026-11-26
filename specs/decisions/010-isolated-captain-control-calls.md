@@ -19,7 +19,7 @@ Consequently a routing call could investigate the workspace, reuse unrelated con
 ## Decision
 
 `CallCaptainOptions` exposes the per-call session selector `resume?: string | false` and the tool restriction `allowedTools?: readonly string[]` in addition to presentation visibility.
-This decision supersedes only [DR-004](004-tmux-play-captain-architecture.md)'s visibility-only `CallCaptainOptions` surface; its remaining architecture stays in force.
+This amends only [DR-004](004-tmux-play-captain-architecture.md)'s `CallCaptainOptions` surface, which carried visibility alone.
 The tmux-play runtime forwards present values to the Captain `Cligent.run()` call, copying the readonly allowlist at the boundary.
 Omission preserves Captain auto-resume and adapter-native tool availability; `resume: false` forces a fresh backend session; `allowedTools: []` requests a call with no available tools.
 

@@ -6,7 +6,7 @@
 ## Status
 
 Accepted (2026-11-17).
-Amends [DR-013](013-cligent-owned-runtime-compatibility.md).
+Amends [DR-012](012-runtime-derived-tmux-play-defaults.md), [DR-013](013-cligent-owned-runtime-compatibility.md).
 
 ## Context
 
@@ -17,13 +17,12 @@ The user approved the direction and authorized implementation and delivery accep
 ## Decision
 
 - Cligent, the adapter owner, supplies Claude Agent SDK and Codex SDK as ordinary dependencies; OpenCode remains an optional peer.
-- This amends [DR-013](013-cligent-owned-runtime-compatibility.md) only in installation ownership and dependency placement.
+- This amends [DR-013](013-cligent-owned-runtime-compatibility.md) only in installation ownership and dependency placement, and [DR-012](012-runtime-derived-tmux-play-defaults.md)'s keeping these SDKs optional peers.
 - Compatibility descriptors, native executable selection, supported floors, exact conformance targets, readiness verdicts, and repairs remain Cligent-owned.
 - Ordinary SDK ranges retain the open upper bound and reviewed floor policy; exact development targets remain independent, and installed versions above the tested target remain honestly untested.
 - Consumers adopt a Cligent release carrying this contract instead of declaring duplicate SDK ranges or arranging sibling global SDK installations.
 - Installation does not grant provider access, authenticate the user, or make an unsupported operating system supported.
 - Packed production-install acceptance checks SDK loadability and SDK-owned runtime resolution in isolated global and nested layouts, without checkout or unrelated global dependencies.
-
 - Pre-merge validation separates locally built/installed functional candidates from real branch prerelease registry installs, retaining stable publication gates without making a formal stable release a prerequisite.
 - The shared compilation dependency/environment contract supports macOS, Linux and native Windows; POSIX-only historical front-end constraints do not exempt the native Windows compiler/library path.
 

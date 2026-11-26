@@ -21,7 +21,7 @@ The actual advisory and failing audit must remain visible rather than being repr
 - Any later version, including 0.40.1-rc.N or 0.41.0-rc.N, automatically rejects the finding until repaired; no indefinite or global audit-disable switch is introduced.
 - Production and installed-production audits, other advisories, unusable reports and runtime-exposed nodes remain strict failures.
 - Keep raw audit stdout/stderr/status and an explicit deferred-risk decision with package version and lock digest; the underlying full audit still reports the vulnerability.
-- Use the ordinary complete CI and existing candidate/stable release source gates; a separate candidate-only workflow is unnecessary, superseding the unreleased candidate-only policy.
+- Use the ordinary complete CI and existing candidate/stable release source gates; a separate candidate-only workflow is unnecessary.
 - This amends [DR-043](043-audited-development-matchers.md)'s full-development audit scope for the current release family.
 - Track remediation in the next-version backlog, without claiming a repair or scheduling unsupported upstream work.
 
