@@ -6,7 +6,7 @@
 ## Status
 
 Accepted (2026-09-28).
-Amends [DR-023](023-provider-model-discovery.md) for model descriptions, human names, resolved Kimi models, and the runtime's default model.
+Amends [DR-023](023-provider-model-discovery.md).
 
 ## Context
 

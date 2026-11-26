@@ -6,8 +6,7 @@
 ## Status
 
 Accepted.
-Amended by [DR-026](026-runtime-reported-model-identity.md): model descriptions, human names, resolved Kimi models, and the runtime's default model.
-Amended by [DR-027](027-latest-models-oldest-serving-runtime.md): a newly offered provider model raises the supported floor to the oldest release that serves it.
+Amended by [DR-026](026-runtime-reported-model-identity.md), [DR-027](027-latest-models-oldest-serving-runtime.md).
 
 ## Context
 
@@ -25,4 +24,4 @@ An absent fact means unknown, and unlisted custom model strings remain valid con
 
 Hosts can offer current model choices without owning a model catalog or invoking agents during configuration validation.
 Discovery can fail or reflect a runtime's cached catalog; it proves neither account entitlement nor successful future execution.
-Runtime repairs remain [DR-013](013-cligent-owned-runtime-compatibility.md)'s responsibility, and a newer optional model does not raise the general compatibility floor.
+Runtime repairs remain [DR-013](013-cligent-owned-runtime-compatibility.md)'s responsibility, and supported floors follow [DR-027](027-latest-models-oldest-serving-runtime.md).

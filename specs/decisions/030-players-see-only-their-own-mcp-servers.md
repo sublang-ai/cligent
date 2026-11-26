@@ -6,8 +6,8 @@
 ## Status
 
 Accepted (2026-10-01).
-Amended by [DR-032](032-browser-tools-and-media-output.md): callers may explicitly supply servers while confinement and the account-connector gate remain.
-Amends [DR-010](010-isolated-captain-control-calls.md): Claude Code's `strictMcpConfig: true` moves from every explicit allowlist to every run, and the account's claude.ai connectors are gated beside it; the allowlist mapping of `tools`, `allowedTools`, and `settingSources` stands unchanged.
+Amends [DR-010](010-isolated-captain-control-calls.md).
+Amended by [DR-032](032-browser-tools-and-media-output.md).
 
 ## Context
 
@@ -26,8 +26,9 @@ The connectors are auto-fetched from the account, not read from a settings file,
 ## Decision
 
 Every Claude run confines its MCP servers to those the query itself passes, with `strictMcpConfig: true` and `disableClaudeAiConnectors: true` in the query's settings on every run.
-`AgentOptions` names no MCP server, so a run passes none; an option through which a caller names its own servers, or opts back into the account's, is a separate decision, since it is an engine-level option the other adapters must reject.
-`settingSources` keeps [DR-010](010-isolated-captain-control-calls.md)'s mapping, so a tool-using run still loads filesystem settings and `CLAUDE.md`.
+A run passes only the servers its caller supplies ([DR-032](032-browser-tools-and-media-output.md)).
+This amends [DR-010](010-isolated-captain-control-calls.md): `strictMcpConfig: true` moves from every explicit allowlist to every run, with the account's claude.ai connectors gated beside it.
+`settingSources` and the allowlist mapping of `tools` and `allowedTools` keep [DR-010](010-isolated-captain-control-calls.md)'s mapping, so a tool-using run still loads filesystem settings and `CLAUDE.md`.
 
 The rejected alternatives are `settingSources: []` on every run, which does not reach auto-fetched connectors and would cost tool-using runs their `CLAUDE.md`, and `strictMcpConfig` alone, whose documented scope does not name the connectors.
 
@@ -35,7 +36,7 @@ Canonical behavior is specified by [[claude-code-70](../packages/adapters/claude
 
 ## Consequences
 
-No Claude run sees the account's connectors or their reminder; a run's MCP surface is exactly what the query passes, today none.
+No Claude run sees the account's connectors or their reminder; a run's MCP surface is exactly the servers its caller supplies.
 A host that relied on a player inheriting `.mcp.json`, user-settings, or plugin MCP servers under an omitted allowlist loses them; the adapter never documented that inheritance, and the fix is a PATCH release.
 The effort and fast-mode settings share one settings object with the connector gate, so a run's settings are never absent.
 

@@ -6,12 +6,7 @@
 ## Status
 
 Accepted (2026-10-19).
-Amends the engine option forwarding of [[engine-124](../packages/engine.md#engine-124)] and the omitted-or-empty row of [[engine-130](../packages/engine.md#engine-130)]: the native-skill selection travels with the skill list, and a run without skills leaves native discovery as [[engine-132](../packages/engine.md#engine-132)] selects it.
-Amends the Codex carrier of [[codex-75](../packages/adapters/codex.md#codex-75)]: user-level and project skills stay unchanged only while native discovery stays on, and the run's own `skills.config` rules follow the user's.
-Amends the overlay `.gemini/skills` row of [[gemini-51](../packages/adapters/gemini.md#gemini-51)] and the reconciliation of [[gemini-45](../packages/adapters/gemini.md#gemini-45)]: with native discovery off the overlay links no real user skill, and its `.gemini/skills` takes the same reconciliation.
-Amends the OpenCode child environment of [[opencode-67](../packages/adapters/opencode.md#opencode-67)]: a run with native discovery off sets both configured skill arrays inline.
-Amended by [DR-038](038-native-skills-in-tmux-play-call-settings.md): tmux-play call settings carry `nativeSkills`, while tmux-play configuration stays out of scope.
-Field-list extensions of [[engine-1](../packages/engine.md#engine-1)], [[engine-3](../packages/engine.md#engine-3)], and [[engine-103](../packages/engine.md#engine-103)] add `nativeSkills` beside the existing options.
+Amended by [DR-038](038-native-skills-in-tmux-play-call-settings.md).
 
 ## Context
 
@@ -42,7 +37,13 @@ No runtime offers one switch that drops its own sources and keeps a run carrier:
 - Runs that cannot honor `false` are rejected before backend invocation: every Kimi run, OpenCode's external server mode, Codex where a native skill root cannot be read or the disabled paths exceed the process-argument bound, and Gemini where the per-run home cannot be built, its workspace skills cannot be read, its user settings cannot take the names without changing whether the runtime validates them, or a workspace skill name changes under the runtime's settings expansion.
 - Frozen `NATIVE_SKILL_SUPPORT` metadata, beside `SKILL_SUPPORT`, names for each adapter the project and user folders a host installs a persistent skill into, whether `nativeSkills: false` is accepted, and notes on what stays and which runs reject.
 - Rejected: `settingSources: []` on Claude and `OPENCODE_DISABLE_CLAUDE_CODE`, which drop instruction files; `OPENCODE_DISABLE_PROJECT_CONFIG`, Gemini's `-e none`, and an untrusted Gemini workspace, which drop whole features; Gemini `skills.enabled: false`, which drops the carrier; enumerating Codex skills through a second app-server process per run; redirecting Kimi's home; and a type-level capability parameter, because OpenCode's support depends on its server mode.
-- Out of scope: tmux-play configuration and Captain call settings, and hiding skill files from a model's file tools.
+- Package amendments:
+  - the engine option forwarding of [[engine-124](../packages/engine.md#engine-124)] and the omitted-or-empty row of [[engine-130](../packages/engine.md#engine-130)]: the native-skill selection travels with the skill list, and a run without skills leaves native discovery as [[engine-132](../packages/engine.md#engine-132)] selects it;
+  - the Codex carrier of [[codex-75](../packages/adapters/codex.md#codex-75)]: user-level and project skills stay unchanged only while native discovery stays on, and the run's own `skills.config` rules follow the user's;
+  - the overlay `.gemini/skills` row of [[gemini-51](../packages/adapters/gemini.md#gemini-51)] and the reconciliation of [[gemini-45](../packages/adapters/gemini.md#gemini-45)]: with native discovery off the overlay links no real user skill, and its `.gemini/skills` takes the same reconciliation;
+  - the OpenCode child environment of [[opencode-67](../packages/adapters/opencode.md#opencode-67)]: a run with native discovery off sets both configured skill arrays inline;
+  - field lists of [[engine-1](../packages/engine.md#engine-1)], [[engine-3](../packages/engine.md#engine-3)], and [[engine-103](../packages/engine.md#engine-103)] add `nativeSkills` beside the existing options.
+- Out of scope: tmux-play configuration and hiding skill files from a model's file tools; Captain call settings carry the switch under [DR-038](038-native-skills-in-tmux-play-call-settings.md).
 
 ## Consequences
 

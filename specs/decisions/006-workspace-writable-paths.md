@@ -5,7 +5,8 @@
 
 ## Status
 
-Accepted
+Accepted.
+Amends [DR-005](005-per-adapter-permission-configuration.md).
 
 ## Context
 
@@ -117,7 +118,7 @@ For example, an instance default `['.git']` plus a per-call override `['dist']` 
 
 Codex is the first supported mapping.
 When `writablePaths` is non-empty and the resolved Codex local-access profile would otherwise be `:workspace`, the adapter shall synthesize a custom permission profile that extends `:workspace` and adds a `write` filesystem rule for each validated path under `:workspace_roots` [[1]].
-This supersedes DR-005's "synthesizing granular `[permissions]` profiles is out of scope" only for this typed field.
+This amends [DR-005](005-per-adapter-permission-configuration.md)'s exclusion of synthesized granular `[permissions]` profiles for this typed field only.
 
 The Codex adapter shall keep the approval/reviewer axis unchanged:
 

@@ -5,10 +5,11 @@
 
 ## Status
 
-Accepted (2026-10-23) on the owner's direction to make merging timely while several people land work on `main` at once.
+Accepted (2026-10-23).
 
 ## Context
 
+The owner directed that merging be made timely while several people land work on `main` at once.
 Several branches now land on `main` in one day.
 A pull request's checks run against the pull request merged with `main` as it stands, so a run goes stale the moment `main` moves, and a stale green run is no ground to merge once the branch turns conflicting or `main` brings a red test of its own.
 Nothing keeps `main` green: a merge needs no check, so a red test on `main` turns every open pull request red, and the release workflow refuses to publish a commit whose `push` run on `main` did not pass.

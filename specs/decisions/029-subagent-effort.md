@@ -5,11 +5,9 @@
 
 ## Status
 
-Amended by [DR-047](047-provider-aware-model-defaults-and-fork-history.md) for Claude runs whose tool controls exclude delegation.
-Amended by [DR-044](044-codex-subagent-tuning.md): Codex supports the shared tuning options through native defaults and per-call delegation instructions, preserving native spawn and role precedence.
 Accepted (2026-10-01).
-Amends [DR-028](028-subagent-model.md): `subagentModel` gains the literal `inherit`, whose environment carries `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` alone with the caller's `CLAUDE_CODE_SUBAGENT_MODEL` removed; a companion `subagentEffort` joins it; the adapter registers subagent definitions; and the directive's first sentence follows both settings while its remaining sentences no longer name the model.
-The composition rule of DR-028 stands unchanged.
+Amends [DR-028](028-subagent-model.md).
+Amended by [DR-044](044-codex-subagent-tuning.md), [DR-047](047-provider-aware-model-defaults-and-fork-history.md).
 
 ## Context
 
@@ -23,11 +21,13 @@ A definition fixes both a model — a model id, an alias, or `inherit` for the m
 
 ## Decision
 
+This amends [DR-028](028-subagent-model.md)'s environment and directive; its composition rule stands unchanged.
+
 `subagentModel` admits the literal `inherit`, meaning the agent's own model, beside a model id or alias; omission still means no subagent configuration and leaves every query unchanged.
-A new option `subagentEffort`, a value of the adapter's effort vocabulary other than its orchestration value `ultracode`, names the effort every subagent runs at; its omission, where `subagentModel` is set, leaves the effort to the agent's choice per task.
+A new option `subagentEffort`, a value of the adapter's effort vocabulary other than its orchestration value (`ultracode` on Claude), names the effort every subagent runs at; its omission, where `subagentModel` is set, leaves the effort to the agent's choice per task.
 `subagentEffort` without `subagentModel`, on an adapter that serves no subagent model, or outside that vocabulary is rejected before backend invocation.
 
-When the Claude adapter prepares a query with `subagentModel`:
+When the Claude adapter prepares a query with `subagentModel` and the run's tool controls leave the Agent tool available ([DR-047](047-provider-aware-model-defaults-and-fork-history.md)):
 
 - the environment carries `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`, and `CLAUDE_CODE_SUBAGENT_MODEL=<model>` where a model is named;
 - the query registers subagent definitions on that model (`inherit` for the agent's own): with `subagentEffort` pinned, one definition named `delegate` at that effort; otherwise one definition per distinct effort the vocabulary maps to, named `delegate-<effort>` — `minimal` and `low` share `delegate-low`, the effort the runtime runs — so the agent's choice of effort is a choice of definition the Agent tool enforces;
@@ -39,7 +39,7 @@ The runtime lets a registered definition replace a built-in one by name, whole �
 So whenever `subagentModel` is set, the adapter also registers `general-purpose`, with a description of the same kind and the delegate prompt, since the built-in's own definition is the generic one and a call naming no type lands there: at the pinned effort where `subagentEffort` is pinned, and otherwise at `medium`, the level a session runs at when none is set, with its description pointing to the `delegate-<effort>` types for any other effort — so no subagent inherits the agent's effort by omission, and the agent's choice stays a choice.
 `Explore` and `Plan` are never replaced, because an override would cost them their read-only tool restrictions and their own prompts; they keep their definitions and run at the agent's effort, which the documentation states.
 
-tmux-play admits `subagentEffort` beside `subagentModel` on Claude Captain and player configurations and in complete call settings, with the same omission semantics.
+tmux-play admits `subagentEffort` beside `subagentModel` on Captain and player configurations and in complete call settings, with the same omission semantics.
 
 The rejected alternatives are an effort named in the directive's prose for the agent to request (the Agent tool cannot carry one, so it would be unenforceable), a single definition at the agent's own effort (the loophole restated), and level semantics in the directive (they differ by model line and the tool already describes each definition).
 

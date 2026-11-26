@@ -5,12 +5,8 @@
 
 ## Status
 
-Amended by [DR-047](047-provider-aware-model-defaults-and-fork-history.md) for Claude runs whose tool controls exclude delegation.
-Amended by [DR-044](044-codex-subagent-tuning.md): Codex supports the shared tuning options through native defaults and per-call delegation instructions, preserving native spawn and role precedence.
 Accepted (2026-09-30).
-Amends [DR-021](021-agent-runtime-fast-mode.md) in nothing; reuses its adapter-scoped option pattern.
-Amends the Claude query preparation of [[claude-code-34](../packages/adapters/claude-code.md#claude-code-34)]: the per-run environment clone may carry two Cligent-set variables.
-Amended by [DR-029](029-subagent-effort.md): `subagentModel` admits `inherit`, whose environment carries `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` alone with the caller's `CLAUDE_CODE_SUBAGENT_MODEL` removed; a companion `subagentEffort` joins it; the adapter registers subagent definitions; and the directive's first sentence follows both settings while its remaining sentences no longer name the model.
+Amended by [DR-029](029-subagent-effort.md), [DR-044](044-codex-subagent-tuning.md), [DR-047](047-provider-aware-model-defaults-and-fork-history.md).
 
 ## Context
 
@@ -25,20 +21,21 @@ The two halves belong together, and only the adapter reaches both the process en
 The Claude adapter passes no `systemPrompt` today; the SDK then sends an empty custom prompt, not the `claude_code` preset, so a custom prompt carrying only the delegation directive adds to the runs without changing the base prompt they already have.
 A recorded system-prompt snapshot would repeat the first request's text on later requests and resumes even when a later launch passes different text [[3]], so the directive must not be snapshotted, or a changed or cleared choice would keep naming the old model.
 
-Codex, Gemini, Kimi, and OpenCode expose no per-run subagent model in the surfaces Cligent drives.
+Gemini, Kimi, and OpenCode expose no per-run subagent model in the surfaces Cligent drives; Codex offers native subagent defaults, which [DR-044](044-codex-subagent-tuning.md) maps.
 
 ## Decision
 
 Cligent uses one public property named `subagentModel`, a model id or alias string, on its shared agent, instance-default, and per-run option surfaces, separate from `model`.
-A supplied value selects the model every subagent of the run uses; omission adds no Cligent override and leaves the runtime's own order in force.
+A supplied value selects the model every subagent of the run uses, the literal `inherit` naming the agent's own model, with a companion `subagentEffort` under [DR-029](029-subagent-effort.md); omission adds no Cligent override and leaves the runtime's own order in force.
 Per-call option merging treats it as a scalar: the per-call value when provided, otherwise the instance default.
 
 Support is adapter-scoped exactly as fast mode is under [DR-021](021-agent-runtime-fast-mode.md): a defaulted type capability carried by statically adapter-bound APIs, an exported immutable `SUBAGENT_MODEL_SUPPORT` table with helpers, and a built-in check that rejects any defined value on an unsupported adapter before backend invocation.
-Claude binds string support; Codex, Gemini, Kimi, and OpenCode bind no assignable value; custom adapters default to unsupported and may opt in.
+Claude binds string support, as Codex does under [DR-044](044-codex-subagent-tuning.md); Gemini, Kimi, and OpenCode bind no assignable value; custom adapters default to unsupported and may opt in.
 
-When the Claude adapter prepares a query carrying `subagentModel`, it sets `CLAUDE_CODE_SUBAGENT_MODEL` to the value and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` to `1` in the per-run environment clone, and passes a custom, unsnapshotted system prompt consisting of one delegation directive that names the value:
+When the Claude adapter prepares a query carrying `subagentModel`, unless the run's tool controls exclude the Agent tool ([DR-047](047-provider-aware-model-defaults-and-fork-history.md)), it sets `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` to `1`, and `CLAUDE_CODE_SUBAGENT_MODEL` to a named model, in the per-run environment clone, amending the Claude query preparation of [[claude-code-34](../packages/adapters/claude-code.md#claude-code-34)].
+It also passes a custom, unsnapshotted system prompt consisting of one delegation directive, whose first sentence names the subagents' model and effort under [DR-029](029-subagent-effort.md), followed by:
 
-> Your subagents run on {model}. Offload to them the work you can specify completely and bound tightly — well-defined, fine-grained tasks that {model} can implement well — and keep the deep thinking, reasoning, and design work yourself. Offloading must never lower the quality of what you deliver: brief each subagent fully, and verify its result before you build on it.
+> Offload to them the work you can specify completely and bound tightly — well-defined, fine-grained tasks that a subagent can implement well — and keep the deep thinking, reasoning, and design work yourself. Offloading must never lower the quality of what you deliver: brief each subagent fully, and verify its result before you build on it.
 
 The directive is Cligent's text, not a caller option; the caller chooses the model, and the words follow.
 The adapter composes its system prompt from ordered parts rather than assigning one string: a caller's own system prompt, when Cligent offers one, comes first in whatever form the caller gives it, and each Cligent directive follows as its own final paragraph — joined to a custom prompt by a blank line, or carried in the preset's `append` after the caller's own — so a later caller-supplied system prompt joins the directive and never replaces it.
@@ -46,7 +43,7 @@ Today the parts hold at most the directive, and a run without `subagentModel` co
 Without `subagentModel` the adapter sets neither variable and no system prompt, so existing runs are unchanged.
 A value the runtime cannot serve is refused by the runtime through the ordinary error path; Cligent validates the string's presence, not its membership in a catalog, because discovery lists evidence rather than promises.
 
-tmux-play admits `subagentModel` for Claude Captain and player configurations, validates it against the selected adapter, and carries it in complete call settings as an optional string whose omission selects the provider default without merging the configured role value.
+tmux-play admits `subagentModel` for Captain and player configurations, validates it against the selected adapter, and carries it in complete call settings as an optional string whose omission selects the provider default without merging the configured role value.
 
 A generic caller-supplied system prompt was weighed as the whole mechanism and declined: it cannot fix which model the subagents run on, and it would make every host author the words; it remains a reasonable later option, which the composition rule above already accommodates.
 The other rejected alternatives are the `claude_code` preset with an `append` (it would change the base prompt of every run that sets the option), the `agents` option (it defines new subagents; it cannot retarget the built-in ones or a per-call choice), prepending the directive to the user prompt (repeated in every turn's transcript as if the caller said it), and `CLAUDE_CODE_SUBAGENT_MODEL` without `FORCE` (a default the built-in definitions ignore, so a chip naming it would lie).
@@ -56,8 +53,8 @@ Canonical behavior is specified by [[engine-90](../packages/engine.md#engine-90)
 ## Consequences
 
 The option, capability parameter, table, helpers, environment variables, system prompt, and tmux-play key are additive; every new member is optional, and omission preserves existing behavior, so this ships in a MINOR release.
-The Claude supported floor of 0.3.284 already bundles Claude Code 2.1.284, past the 2.1.257 that `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` requires [[1]], so no floor rises under [[package-17](../packages/package.md#package-17)].
-A run with `allowedTools` that omits `Agent` keeps its subagents unavailable as before; the option changes which model subagents use, never whether the agent may start them.
+Every supported Claude floor bundles a Claude Code past the 2.1.257 that `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` requires [[1]], so the option raised no floor under [[package-17](../packages/package.md#package-17)].
+A run whose tool controls exclude `Agent` keeps its subagents unavailable and receives no child tuning ([DR-047](047-provider-aware-model-defaults-and-fork-history.md)); the option changes which model subagents use, never whether the agent may start them.
 Hosts that expose the choice reuse the adapter's model list from discovery and `isSubagentModelSupported` to decide where to offer it.
 A future system-prompt option changes the composition's first part and nothing about the directive, so it will not be a breaking change to this contract.
 

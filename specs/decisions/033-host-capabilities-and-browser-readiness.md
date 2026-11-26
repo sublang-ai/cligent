@@ -6,8 +6,8 @@
 ## Status
 
 Accepted (2026-10-01).
-Amends [DR-032](032-browser-tools-and-media-output.md) for contextual host discovery, browser launch proof, and owned browser artifacts.
-Amends [DR-031](031-media-input-and-computer-use.md) for verified structured Gemini attachment translation.
+Amends [DR-031](031-media-input-and-computer-use.md), [DR-032](032-browser-tools-and-media-output.md).
+Amended by [DR-040](040-native-windows-codex-isolation.md).
 
 ## Context
 
@@ -26,8 +26,7 @@ The pinned Playwright `launchServer` can remain pending before returning a proce
 - Keep automatic browser artifacts in a run-owned temporary directory and release it after stream consumption; explicit native filename requests remain subject to native access rules rather than a claimed filesystem confinement.
 - Keep browser and MCP tools in tmux-play’s complete per-call settings: omission in an explicit replacement disables them, while omission of the replacement restores role defaults.
 - Carry local attachments only on individual player or Captain calls, preserving the prompt and detaching their descriptors before asynchronous dispatch; durable assets remain a host concern.
-- Use the Codex SDK's public raw configuration overrides for MCP entries; retain explicit permission isolation and reject an unsupported native Windows isolation route without weakening it.
-
+- Use the Codex SDK's public raw configuration overrides for MCP entries, retaining explicit permission isolation.
 - Translate structured Gemini attachments into ordered run-owned byte snapshots with MIME-canonical filenames, native `@file` references, and scoped include directories.
   Original user paths never enter the prompt.
   The format set and 20 MiB file limit follow exact Gemini 0.61.0 provider-boundary proof on representable POSIX temporary paths; native Windows remains unsupported until proved.

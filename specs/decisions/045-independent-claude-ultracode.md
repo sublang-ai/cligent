@@ -6,7 +6,7 @@
 ## Status
 
 Accepted (2026-11-14).
-Amends [DR-009](009-adapter-scoped-effort-vocabularies.md): Claude orchestration also has an independent boolean control; the existing effort shorthand remains compatible.
+Amends [DR-009](009-adapter-scoped-effort-vocabularies.md).
 
 ## Context
 

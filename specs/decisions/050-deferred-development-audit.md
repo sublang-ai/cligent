@@ -5,13 +5,13 @@
 
 ## Status
 
-Accepted by explicit user instruction on 2026-11-18 for both testing and formal publication.
-Supersedes the unreleased candidate-only policy and amends DR-043's full-development audit scope for the current release family.
+Accepted (2026-11-18).
+Amends [DR-043](043-audited-development-matchers.md).
 
 ## Context
 
 GHSA-fc5q-39xc-vjpf has no simple published repair; removing the affected development matcher requires tool replacement or patch maintenance.
-The user explicitly directs: skip this vulnerability for testing and formal publication, and repair it in the next version.
+The user explicitly directed on 2026-11-18: skip this vulnerability for testing and formal publication, and repair it in the next version.
 The actual advisory and failing audit must remain visible rather than being represented as remediated.
 
 ## Decision
@@ -22,6 +22,7 @@ The actual advisory and failing audit must remain visible rather than being repr
 - Production and installed-production audits, other advisories, unusable reports and runtime-exposed nodes remain strict failures.
 - Keep raw audit stdout/stderr/status and an explicit deferred-risk decision with package version and lock digest; the underlying full audit still reports the vulnerability.
 - Use the ordinary complete CI and existing candidate/stable release source gates; a separate candidate-only workflow is unnecessary.
+- This amends [DR-043](043-audited-development-matchers.md)'s full-development audit scope for the current release family.
 - Track remediation in the next-version backlog, without claiming a repair or scheduling unsupported upstream work.
 
 ## Consequences

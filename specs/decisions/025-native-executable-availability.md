@@ -6,7 +6,7 @@
 ## Status
 
 Accepted (2026-09-28).
-Amends [DR-013](013-cligent-owned-runtime-compatibility.md) for native-executable presence as an availability and readiness input, the installed-but-unavailable verdict, the unsupported-host outcome, and the host-facing executable lookup.
+Amends [DR-013](013-cligent-owned-runtime-compatibility.md).
 
 ## Context
 

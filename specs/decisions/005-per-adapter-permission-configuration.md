@@ -5,7 +5,8 @@
 
 ## Status
 
-Accepted; live host handling amends the headless fallback through [DR-034](034-live-host-tool-approvals.md).
+Accepted.
+Amended by [DR-006](006-workspace-writable-paths.md), [DR-034](034-live-host-tool-approvals.md), [DR-040](040-native-windows-codex-isolation.md).
 
 ## Context
 
@@ -84,6 +85,7 @@ Where a case preserves vendor defaults by emitting no adapter-generated permissi
 ### Headless auto-mode posture
 
 Cligent runs are headless: some native auto modes have an interactive fallback that no user can answer.
+Where a caller supplies a live approval handler, it answers unresolved native requests the transport can forward ([DR-034](034-live-host-tool-approvals.md)); otherwise the fallbacks below apply.
 `mode: 'auto'` shall nevertheless map to each SDK's native auto-mode exactly, adding no cligent-selected capability grants.
 Headless fallback resolution is adapter-specific: classifier/reviewer-protected modes fail closed where their native implementation does, while OpenCode's native `--auto` answers surviving asks `once`.
 An alternative that widened auto with cligent-chosen network grants — pre-approved Claude `WebFetch` / `WebSearch` / `Bash(curl:*)` allow rules ahead of the classifier, a generated Codex profile extending `:workspace` with `network = { enabled = true }` (grammar validated credential-free via `codex sandbox`), and an opencode `websearch: 'allow'` pin — was implemented and rolled back: a curated grant list is ad hoc, cannot anticipate the next task's tools, and blurs the auto/bypass distinction this DR exists to keep.
@@ -139,13 +141,14 @@ The approval/reviewer posture and the local-access surface are independent Codex
 
 `mode` governs the approval/reviewer axis; the per-capability `fileWrite` / `shellExecute` / `networkAccess` levels govern the local-access axis — the [[engine-52](../packages/engine.md#engine-52)] orthogonal-axis composition, distinct from the precedence rule that applies where an SDK does not separate the two.
 The exact per-capability → profile mapping is [[codex-4](../packages/adapters/codex.md#codex-4)].
-Built-in profiles cannot express a workspace-write surface with network enabled, so that combination is lossy (it rounds to `:workspace`, granting no network); synthesizing granular `[permissions]` profiles is out of scope.
+Built-in profiles cannot express a workspace-write surface with network enabled, so that combination is lossy (it rounds to `:workspace`, granting no network); synthesizing granular `[permissions]` profiles is out of scope, except for [DR-006](006-workspace-writable-paths.md)'s typed `writablePaths`.
 
 **Determinism caveat.** `default_permissions` is authoritative only when no legacy `sandbox_mode` exists in the active Codex config layers.
-As revised by [DR-040](040-native-windows-codex-isolation.md), managed permission runs inherit user configuration. Public SDK configuration overrides select the requested profile using native precedence; authentication and sessions retain their native home. The former `--ignore-user-config` policy is removed.
+Managed permission runs inherit user configuration ([DR-040](040-native-windows-codex-isolation.md)).
+Public SDK configuration overrides select the requested profile using native precedence; authentication and sessions retain their native home.
 Project-local Codex config layers and future managed configuration routes remain subject to Codex's own precedence rules.
 
-**Inheriting the user's Codex config** — letting Codex's own `default_permissions` / CLI/Desktop config be authoritative instead of cligent picking a profile — is deliberately out of scope.
+**Deferring to the user's Codex permission profile** — letting Codex's own `default_permissions` / CLI/Desktop config choose the profile instead of cligent picking one — is deliberately out of scope.
 It is non-deterministic and would make `mode: 'auto'` machine-dependent.
 If added later it shall be an explicit opt-in, never the default for `mode: 'auto'`.
 

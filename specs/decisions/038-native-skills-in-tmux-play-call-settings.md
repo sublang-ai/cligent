@@ -6,8 +6,7 @@
 ## Status
 
 Accepted (2026-10-20).
-Amends [DR-037](037-per-run-native-skill-switch.md) in its scope: Captain call settings carry `nativeSkills`, while tmux-play configuration stays out of scope.
-Amends the supplied-settings admission of [[tmux-play-93](../packages/tmux-play.md#tmux-play-93)]: complete call settings may hold `nativeSkills`, admitted, snapshotted and forwarded as the other members are.
+Amends [DR-037](037-per-run-native-skill-switch.md).
 
 ## Context
 
@@ -18,6 +17,7 @@ The switch therefore cannot reach the calls [DR-037](037-per-run-native-skill-sw
 
 ## Decision
 
+- This amends [DR-037](037-per-run-native-skill-switch.md)'s scope, bringing Captain call settings in, and the supplied-settings admission of [[tmux-play-93](../packages/tmux-play.md#tmux-play-93)]: complete call settings may hold `nativeSkills`, admitted, snapshotted and forwarded as the other members are.
 - `AgentCallSettings` gains an optional boolean `nativeSkills`, with [DR-037](037-per-run-native-skill-switch.md)'s meaning for that one call; omitting it leaves the runtime's own skill discovery as `Cligent.run()` leaves it.
 - Admission rejects, before the prompt record and as an `AgentCallSettingsError`, a value other than a boolean and `false` for an adapter whose `NATIVE_SKILL_SUPPORT` descriptor does not accept the switch, so a Kimi Code call fails before it records anything.
 - Admitted settings carry the value in their frozen snapshot, and the call passes it to `Cligent.run()` unchanged; the runtime-owned `Cligent` carries no `nativeSkills` default.
