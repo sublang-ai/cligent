@@ -11,6 +11,11 @@ Unified TypeScript SDK for AI coding agent CLIs (Claude Code, Codex CLI, Gemini 
 
 Register an adapter, send a prompt, and consume a single async event stream — regardless of which agent runs underneath.
 
+<p align="center">
+  <img src="assets/social-preview.png" width="75%" alt="cligent — one SDK for every coding agent CLI">
+</p>
+
+
 ## Install
 
 ```bash
